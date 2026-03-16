@@ -8,6 +8,7 @@ type OpenClawCoworkApi = {
   toggleMaximizeWindow: () => Promise<boolean>;
   isWindowMaximized: () => Promise<boolean>;
   closeWindow: () => Promise<void>;
+  showSystemMenu: (x: number, y: number) => Promise<void>;
 };
 
 declare global {

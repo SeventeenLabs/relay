@@ -10,6 +10,7 @@ const api = {
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggle-maximize') as Promise<boolean>,
   isWindowMaximized: () => ipcRenderer.invoke('window:is-maximized') as Promise<boolean>,
   closeWindow: () => ipcRenderer.invoke('window:close') as Promise<void>,
+  showSystemMenu: (x: number, y: number) => ipcRenderer.invoke('window:show-system-menu', { x, y }) as Promise<void>,
 };
 
 contextBridge.exposeInMainWorld('openClawCowork', api);

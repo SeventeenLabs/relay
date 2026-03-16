@@ -6,6 +6,7 @@
   "main": "dist-electron/electron/main.js",
   "type": "module",
   "scripts": {
+    "predev": "kill-port 5173",
     "dev": "concurrently -k \"tsc -p tsconfig.electron.json --watch\" \"vite\" \"wait-on dist-electron/electron/main.js http-get://localhost:5173/ && electron .\"",
     "build": "npm run build:renderer && npm run build:electron",
     "build:renderer": "vite build",
@@ -46,6 +47,7 @@
     "concurrently": "^9.2.1",
     "electron": "^37.2.0",
     "electron-builder": "^26.0.12",
+    "kill-port": "^2.0.1",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.2",
     "vite": "^7.1.5",

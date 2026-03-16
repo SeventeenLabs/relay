@@ -151,6 +151,45 @@ app.whenReady().then(async () => {
     const window = BrowserWindow.fromWebContents(event.sender);
     return Boolean(window?.isMaximized());
   });
+  ipcMain.handle('window:show-system-menu', (event, position: { x: number; y: number }) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) {
+      return;
+    }
+
+    const menu = Menu.buildFromTemplate([
+      {
+        label: 'Restore',
+        enabled: window.isMaximized(),
+        click: () => window.unmaximize(),
+      },
+      {
+        label: 'Minimize',
+        click: () => window.minimize(),
+      },
+      {
+        label: window.isMaximized() ? 'Unmaximize' : 'Maximize',
+        click: () => {
+          if (window.isMaximized()) {
+            window.unmaximize();
+            return;
+          }
+          window.maximize();
+        },
+      },
+      { type: 'separator' },
+      {
+        label: 'Close',
+        click: () => window.close(),
+      },
+    ]);
+
+    menu.popup({
+      window,
+      x: Math.round(position.x),
+      y: Math.round(position.y),
+    });
+  });
   ipcMain.handle('window:close', (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     window?.close();
