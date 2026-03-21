@@ -1,0 +1,17 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="320" fill="white"/>
+
+  <g transform="translate(40 40)">
+    <circle cx="56" cy="120" r="20" fill="#111827"/>
+    <circle cx="184" cy="72" r="20" fill="#111827"/>
+    <circle cx="184" cy="168" r="20" fill="#111827"/>
+    <path d="M76 112L164 80" stroke="#111827" stroke-width="12" stroke-linecap="round"/>
+    <path d="M76 128L164 160" stroke="#111827" stroke-width="12" stroke-linecap="round"/>
+    <path d="M184 92V148" stroke="#111827" stroke-width="12" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(340 88)">
+    <text x="0" y="94" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="108" font-weight="700" fill="#111827" letter-spacing="0.5">Relay</text>
+    <text x="4" y="136" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30" font-weight="500" fill="#6B7280">Connected workflows</text>
+  </g>
+</svg>

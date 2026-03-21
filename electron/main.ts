@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, Menu, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, session } from 'electron';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
+import type { LocalFileApplyResult, LocalFilePlanAction, LocalFilePlanResult } from '../src/app-types.js';
 
 type AppConfig = {
   gatewayUrl: string;
@@ -16,6 +17,53 @@ type HealthCheckResult = {
 const defaultConfig: AppConfig = {
   gatewayUrl: 'ws://127.0.0.1:18789',
   gatewayToken: '',
+};
+
+const extensionCategories: Record<string, string> = {
+  '.pdf': 'Documents',
+  '.doc': 'Documents',
+  '.docx': 'Documents',
+  '.txt': 'Documents',
+  '.rtf': 'Documents',
+  '.md': 'Documents',
+  '.xls': 'Spreadsheets',
+  '.xlsx': 'Spreadsheets',
+  '.csv': 'Spreadsheets',
+  '.ppt': 'Presentations',
+  '.pptx': 'Presentations',
+  '.key': 'Presentations',
+  '.png': 'Images',
+  '.jpg': 'Images',
+  '.jpeg': 'Images',
+  '.gif': 'Images',
+  '.webp': 'Images',
+  '.svg': 'Images',
+  '.bmp': 'Images',
+  '.zip': 'Archives',
+  '.rar': 'Archives',
+  '.7z': 'Archives',
+  '.tar': 'Archives',
+  '.gz': 'Archives',
+  '.mp3': 'Audio',
+  '.wav': 'Audio',
+  '.m4a': 'Audio',
+  '.aac': 'Audio',
+  '.flac': 'Audio',
+  '.mp4': 'Video',
+  '.mov': 'Video',
+  '.mkv': 'Video',
+  '.avi': 'Video',
+  '.wmv': 'Video',
+  '.js': 'Code',
+  '.ts': 'Code',
+  '.tsx': 'Code',
+  '.jsx': 'Code',
+  '.json': 'Code',
+  '.py': 'Code',
+  '.java': 'Code',
+  '.cs': 'Code',
+  '.cpp': 'Code',
+  '.c': 'Code',
 };
 
 const configPath = () => path.join(app.getPath('userData'), 'openclaw-config.json');
@@ -58,6 +106,135 @@ function registerDevWebSocketOriginRewrite() {
       callback({ requestHeaders: details.requestHeaders });
     }
   });
+}
+
+function isPathInside(rootPath: string, targetPath: string): boolean {
+  const root = path.resolve(rootPath);
+  const target = path.resolve(targetPath);
+  const relative = path.relative(root, target);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function slugifyName(value: string): string {
+  const collapsed = value.trim().replace(/[\s_]+/g, '-').replace(/[^a-zA-Z0-9-]/g, '').replace(/-+/g, '-');
+  return collapsed.replace(/^-|-$/g, '').toLowerCase() || 'file';
+}
+
+function formatDatePrefix(timestampMs: number): string {
+  const date = new Date(timestampMs);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function resolveCategory(fileName: string): string {
+  const extension = path.extname(fileName).toLowerCase();
+  return extensionCategories[extension] ?? 'Other';
+}
+
+async function ensurePathAllowed(rootPath: string): Promise<string> {
+  const resolved = path.resolve(rootPath);
+  const stats = await fs.stat(resolved);
+  if (!stats.isDirectory()) {
+    throw new Error('Root path must be a directory.');
+  }
+
+  return resolved;
+}
+
+async function planFolderOrganization(rootPath: string): Promise<LocalFilePlanResult> {
+  const root = await ensurePathAllowed(rootPath);
+  const entries = await fs.readdir(root, { withFileTypes: true });
+  const actions: LocalFilePlanAction[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    const currentPath = path.join(root, entry.name);
+    const stat = await fs.stat(currentPath);
+    const extension = path.extname(entry.name);
+    const baseName = path.basename(entry.name, extension);
+    const datePrefix = formatDatePrefix(stat.mtimeMs);
+    const slug = slugifyName(baseName);
+    const normalizedFileName = `${datePrefix}_${slug}${extension.toLowerCase()}`;
+    const category = resolveCategory(entry.name);
+    const targetPath = path.join(root, category, normalizedFileName);
+
+    if (path.resolve(currentPath) === path.resolve(targetPath)) {
+      continue;
+    }
+
+    actions.push({
+      id: `${entry.name}-${actions.length + 1}`,
+      fromPath: currentPath,
+      toPath: targetPath,
+      category,
+      operation: 'move',
+    });
+  }
+
+  return {
+    rootPath: root,
+    actions,
+  };
+}
+
+async function uniqueDestinationPath(destinationPath: string): Promise<string> {
+  let candidate = destinationPath;
+  let counter = 1;
+
+  while (true) {
+    try {
+      await fs.access(candidate);
+      const parsed = path.parse(destinationPath);
+      counter += 1;
+      candidate = path.join(parsed.dir, `${parsed.name}-${counter}${parsed.ext}`);
+    } catch {
+      return candidate;
+    }
+  }
+}
+
+async function applyFolderOrganizationPlan(rootPath: string, actions: LocalFilePlanAction[]): Promise<LocalFileApplyResult> {
+  const root = await ensurePathAllowed(rootPath);
+  const result: LocalFileApplyResult = {
+    applied: 0,
+    skipped: 0,
+    errors: [],
+  };
+
+  for (const action of actions) {
+    const fromPath = path.resolve(action.fromPath);
+    const toPath = path.resolve(action.toPath);
+
+    if (!isPathInside(root, fromPath) || !isPathInside(root, toPath)) {
+      result.skipped += 1;
+      result.errors.push(`Skipped out-of-scope action: ${action.fromPath}`);
+      continue;
+    }
+
+    try {
+      await fs.access(fromPath);
+    } catch {
+      result.skipped += 1;
+      continue;
+    }
+
+    try {
+      await fs.mkdir(path.dirname(toPath), { recursive: true });
+      const finalToPath = await uniqueDestinationPath(toPath);
+      await fs.rename(fromPath, finalToPath);
+      result.applied += 1;
+    } catch (error) {
+      result.errors.push(error instanceof Error ? error.message : 'Unknown file operation error.');
+      result.skipped += 1;
+    }
+  }
+
+  return result;
 }
 
 async function readConfig(): Promise<AppConfig> {
@@ -133,7 +310,7 @@ async function createWindow() {
     minWidth: 1200,
     minHeight: 760,
     backgroundColor: '#f4f3ee',
-    title: 'OpenClawCowork',
+    title: 'Relay',
     frame: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -238,6 +415,40 @@ app.whenReady().then(async () => {
   ipcMain.handle('window:close', (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     window?.close();
+  });
+  ipcMain.handle('local:downloads-path', () => app.getPath('downloads'));
+  ipcMain.handle('local:select-folder', async (_event, initialPath?: string) => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select working folder',
+      defaultPath: typeof initialPath === 'string' && initialPath.trim() ? initialPath : app.getPath('downloads'),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+  ipcMain.handle('local:plan-organize-folder', async (_event, rootPath: string) => {
+    if (typeof rootPath !== 'string' || !rootPath.trim()) {
+      throw new Error('A folder path is required.');
+    }
+
+    return planFolderOrganization(rootPath);
+  });
+  ipcMain.handle('local:apply-organize-folder-plan', async (_event, payload: { rootPath: string; actions: LocalFilePlanAction[] }) => {
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('Invalid apply payload.');
+    }
+
+    const rootPath = typeof payload.rootPath === 'string' ? payload.rootPath : '';
+    const actions = Array.isArray(payload.actions) ? payload.actions : [];
+    if (!rootPath.trim()) {
+      throw new Error('A folder path is required.');
+    }
+
+    return applyFolderOrganizationPlan(rootPath, actions);
   });
 
   await createWindow();

@@ -1,0 +1,14 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="320" fill="white"/>
+
+  <g transform="translate(40 40)">
+    <rect x="8" y="8" width="224" height="224" rx="48" fill="#111827"/>
+    <path d="M84 68H136C168 68 188 86 188 114C188 142 168 162 136 162H116V136H134C148 136 158 128 158 116C158 104 148 96 134 96H112V200H84V68Z" fill="white"/>
+    <path d="M152 166L190 198" stroke="white" stroke-width="16" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(340 88)">
+    <text x="0" y="94" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="108" font-weight="700" fill="#111827" letter-spacing="0.5">Relay</text>
+    <text x="4" y="136" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30" font-weight="500" fill="#6B7280">Plan, approve, execute</text>
+  </g>
+</svg>

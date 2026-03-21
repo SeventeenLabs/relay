@@ -1,0 +1,15 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="320" fill="white"/>
+
+  <g transform="translate(44 44)">
+    <!-- Distinctive R rune built from one stroke system -->
+    <path d="M40 34V198" stroke="#111111" stroke-width="18" stroke-linecap="round"/>
+    <path d="M40 34H146C184 34 208 56 208 90C208 124 184 146 146 146H94" stroke="#111111" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M98 146L212 198" stroke="#111111" stroke-width="18" stroke-linecap="round"/>
+    <circle cx="224" cy="204" r="10" fill="#111111"/>
+  </g>
+
+  <g transform="translate(334 84)">
+    <text x="0" y="108" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="120" font-weight="700" fill="#111111" letter-spacing="0.15">Relay</text>
+  </g>
+</svg>

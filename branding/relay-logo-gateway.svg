@@ -1,0 +1,16 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="320" fill="white"/>
+
+  <g transform="translate(44 44)">
+    <!-- Gate mark: controlled execution through a narrow decision point -->
+    <rect x="24" y="32" width="74" height="168" rx="32" fill="#111111"/>
+    <rect x="162" y="32" width="74" height="168" rx="32" fill="#111111"/>
+    <rect x="98" y="90" width="72" height="52" rx="24" fill="#111111"/>
+    <path d="M122 116H198" stroke="white" stroke-width="12" stroke-linecap="round"/>
+    <path d="M188 102L206 116L188 130" stroke="white" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g transform="translate(334 84)">
+    <text x="0" y="108" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="120" font-weight="700" fill="#111111" letter-spacing="0.15">Relay</text>
+  </g>
+</svg>

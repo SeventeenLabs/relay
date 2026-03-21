@@ -29,3 +29,22 @@ export type ScheduledJob = {
   nextRunAt: string | null;
   lastRunAt: string | null;
 };
+
+export type LocalFilePlanAction = {
+  id: string;
+  fromPath: string;
+  toPath: string;
+  category: string;
+  operation: 'move' | 'rename';
+};
+
+export type LocalFilePlanResult = {
+  rootPath: string;
+  actions: LocalFilePlanAction[];
+};
+
+export type LocalFileApplyResult = {
+  applied: number;
+  skipped: number;
+  errors: string[];
+};

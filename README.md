@@ -1,6 +1,6 @@
-# OpenClawCowork
+# Relay
 
-OpenClawCowork is an Electron desktop shell for a Claude-style coworking experience backed by your own OpenClaw deployment. The scaffold includes a React renderer, Electron IPC bridge, local config persistence, and backend health checks for local or VPS-hosted OpenClaw instances.
+Relay is an Electron desktop shell for a Claude-style coworking experience backed by your own OpenClaw deployment. The scaffold includes a React renderer, Electron IPC bridge, local config persistence, and backend health checks for local or VPS-hosted OpenClaw instances.
 
 ## Stack
 
@@ -53,3 +53,9 @@ Suggested next additions:
 - workspace/file context syncing
 - authentication or API key storage for remote OpenClaw deployments
 - conversation history persistence
+
+## Product strategy
+
+A one-page product strategy (market, ICP, positioning, roadmap, and KPI spec) is available at:
+
+- [docs/product-strategy.md](docs/product-strategy.md)

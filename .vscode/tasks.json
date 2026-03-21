@@ -2,7 +2,7 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "OpenClawCowork Dev",
+			"label": "Relay Dev",
 			"type": "shell",
 			"command": "npm",
 			"args": [

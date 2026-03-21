@@ -1,0 +1,11 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(44 44)">
+    <rect x="28" y="42" width="176" height="148" rx="74" stroke="#111111" stroke-width="16"/>
+    <path d="M76 116H152" stroke="#111111" stroke-width="16" stroke-linecap="round"/>
+    <path d="M146 96L172 116L146 136" stroke="#111111" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g transform="translate(334 84)">
+    <text x="0" y="108" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="120" font-weight="700" fill="#111111" letter-spacing="0.2">Relay</text>
+  </g>
+</svg>

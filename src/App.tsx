@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 
-import type { AppConfig, ChatMessage, ChatModelOption, HealthCheckResult, ScheduledJob } from './app-types';
+import type {
+  AppConfig,
+  ChatMessage,
+  ChatModelOption,
+  HealthCheckResult,
+  LocalFilePlanAction,
+  ScheduledJob,
+} from './app-types';
 import { AppSidebar } from './components/layout/app-sidebar';
 import { AppTitlebar } from './components/layout/app-titlebar';
 import { SidebarProvider } from './components/ui/sidebar';
@@ -15,7 +22,7 @@ import { SettingsPage } from './pages/settings-page';
 const DEFAULT_GATEWAY_URL = 'ws://127.0.0.1:18789';
 
 const DEFAULT_SESSION_KEY = 'main';
-const LOCAL_CONFIG_KEY = 'openclaw-cowork.config';
+const LOCAL_CONFIG_KEY = 'relay.config';
 
 const defaultConfig: AppConfig = {
   gatewayUrl: DEFAULT_GATEWAY_URL,
@@ -66,7 +73,7 @@ function extractChatRole(message: unknown): ChatMessage['role'] {
 }
 
 export default function App() {
-  const bridge = window.openClawCowork;
+  const bridge = window.relay;
   const gatewayClientRef = useRef<OpenClawGatewayClient | null>(null);
 
   const [config, setConfig] = useState<AppConfig>(defaultConfig);
@@ -86,6 +93,10 @@ export default function App() {
   const [taskPrompt, setTaskPrompt] = useState('');
   const [workingFolder, setWorkingFolder] = useState('/Downloads');
   const [taskState, setTaskState] = useState<'idle' | 'planned'>('idle');
+  const [localPlanActions, setLocalPlanActions] = useState<LocalFilePlanAction[]>([]);
+  const [localPlanLoading, setLocalPlanLoading] = useState(false);
+  const [localApplyLoading, setLocalApplyLoading] = useState(false);
+  const [localPlanRootPath, setLocalPlanRootPath] = useState('');
   const [isMaximized, setIsMaximized] = useState(false);
   const [activeSessionKey, setActiveSessionKey] = useState(DEFAULT_SESSION_KEY);
   const [chatModels, setChatModels] = useState<ChatModelOption[]>([]);
@@ -204,6 +215,28 @@ export default function App() {
       .catch(() => {
         setIsMaximized(false);
       });
+  }, [bridge]);
+
+  useEffect(() => {
+    if (!bridge?.getDownloadsPath) {
+      return;
+    }
+
+    let cancelled = false;
+    bridge
+      .getDownloadsPath()
+      .then((downloadsPath) => {
+        if (!cancelled && typeof downloadsPath === 'string' && downloadsPath.trim()) {
+          setWorkingFolder(downloadsPath);
+        }
+      })
+      .catch(() => {
+        // keep existing default
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [bridge]);
 
   useEffect(() => {
@@ -487,6 +520,98 @@ export default function App() {
     setStatus('Plan drafted. Review and approve before execution.');
   };
 
+  const handleCreateLocalPlan = async () => {
+    if (!bridge?.planOrganizeFolder) {
+      setStatus('Local file organizer is available in the Electron desktop app only.');
+      return;
+    }
+
+    const rootPath = workingFolder.trim();
+    if (!rootPath) {
+      setStatus('Select a working folder first.');
+      return;
+    }
+
+    setLocalPlanLoading(true);
+    try {
+      const plan = await bridge.planOrganizeFolder(rootPath);
+      setLocalPlanActions(plan.actions);
+      setLocalPlanRootPath(plan.rootPath);
+      setStatus(`Plan ready: ${plan.actions.length} file action${plan.actions.length === 1 ? '' : 's'} in ${plan.rootPath}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to create local file plan.';
+      setStatus(message);
+      setLocalPlanActions([]);
+      setLocalPlanRootPath('');
+    } finally {
+      setLocalPlanLoading(false);
+    }
+  };
+
+  const handlePickWorkingFolder = async () => {
+    if (!bridge?.selectFolder) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.setAttribute('webkitdirectory', '');
+      input.setAttribute('directory', '');
+
+      input.onchange = () => {
+        const selected = input.files?.[0]?.webkitRelativePath?.split('/')[0] ?? '';
+        if (!selected) {
+          setStatus('No folder selected.');
+          return;
+        }
+
+        setWorkingFolder(selected);
+        setStatus(
+          `Folder selected in browser sandbox: ${selected}. To apply local file changes, run the Electron desktop app (npm run dev).`,
+        );
+      };
+
+      input.click();
+      return;
+    }
+
+    try {
+      const selected = await bridge.selectFolder(workingFolder);
+      if (selected && selected.trim()) {
+        setWorkingFolder(selected);
+        setStatus(`Working folder selected: ${selected}`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to open folder picker.';
+      setStatus(message);
+    }
+  };
+
+  const handleApplyLocalPlan = async () => {
+    if (!bridge?.applyOrganizeFolderPlan) {
+      setStatus('Local file organizer is available in the Electron desktop app only.');
+      return;
+    }
+
+    if (!localPlanRootPath || localPlanActions.length === 0) {
+      setStatus('Create a plan before applying changes.');
+      return;
+    }
+
+    setLocalApplyLoading(true);
+    try {
+      const result = await bridge.applyOrganizeFolderPlan(localPlanRootPath, localPlanActions);
+      setStatus(
+        `Applied ${result.applied} action${result.applied === 1 ? '' : 's'}, skipped ${result.skipped}. ${
+          result.errors.length > 0 ? 'Some items had errors.' : 'Done.'
+        }`,
+      );
+      setLocalPlanActions([]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to apply local file plan.';
+      setStatus(message);
+    } finally {
+      setLocalApplyLoading(false);
+    }
+  };
+
   const handleSendChat = async (event: FormEvent) => {
     event.preventDefault();
 
@@ -703,9 +828,17 @@ export default function App() {
                 taskPrompt={taskPrompt}
                 workingFolder={workingFolder}
                 taskState={taskState}
+                status={status}
+                desktopBridgeAvailable={Boolean(bridge)}
+                localPlanActions={localPlanActions}
+                localPlanLoading={localPlanLoading}
+                localApplyLoading={localApplyLoading}
                 onTaskPromptChange={setTaskPrompt}
                 onWorkingFolderChange={setWorkingFolder}
+                onPickWorkingFolder={handlePickWorkingFolder}
                 onSubmit={handlePlanTask}
+                onCreateLocalPlan={handleCreateLocalPlan}
+                onApplyLocalPlan={handleApplyLocalPlan}
               />
             )}
 

@@ -1,0 +1,15 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="320" fill="white"/>
+
+  <g transform="translate(44 44)">
+    <!-- Helix relay: two paths crossing with directional intent -->
+    <path d="M28 78C62 38 116 38 150 78C184 118 238 118 272 78" stroke="#111111" stroke-width="16" stroke-linecap="round"/>
+    <path d="M28 154C62 194 116 194 150 154C184 114 238 114 272 154" stroke="#111111" stroke-width="16" stroke-linecap="round"/>
+    <circle cx="28" cy="78" r="10" fill="#111111"/>
+    <circle cx="272" cy="154" r="10" fill="#111111"/>
+  </g>
+
+  <g transform="translate(334 84)">
+    <text x="0" y="108" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="120" font-weight="700" fill="#111111" letter-spacing="0.15">Relay</text>
+  </g>
+</svg>

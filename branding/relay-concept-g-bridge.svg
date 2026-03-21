@@ -1,0 +1,11 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(44 44)">
+    <rect x="30" y="50" width="62" height="132" rx="31" fill="#111111"/>
+    <rect x="144" y="50" width="62" height="132" rx="31" fill="#111111"/>
+    <rect x="84" y="98" width="66" height="36" rx="18" fill="#111111"/>
+  </g>
+
+  <g transform="translate(334 84)">
+    <text x="0" y="108" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="120" font-weight="700" fill="#111111" letter-spacing="0.2">Relay</text>
+  </g>
+</svg>

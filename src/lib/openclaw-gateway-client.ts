@@ -375,7 +375,7 @@ export class OpenClawGatewayClient {
               maxProtocol: GATEWAY_PROTOCOL_VERSION,
               client: {
                 id: CLIENT_ID,
-                displayName: 'OpenClawCowork',
+                displayName: 'Relay',
                 version: '0.1.0',
                 platform,
                 mode: CLIENT_MODE,
@@ -389,7 +389,7 @@ export class OpenClawGatewayClient {
               auth,
               device,
               locale: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
-              userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'openclaw-cowork/0.1.0',
+              userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'relay/0.1.0',
             },
             8_000,
           );

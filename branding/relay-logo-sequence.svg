@@ -1,0 +1,19 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="320" fill="white"/>
+
+  <g transform="translate(44 44)" fill="#111111">
+    <!-- Three checkpoints: plan, approve, execute -->
+    <circle cx="54" cy="116" r="20"/>
+    <circle cx="132" cy="62" r="20"/>
+    <circle cx="210" cy="116" r="20"/>
+
+    <path d="M72 104L114 74" stroke="#111111" stroke-width="14" stroke-linecap="round"/>
+    <path d="M150 74L192 104" stroke="#111111" stroke-width="14" stroke-linecap="round"/>
+
+    <path d="M118 152L126 144L140 158L164 130" stroke="#111111" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g transform="translate(334 84)">
+    <text x="0" y="108" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="120" font-weight="700" fill="#111111" letter-spacing="0.15">Relay</text>
+  </g>
+</svg>

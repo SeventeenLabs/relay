@@ -8,7 +8,7 @@
 - [x] Launch the Project
 - [x] Ensure Documentation is Complete
 
-- Project: OpenClawCowork
+- Project: Relay
 - Stack: Electron + Vite + React + TypeScript
 - Backend model: configurable OpenClaw endpoint for local, VPS, or custom URL routing
 - Notes: no VS Code extensions required for this scaffold
