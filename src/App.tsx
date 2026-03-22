@@ -683,6 +683,7 @@ export default function App() {
   const executedCoworkActionRunsRef = useRef<Set<string>>(new Set());
 
   const [config, setConfig] = useState<AppConfig>(defaultConfig);
+  const [configReady, setConfigReady] = useState(false);
   const [draftGatewayUrl, setDraftGatewayUrl] = useState(DEFAULT_GATEWAY_URL);
   const [draftGatewayToken, setDraftGatewayToken] = useState('');
   const [health, setHealth] = useState<HealthCheckResult | null>(null);
@@ -1212,6 +1213,7 @@ export default function App() {
       } else {
         setStatus('Electron bridge unavailable. Configuration will be saved locally for this browser profile.');
       }
+      setConfigReady(true);
       return;
     }
 
@@ -1228,6 +1230,7 @@ export default function App() {
         setDraftGatewayUrl(storedConfig.gatewayUrl);
         setDraftGatewayToken(storedConfig.gatewayToken);
         setStatus('Configuration loaded.');
+        setConfigReady(true);
       })
       .catch(() => {
         if (cancelled) {
@@ -1243,6 +1246,7 @@ export default function App() {
         } else {
           setStatus('Unable to load config. Using defaults.');
         }
+        setConfigReady(true);
       });
 
     return () => {
@@ -1815,18 +1819,25 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!configReady) {
+      return;
+    }
+
     const client = gatewayClientRef.current;
     if (!client) {
       return;
     }
 
+    const gatewayUrl = config.gatewayUrl?.trim() || DEFAULT_GATEWAY_URL;
+    const gatewayToken = config.gatewayToken ?? '';
+
     void client
       .connect({
-        gatewayUrl: draftGatewayUrl,
-        token: draftGatewayToken,
+        gatewayUrl,
+        token: gatewayToken,
       })
       .then(async () => {
-        setHealth({ ok: true, message: `Connected to ${draftGatewayUrl}` });
+        setHealth({ ok: true, message: `Connected to ${gatewayUrl}` });
         if (!onboardingComplete) {
           localStorage.setItem(RELAY_ONBOARDING_KEY, 'true');
           setOnboardingComplete(true);
@@ -1834,7 +1845,6 @@ export default function App() {
         await loadRecentChatsFromBackend(client);
       })
       .catch((error: unknown) => {
-        console.error('[Relay] auto-connect error:', error);
         const info = readGatewayError(error);
         const isPairing =
           info.code === 'PAIRING_REQUIRED' ||
@@ -1847,10 +1857,12 @@ export default function App() {
           setHealth({ ok: false, message: `Pairing required.${approvalHint}` });
           setStatus(`Pairing required.${approvalHint}`);
         } else {
-          setHealth({ ok: false, message: info.message || 'Gateway connection failed.' });
+          const offlineMessage = info.message || 'Gateway is offline or unreachable.';
+          setHealth({ ok: false, message: offlineMessage });
+          setStatus(offlineMessage);
         }
       });
-  }, [draftGatewayUrl, draftGatewayToken]);
+  }, [config.gatewayToken, config.gatewayUrl, onboardingComplete, configReady]);
 
   useEffect(() => {
     if (activePage !== 'chat') {

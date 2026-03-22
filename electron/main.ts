@@ -87,23 +87,14 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const isLoopbackHost = (host: string) => host === 'localhost' || host === '127.0.0.1' || host === '::1';
 
-function registerDevWebSocketOriginRewrite() {
-  if (!isDev) {
-    return;
-  }
-
+function registerWebSocketOriginRewrite() {
   const filter = {
     urls: ['ws://*/*', 'wss://*/*'],
   };
 
-  // In dev, renderer origin is localhost:5173; rewrite only remote WS handshakes to target origin.
+  // Electron packaged builds run from file:// and may send an origin rejected by gateway allowlists.
+  // Rewrite remote WS handshakes to the target host origin so gateway allowlist checks can pass.
   session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
-    const currentOrigin = details.requestHeaders.Origin ?? details.requestHeaders.origin;
-    if (typeof currentOrigin !== 'string' || !currentOrigin.startsWith('http://localhost:5173')) {
-      callback({ requestHeaders: details.requestHeaders });
-      return;
-    }
-
     try {
       const target = new URL(details.url);
       if (isLoopbackHost(target.hostname)) {
@@ -118,6 +109,34 @@ function registerDevWebSocketOriginRewrite() {
     } catch {
       callback({ requestHeaders: details.requestHeaders });
     }
+  });
+}
+
+function registerDevContentSecurityPolicy() {
+  if (!isDev) {
+    return;
+  }
+
+  const filter = {
+    urls: ['http://localhost:5173/*'],
+  };
+
+  const csp = [
+    "default-src 'self' http://localhost:5173",
+    "script-src 'self' 'unsafe-inline' http://localhost:5173",
+    "style-src 'self' 'unsafe-inline' http://localhost:5173",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self' http: https: ws: wss:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');
+
+  session.defaultSession.webRequest.onHeadersReceived(filter, (details, callback) => {
+    const responseHeaders = details.responseHeaders ?? {};
+    responseHeaders['Content-Security-Policy'] = [csp];
+    callback({ responseHeaders });
   });
 }
 
@@ -620,7 +639,8 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
-  registerDevWebSocketOriginRewrite();
+  registerWebSocketOriginRewrite();
+  registerDevContentSecurityPolicy();
 
   ipcMain.handle('config:get', async () => readConfig());
   ipcMain.handle('config:save', async (_event, config: AppConfig) => writeConfig(config));
