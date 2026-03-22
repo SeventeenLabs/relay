@@ -27,6 +27,11 @@ export type GatewayCronJob = {
   lastRunAt: string | null;
 };
 
+export type GatewaySessionSummary = {
+  key: string;
+  kind: string;
+};
+
 type GatewaySessionsListResult = {
   defaults?: {
     mainSessionKey?: unknown;
@@ -270,6 +275,66 @@ export class OpenClawGatewayClient {
     return this.socket?.readyState === WebSocket.OPEN;
   }
 
+  async getDeviceId(): Promise<string> {
+    const identity = await loadOrCreateDeviceIdentity();
+    return identity.deviceId;
+  }
+
+  async getActiveSessionKey(): Promise<string> {
+    try {
+      const sessions = await this.listSessions(50);
+      if (sessions.length > 0) {
+        const mainSession = sessions.find(
+          (s) => s.kind === 'main' || s.key.trim().toLowerCase() === 'main' || s.key.trim().toLowerCase().endsWith(':main'),
+        );
+        if (mainSession) {
+          return mainSession.key.trim();
+        }
+        return sessions[0].key.trim();
+      }
+    } catch {
+      // fall through to sessions.resolve
+    }
+
+    return this.resolveSessionKey('main');
+  }
+
+  async createChatSession(): Promise<string> {
+    const uuid =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    // Derive agent prefix from existing sessions so new key lands in the right store
+    let agentPrefix = '';
+    try {
+      const sessions = await this.listSessions(50);
+      const mainSession = sessions.find(
+        (s) => s.kind === 'main' || s.key.trim().toLowerCase().endsWith(':main'),
+      );
+      if (mainSession) {
+        const parts = mainSession.key.split(':');
+        if (parts.length >= 2) {
+          agentPrefix = parts.slice(0, -1).join(':');
+        }
+      }
+    } catch {
+      // no prefix available
+    }
+
+    const newKey = agentPrefix ? `${agentPrefix}:relay-${uuid}` : `relay-${uuid}`;
+
+    // Register the session via sessions.patch so the Gateway knows about it
+    // before the first chat.send
+    try {
+      await this.call('sessions.patch', { key: newKey });
+    } catch {
+      // Gateway may create it on-demand via chat.send instead
+    }
+
+    return newKey;
+  }
+
   async connect(options: GatewayConnectOptions): Promise<void> {
     const wsUrl = this.normalizeGatewayUrl(options.gatewayUrl);
 
@@ -488,17 +553,25 @@ export class OpenClawGatewayClient {
     }
   }
 
-  async sendChat(sessionKey: string, text: string) {
+  async sendChat(sessionKey: string, text: string): Promise<{ sessionKey: string }> {
+    const resolvedSessionKey = sessionKey.trim();
+    if (!resolvedSessionKey) {
+      throw new Error('Session key is required.');
+    }
     const idempotencyKey =
       typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `chat-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-    return this.call('chat.send', {
-      sessionKey,
+    await this.call('chat.send', {
+      sessionKey: resolvedSessionKey,
       message: text,
       idempotencyKey,
     });
+
+    return {
+      sessionKey: resolvedSessionKey,
+    };
   }
 
   async resolveSessionKey(preferredKey = 'main'): Promise<string> {
@@ -551,6 +624,8 @@ export class OpenClawGatewayClient {
 
     return preferred;
   }
+
+
 
   async getHistory(sessionKey: string, limit = 50) {
     const result = await this.call('chat.history', { sessionKey, limit });
@@ -625,6 +700,51 @@ export class OpenClawGatewayClient {
     }
 
     return provider ? `${provider}/${model}` : model;
+  }
+
+  async listSessions(limit = 200): Promise<GatewaySessionSummary[]> {
+    const result = await this.call('sessions.list', {
+      limit,
+      includeGlobal: true,
+      includeUnknown: false,
+    });
+
+    if (!result || typeof result !== 'object') {
+      return [];
+    }
+
+    const rows = Array.isArray((result as GatewaySessionsListResult).sessions)
+      ? (result as GatewaySessionsListResult).sessions ?? []
+      : [];
+
+    const seen = new Set<string>();
+    const sessions: GatewaySessionSummary[] = [];
+
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') {
+        continue;
+      }
+
+      const record = row as Record<string, unknown>;
+      const key = typeof record.key === 'string' ? record.key.trim() : '';
+      if (!key) {
+        continue;
+      }
+
+      const dedupeKey = key.toLowerCase();
+      if (seen.has(dedupeKey)) {
+        continue;
+      }
+
+      const kind = typeof record.kind === 'string' ? record.kind.trim() : '';
+      sessions.push({
+        key,
+        kind: kind || (dedupeKey === 'main' ? 'main' : 'chat'),
+      });
+      seen.add(dedupeKey);
+    }
+
+    return sessions;
   }
 
   async setSessionModel(sessionKey: string, modelValue: string | null): Promise<void> {

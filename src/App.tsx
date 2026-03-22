@@ -29,7 +29,6 @@ import {
 
 const DEFAULT_GATEWAY_URL = 'ws://127.0.0.1:18789';
 
-const DEFAULT_SESSION_KEY = 'main';
 const LOCAL_CONFIG_KEY = 'relay.config';
 const AUTH_LOCAL_STORAGE_KEY = 'relay.auth.local';
 const AUTH_SESSION_STORAGE_KEY = 'relay.auth.session';
@@ -46,9 +45,21 @@ type AuthSession = {
   email: string;
   accessToken: string;
   refreshToken: string;
-  provider: 'supabase';
   rememberMe: boolean;
   expiresAt: number;
+};
+
+type RecentChatEntry = {
+  id: string;
+  label: string;
+  sessionKey: string;
+};
+
+type ChatThread = {
+  id: string;
+  sessionKey: string;
+  title: string;
+  updatedAt: number;
 };
 
 function extractChatText(message: unknown): string {
@@ -92,9 +103,134 @@ function extractChatRole(message: unknown): ChatMessage['role'] {
   return role === 'user' || role === 'assistant' || role === 'system' ? role : 'assistant';
 }
 
+const RECENT_CHAT_CONTEXT_LIMIT = 8;
+const RECENT_CHAT_CHARS_PER_MESSAGE = 500;
+const SIDEBAR_RECENTS_LIMIT = 7;
+const SIDEBAR_RECENT_LABEL_LIMIT = 88;
+const MAX_THREAD_STORE_ITEMS = 100;
+const DEFAULT_THREAD_TITLE = 'New chat';
+const MAIN_SESSION_KEY = 'main';
+const MAIN_THREAD_TITLE = 'Main chat';
+
+function truncateForContext(text: string, maxChars: number): string {
+  if (text.length <= maxChars) {
+    return text;
+  }
+
+  return `${text.slice(0, maxChars).trimEnd()}...`;
+}
+
+function buildRecentChatContext(messages: ChatMessage[]): string {
+  const recent = messages
+    .filter((message) => (message.role === 'user' || message.role === 'assistant') && message.text.trim().length > 0)
+    .slice(-RECENT_CHAT_CONTEXT_LIMIT)
+    .map((message) => {
+      const speaker = message.role === 'user' ? 'User' : 'Assistant';
+      const normalized = message.text.replace(/\s+/g, ' ').trim();
+      return `${speaker}: ${truncateForContext(normalized, RECENT_CHAT_CHARS_PER_MESSAGE)}`;
+    });
+
+  return recent.join('\n');
+}
+
+function buildOutboundChatPrompt(userText: string, recentMessages: ChatMessage[]): string {
+  const contextBlock = buildRecentChatContext(recentMessages);
+  if (!contextBlock) {
+    return userText;
+  }
+
+  return [
+    'Use the recent conversation context below when helpful. If context conflicts with the latest user request, prioritize the latest request.',
+    '',
+    'Recent conversation:',
+    contextBlock,
+    '',
+    'Latest user message:',
+    userText,
+  ].join('\n');
+}
+
+function toRecentSidebarLabel(text: string): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  if (normalized.length <= SIDEBAR_RECENT_LABEL_LIMIT) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, SIDEBAR_RECENT_LABEL_LIMIT).trimEnd()}...`;
+}
+
+function normalizeSessionKey(sessionKey: string): string {
+  return sessionKey.trim();
+}
+
+function getThreadIdForSession(sessionKey: string): string {
+  return `thread-${sessionKey}`;
+}
+
+function deriveThreadTitleFromMessages(messages: ChatMessage[]): string {
+  const firstUserMessage = messages.find((message) => message.role === 'user');
+  if (!firstUserMessage) {
+    return '';
+  }
+
+  return toRecentSidebarLabel(firstUserMessage.text);
+}
+
+function toFallbackThreadTitle(sessionKey: string): string {
+  const normalized = normalizeSessionKey(sessionKey);
+  if (!normalized) {
+    return DEFAULT_THREAD_TITLE;
+  }
+
+  if (normalized.toLowerCase() === MAIN_SESSION_KEY) {
+    return MAIN_THREAD_TITLE;
+  }
+
+  return DEFAULT_THREAD_TITLE;
+}
+
+function mergeChatThreads(existing: ChatThread[], incoming: ChatThread[]): ChatThread[] {
+  const bySession = new Map<string, ChatThread>();
+
+  for (const thread of [...incoming, ...existing]) {
+    const normalizedSessionKey = normalizeSessionKey(thread.sessionKey).toLowerCase();
+    if (!normalizedSessionKey) {
+      continue;
+    }
+
+    const previous = bySession.get(normalizedSessionKey);
+    if (!previous || thread.updatedAt >= previous.updatedAt) {
+      bySession.set(normalizedSessionKey, thread);
+    }
+  }
+
+  return Array.from(bySession.values())
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, MAX_THREAD_STORE_ITEMS);
+}
+
+function toRecentSidebarItems(threads: ChatThread[]): RecentChatEntry[] {
+  return [...threads]
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, SIDEBAR_RECENTS_LIMIT)
+    .map((thread) => ({
+      id: thread.id,
+      label: thread.title,
+      sessionKey: thread.sessionKey,
+    }));
+}
+
 export default function App() {
   const bridge = window.relay;
   const gatewayClientRef = useRef<OpenClawGatewayClient | null>(null);
+  const activeSessionKeyRef = useRef('');
+  const chatLoadRequestRef = useRef(0);
+  const skipNextChatEffectLoadRef = useRef(false);
+  const threadMessageCache = useRef<Map<string, ChatMessage[]>>(new Map());
 
   const [config, setConfig] = useState<AppConfig>(defaultConfig);
   const [draftGatewayUrl, setDraftGatewayUrl] = useState(DEFAULT_GATEWAY_URL);
@@ -103,6 +239,7 @@ export default function App() {
   const [status, setStatus] = useState('Loading configuration...');
   const [sendingChat, setSendingChat] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
 
   const [saving, setSaving] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -118,7 +255,7 @@ export default function App() {
   const [localApplyLoading, setLocalApplyLoading] = useState(false);
   const [localPlanRootPath, setLocalPlanRootPath] = useState('');
   const [isMaximized, setIsMaximized] = useState(false);
-  const [activeSessionKey, setActiveSessionKey] = useState(DEFAULT_SESSION_KEY);
+  const [activeSessionKey, setActiveSessionKey] = useState('');
   const [chatModels, setChatModels] = useState<ChatModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -129,7 +266,158 @@ export default function App() {
   const [authenticating, setAuthenticating] = useState(false);
   const [authError, setAuthError] = useState('');
   const [guestMode, setGuestMode] = useState(false);
-  const [cloudLockNotice, setCloudLockNotice] = useState('');
+
+  const recentChatItems = toRecentSidebarItems(chatThreads);
+
+  const commitActiveSessionKey = (nextSessionKey: string) => {
+    const normalized = normalizeSessionKey(nextSessionKey);
+    activeSessionKeyRef.current = normalized;
+    setActiveSessionKey(normalized);
+    return normalized;
+  };
+
+  const upsertChatThread = (sessionKey: string, options?: { title?: string; touchedAt?: number }) => {
+    const normalizedSessionKey = normalizeSessionKey(sessionKey);
+    if (!normalizedSessionKey) {
+      return;
+    }
+
+    const incomingTitle = options?.title ? toRecentSidebarLabel(options.title) : '';
+    const touchedAt = options?.touchedAt;
+
+    setChatThreads((current) => {
+      const existing = current.find((thread) => thread.sessionKey === normalizedSessionKey);
+      const canReplaceTitle = !existing || !existing.title || existing.title === DEFAULT_THREAD_TITLE;
+      const fallbackTitle = toFallbackThreadTitle(normalizedSessionKey);
+      const title = canReplaceTitle && incomingTitle ? incomingTitle : existing?.title || fallbackTitle;
+      const updatedAt = touchedAt ?? existing?.updatedAt ?? Date.now();
+
+      const nextThread: ChatThread = {
+        id: getThreadIdForSession(normalizedSessionKey),
+        sessionKey: normalizedSessionKey,
+        title,
+        updatedAt,
+      };
+
+      return mergeChatThreads(current, [nextThread]);
+    });
+  };
+
+  const rekeyChatThread = (fromSessionKey: string, toSessionKey: string) => {
+    const from = normalizeSessionKey(fromSessionKey);
+    const to = normalizeSessionKey(toSessionKey);
+    if (!from || !to || from === to) {
+      return;
+    }
+
+    setChatThreads((current) => {
+      const source = current.find((thread) => thread.sessionKey === from);
+      const target = current.find((thread) => thread.sessionKey === to);
+      if (!source && !target) {
+        return current;
+      }
+
+      const merged: ChatThread = {
+        id: getThreadIdForSession(to),
+        sessionKey: to,
+        title:
+          target?.title && target.title !== DEFAULT_THREAD_TITLE
+            ? target.title
+            : source?.title || target?.title || DEFAULT_THREAD_TITLE,
+        updatedAt: Math.max(source?.updatedAt ?? 0, target?.updatedAt ?? 0, Date.now()),
+      };
+
+      const remaining = current.filter((thread) => thread.sessionKey !== from && thread.sessionKey !== to);
+      return mergeChatThreads(remaining, [merged]);
+    });
+  };
+
+  const loadRecentChatsFromBackend = async (client: OpenClawGatewayClient) => {
+    const sessions = await client.listSessions(100);
+
+    const filtered = sessions.filter((session) => {
+      const normalized = normalizeSessionKey(session.key);
+      return !!normalized;
+    });
+
+    const threadsOrNull = await Promise.all(
+      filtered.slice(0, 20).map(async (session, index) => {
+        try {
+          const history = await client.getHistory(session.key, 30);
+          const titleFromHistory = deriveThreadTitleFromMessages(history);
+          if (!titleFromHistory) {
+            return null;
+          }
+
+          return {
+            id: getThreadIdForSession(session.key),
+            sessionKey: session.key,
+            title: titleFromHistory,
+            updatedAt: Date.now() - index,
+          } satisfies ChatThread;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    const threads = threadsOrNull.filter((thread): thread is ChatThread => thread !== null);
+    setChatThreads(mergeChatThreads([], threads));
+  };
+
+  const loadChatSession = async (sessionKeyInput: string, statusMessage?: string) => {
+    const client = gatewayClientRef.current;
+    if (!client) {
+      return;
+    }
+
+    const requestedSessionKey = normalizeSessionKey(sessionKeyInput);
+    if (!requestedSessionKey) {
+      setStatus('Invalid session key.');
+      return;
+    }
+    commitActiveSessionKey(requestedSessionKey);
+    const requestId = chatLoadRequestRef.current + 1;
+    chatLoadRequestRef.current = requestId;
+
+    try {
+      await client.connect({
+        gatewayUrl: draftGatewayUrl,
+        token: draftGatewayToken,
+      });
+
+      const [history] = await Promise.all([
+        client.getHistory(requestedSessionKey, 30),
+        loadModelsForSession(client, requestedSessionKey),
+      ]);
+
+      if (requestId !== chatLoadRequestRef.current) {
+        return;
+      }
+
+      setChatMessages(history);
+      if (history.length > 0) {
+        threadMessageCache.current.set(requestedSessionKey, history);
+      }
+      const titleFromHistory = deriveThreadTitleFromMessages(history);
+      upsertChatThread(requestedSessionKey, {
+        title: titleFromHistory || undefined,
+      });
+
+      if (statusMessage) {
+        if (titleFromHistory) {
+          setStatus(`${statusMessage}: ${titleFromHistory}`);
+        } else if (history.length === 0) {
+          setStatus(`${statusMessage}: no messages in this chat yet.`);
+        } else {
+          setStatus(`${statusMessage}: ${toFallbackThreadTitle(requestedSessionKey)}`);
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to load chat session.';
+      setStatus(message);
+    }
+  };
 
   const clearAuthStorage = () => {
     localStorage.removeItem(AUTH_LOCAL_STORAGE_KEY);
@@ -160,7 +448,6 @@ export default function App() {
         typeof parsed.email !== 'string' ||
         typeof parsed.accessToken !== 'string' ||
         typeof parsed.refreshToken !== 'string' ||
-        parsed.provider !== 'supabase' ||
         typeof parsed.rememberMe !== 'boolean' ||
         typeof parsed.expiresAt !== 'number'
       ) {
@@ -171,7 +458,6 @@ export default function App() {
         email: parsed.email,
         accessToken: parsed.accessToken,
         refreshToken: parsed.refreshToken,
-        provider: 'supabase',
         rememberMe: parsed.rememberMe,
         expiresAt: parsed.expiresAt,
       };
@@ -180,14 +466,54 @@ export default function App() {
     }
   };
 
-  const ensureActiveSession = async (client: OpenClawGatewayClient) => {
+  const ensureConnectedClient = async (client: OpenClawGatewayClient) => {
     await client.connect({
       gatewayUrl: draftGatewayUrl,
       token: draftGatewayToken,
     });
-    const sessionKey = await client.resolveSessionKey(activeSessionKey || DEFAULT_SESSION_KEY);
-    setActiveSessionKey(sessionKey);
-    return sessionKey;
+  };
+
+  const getOrResolveSession = async (client: OpenClawGatewayClient) => {
+    try {
+      const sessionKey = normalizeSessionKey(await client.getActiveSessionKey());
+      if (!sessionKey) {
+        throw new Error('No active session available from Gateway.');
+      }
+
+      commitActiveSessionKey(sessionKey);
+      await loadRecentChatsFromBackend(client);
+      setStatus(`Session ready: ${sessionKey}`);
+      return sessionKey;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Unable to get active session. ${message}`);
+    }
+  };
+
+  const ensureActiveChatSession = async (
+    client: OpenClawGatewayClient,
+    options?: { createIfMissing?: boolean },
+  ) => {
+    await ensureConnectedClient(client);
+
+    const current = normalizeSessionKey(activeSessionKeyRef.current);
+    if (current) {
+      commitActiveSessionKey(current);
+      return current;
+    }
+
+    if (options?.createIfMissing) {
+      const sessionKey = normalizeSessionKey(await client.createChatSession());
+      if (!sessionKey) {
+        throw new Error('No session key returned from Gateway.');
+      }
+      commitActiveSessionKey(sessionKey);
+      await loadRecentChatsFromBackend(client);
+      setStatus(`Session ready: ${sessionKey}`);
+      return sessionKey;
+    }
+
+    throw new Error('No active chat session. Start a new chat first.');
   };
 
   const loadModelsForSession = async (client: OpenClawGatewayClient, sessionKey: string) => {
@@ -366,6 +692,10 @@ export default function App() {
   }, [bridge]);
 
   useEffect(() => {
+    activeSessionKeyRef.current = normalizeSessionKey(activeSessionKey);
+  }, [activeSessionKey]);
+
+  useEffect(() => {
     const client = new OpenClawGatewayClient();
     client.setConnectionHandler((_connected, message) => {
       setStatus(message);
@@ -373,6 +703,11 @@ export default function App() {
     client.setEventHandler((event) => {
       if (event.type === 'event' && event.event === 'chat') {
         const payload = (event.payload ?? {}) as Record<string, unknown>;
+        const eventSessionKey = typeof payload.sessionKey === 'string' ? payload.sessionKey.trim() : '';
+        if (eventSessionKey && eventSessionKey !== activeSessionKeyRef.current) {
+          return;
+        }
+
         const runId = typeof payload.runId === 'string' ? payload.runId : `evt-${Date.now()}`;
         const state = typeof payload.state === 'string' ? payload.state : 'final';
         const message = payload.message ?? payload;
@@ -410,8 +745,19 @@ export default function App() {
             if (withoutStream.some((entry) => entry.id === finalId)) {
               return withoutStream;
             }
-            return [...withoutStream, { id: finalId, role, text }];
+            const next = [...withoutStream, { id: finalId, role, text }];
+            const cacheKey = activeSessionKeyRef.current;
+            if (cacheKey) {
+              threadMessageCache.current.set(cacheKey, next);
+            }
+            return next;
           });
+
+          if (eventSessionKey) {
+            upsertChatThread(eventSessionKey, {
+              touchedAt: Date.now(),
+            });
+          }
         }
       }
     });
@@ -424,37 +770,41 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const client = gatewayClientRef.current;
+    if (!client) {
+      return;
+    }
+
+    void client
+      .connect({
+        gatewayUrl: draftGatewayUrl,
+        token: draftGatewayToken,
+      })
+      .then(async () => {
+        await loadRecentChatsFromBackend(client);
+      })
+      .catch(() => {
+        // recents will populate after next successful connection
+      });
+  }, [draftGatewayUrl, draftGatewayToken]);
+
+  useEffect(() => {
     if (activePage !== 'chat') {
       return;
     }
 
-    let cancelled = false;
-    const loadChatWindowData = async () => {
-      const client = gatewayClientRef.current;
-      if (!client) {
-        return;
-      }
+    const normalized = normalizeSessionKey(activeSessionKey);
+    if (!normalized) {
+      return;
+    }
 
-      try {
-        const sessionKey = await ensureActiveSession(client);
-        const [history] = await Promise.all([
-          client.getHistory(sessionKey, 30),
-          loadModelsForSession(client, sessionKey),
-        ]);
+    if (skipNextChatEffectLoadRef.current) {
+      skipNextChatEffectLoadRef.current = false;
+      return;
+    }
 
-        if (!cancelled && history.length > 0) {
-          setChatMessages(history);
-        }
-      } catch {
-        // keep existing UI state until the user runs explicit health check
-      }
-    };
-
-    void loadChatWindowData();
-    return () => {
-      cancelled = true;
-    };
-  }, [activePage]);
+    void loadChatSession(normalized, undefined);
+  }, [activePage, activeSessionKey]);
 
   const handleSave = async (event: FormEvent) => {
     event.preventDefault();
@@ -524,9 +874,13 @@ export default function App() {
         token: draftGatewayToken,
       });
 
-      const sessionKey = await client.resolveSessionKey(activeSessionKey || DEFAULT_SESSION_KEY);
-      setActiveSessionKey(sessionKey);
-      void loadModelsForSession(client, sessionKey);
+      const sessionKey = normalizeSessionKey(activeSessionKeyRef.current);
+      if (sessionKey) {
+        void loadModelsForSession(client, sessionKey);
+      } else {
+        setChatModels([]);
+        setSelectedModel('');
+      }
 
       setHealth({ ok: true, message: `Connected to ${draftGatewayUrl}` });
       setStatus('Gateway connection successful.');
@@ -612,8 +966,10 @@ export default function App() {
         token: draftGatewayToken,
       });
 
-      const sessionKey = await client.resolveSessionKey(activeSessionKey || DEFAULT_SESSION_KEY);
-      setActiveSessionKey(sessionKey);
+      const sessionKey = normalizeSessionKey(activeSessionKeyRef.current);
+      if (sessionKey) {
+        commitActiveSessionKey(sessionKey);
+      }
       setHealth({ ok: true, message: `Re-paired and connected to ${draftGatewayUrl}` });
       setStatus('Re-pair complete. If operator.admin is still missing, approve the new request with admin scope on the gateway host.');
     } catch (error) {
@@ -754,31 +1110,45 @@ export default function App() {
     }
 
     setSendingChat(true);
-    setChatMessages((current) => [
-      ...current,
-      {
-        id: `local-${Date.now()}`,
-        role: 'user',
-        text,
-      },
-    ]);
     setTaskPrompt('');
 
     try {
-      const sessionKey = await ensureActiveSession(client);
-      setActiveSessionKey(sessionKey);
+      setChatMessages((current) => {
+        const next = [...current, { id: `local-${Date.now()}`, role: 'user' as const, text }];
+        const cacheKey = activeSessionKeyRef.current;
+        if (cacheKey) {
+          threadMessageCache.current.set(cacheKey, next);
+        }
+        return next;
+      });
+      let sessionKey = await ensureActiveChatSession(client, { createIfMissing: true });
+      upsertChatThread(sessionKey, {
+        title: text,
+        touchedAt: Date.now(),
+      });
 
-      await client.sendChat(sessionKey, text);
+      const outboundMessage = buildOutboundChatPrompt(text, chatMessages);
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          const sent = await client.sendChat(sessionKey, outboundMessage);
+          sessionKey = sent.sessionKey;
+          break;
+        } catch (error) {
+          const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+          const isMissing = message.includes('no session found') || message.includes('no sendable session found');
+          if (!isMissing || attempt === 3) {
+            throw error;
+          }
+          setStatus(`Send retry ${attempt}/3: session=${sessionKey} failed (${message}). Resolving session...`);
+          sessionKey = await getOrResolveSession(client);
+        }
+      }
+
+      commitActiveSessionKey(sessionKey);
       setStatus(`Message sent to OpenClaw Gateway (session: ${sessionKey}). Waiting for streaming events...`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to send chat message.';
-      if (message.includes('missing scope: operator.write')) {
-        setStatus(
-          'Connected without operator.write. Approve this paired device with write scope and reconnect (openclaw devices list, then openclaw devices approve <requestId> or rotate token scopes).',
-        );
-      } else {
-        setStatus(message);
-      }
+      setStatus(message);
     } finally {
       setSendingChat(false);
     }
@@ -797,7 +1167,7 @@ export default function App() {
 
     setChangingModel(true);
     try {
-      const sessionKey = await ensureActiveSession(client);
+      const sessionKey = await ensureActiveChatSession(client, { createIfMissing: true });
       await client.setSessionModel(sessionKey, nextModelValue || null);
       setStatus(
         nextModelValue
@@ -806,15 +1176,85 @@ export default function App() {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update model.';
-      if (message.includes('missing scope: operator.admin')) {
-        setStatus('Missing operator.admin. Use Settings > Reset pairing, then approve the new request with admin scope.');
-      } else {
-        setStatus(message);
-      }
+      setStatus(message);
       setSelectedModel(previousModel);
     } finally {
       setChangingModel(false);
     }
+  };
+
+  const handleStartNewChat = async () => {
+    const client = gatewayClientRef.current;
+    if (!client) {
+      setStatus('Gateway client not initialized.');
+      return;
+    }
+
+    // Save current chat messages before switching
+    const currentKey = activeSessionKeyRef.current;
+    if (currentKey) {
+      const currentMessages = chatMessages;
+      if (currentMessages.length > 0) {
+        threadMessageCache.current.set(currentKey, currentMessages);
+      }
+    }
+
+    setChatMessages([]);
+    setTaskPrompt('');
+
+    try {
+      await ensureConnectedClient(client);
+      const sessionKey = normalizeSessionKey(await client.createChatSession());
+      if (!sessionKey) {
+        throw new Error('No session key returned from Gateway.');
+      }
+      commitActiveSessionKey(sessionKey);
+      setActivePage('chat');
+      setStatus(`Started a new chat: ${sessionKey}.`);
+      void loadModelsForSession(client, sessionKey);
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to create chat session.';
+      setStatus(message);
+    }
+  };
+
+  const handleOpenRecentChat = (sessionKey: string) => {
+    const normalized = sessionKey.trim();
+    if (!normalized) {
+      return;
+    }
+
+    // Save current chat messages before switching
+    const currentKey = activeSessionKeyRef.current;
+    if (currentKey) {
+      setChatMessages((current) => {
+        if (current.length > 0) {
+          threadMessageCache.current.set(currentKey, current);
+        }
+        return current;
+      });
+    }
+
+    setActivePage('chat');
+    commitActiveSessionKey(normalized);
+    setTaskPrompt('');
+
+    // Restore from local cache first
+    const cached = threadMessageCache.current.get(normalized);
+    if (cached && cached.length > 0) {
+      setChatMessages(cached);
+      const titleFromCache = deriveThreadTitleFromMessages(cached);
+      setStatus(titleFromCache ? `Opened chat: ${titleFromCache}` : 'Opened chat.');
+      skipNextChatEffectLoadRef.current = true;
+      return;
+    }
+
+    // Fall back to Gateway history
+    setChatMessages([]);
+    setStatus('Loading recent chat...');
+    skipNextChatEffectLoadRef.current = true;
+    void loadChatSession(normalized, 'Opened chat');
   };
 
   const loadScheduledJobs = async () => {
@@ -952,7 +1392,6 @@ export default function App() {
 
     setAuthSession(null);
     setGuestMode(false);
-    setCloudLockNotice('');
     localStorage.removeItem(RELAY_USAGE_MODE_KEY);
     clearAuthStorage();
     setAuthError('');
@@ -961,24 +1400,11 @@ export default function App() {
 
   const handleContinueAsGuest = () => {
     setGuestMode(true);
-    setCloudLockNotice('');
     setAuthError('');
     setAuthSession(null);
     clearAuthStorage();
     localStorage.setItem(RELAY_USAGE_MODE_KEY, 'guest');
     setStatus('Running in local mode. Sign in anytime for hosted cloud features.');
-  };
-
-  const handleSwitchToCloudSignIn = () => {
-    setGuestMode(false);
-    setCloudLockNotice('');
-    localStorage.removeItem(RELAY_USAGE_MODE_KEY);
-    setStatus('Local mode exited. Sign in to access cloud features.');
-  };
-
-  const handleRequireCloudMode = (feature: string) => {
-    setCloudLockNotice(`${feature} requires cloud sign-in.`);
-    setStatus(`${feature} is a cloud feature. Exit local mode and sign in to continue.`);
   };
 
   const userIdentityLabel = authSession?.email ?? 'Guest (local mode)';
@@ -1010,35 +1436,19 @@ export default function App() {
             sidebarOpen={sidebarOpen}
             activeMenuItem={activeMenuItem}
             activePage={activePage}
+            activeSessionKey={activeSessionKey}
             userEmail={userIdentityLabel}
             guestMode={guestMode}
+            recentItems={recentChatItems}
+            onSelectRecentChat={handleOpenRecentChat}
+            onStartNewChat={handleStartNewChat}
             onSelectMenuItem={setActiveMenuItem}
             onSelectPage={setActivePage}
             onOpenSettings={() => setActivePage('settings')}
             onLogout={handleLogout}
-            onRequireCloudMode={handleRequireCloudMode}
           />
 
           <main className="relative min-h-0 overflow-hidden p-5">
-            {guestMode && cloudLockNotice ? (
-              <div className="mb-4 rounded-xl border border-[rgba(219,145,79,0.38)] bg-[rgba(219,145,79,0.1)] p-3">
-                <p className="font-sans text-sm text-[#7f4f1f]">{cloudLockNotice}</p>
-                <div className="mt-2 flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="border-0 bg-[linear-gradient(120deg,#ea9f7d,#de825e)] text-[#fffefb]"
-                    onClick={handleSwitchToCloudSignIn}
-                  >
-                    Sign in now
-                  </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setCloudLockNotice('')}>
-                    Dismiss
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
             {activePage === 'cowork' ? (
               <CoworkPage
                 taskPrompt={taskPrompt}
@@ -1072,6 +1482,7 @@ export default function App() {
                     onTaskPromptChange={setTaskPrompt}
                     onModelChange={handleModelChange}
                     onSubmit={handleSendChat}
+                    onStartNewChat={handleStartNewChat}
                   />
                 )}
 

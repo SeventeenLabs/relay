@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, CalendarClock, Lightbulb, Lock, LogOut, Plus, Search, Settings, UserRound } from 'lucide-react';
+import { BriefcaseBusiness, CalendarClock, Lightbulb, LogOut, Plus, Search, Settings, UserRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -17,48 +17,49 @@ import {
 
 type AppPage = 'chat' | 'cowork' | 'scheduled' | 'settings';
 
+type RecentSidebarItem = {
+  id: string;
+  label: string;
+  sessionKey: string;
+};
+
 type AppSidebarProps = {
   sidebarOpen: boolean;
   activeMenuItem: string;
   activePage: AppPage;
+  activeSessionKey: string;
   userEmail: string;
   guestMode: boolean;
+  recentItems: RecentSidebarItem[];
+  onSelectRecentChat: (sessionKey: string) => void;
+  onStartNewChat: () => void;
   onSelectMenuItem: (item: string) => void;
   onSelectPage: (page: AppPage) => void;
   onOpenSettings: () => void;
   onLogout: () => void;
-  onRequireCloudMode: (feature: string) => void;
 };
 
 const navItems = [
-  { label: 'New task', icon: Plus, page: 'cowork' as const },
   { label: 'Search', icon: Search },
-  { label: 'Scheduled', icon: CalendarClock, page: 'scheduled' as const, cloudOnly: true },
+  { label: 'Scheduled', icon: CalendarClock, page: 'scheduled' as const },
   { label: 'Ideas', icon: Lightbulb },
   { label: 'Customize', icon: BriefcaseBusiness },
 ] as const;
-
-const recentTasks = [
-  'Run SEO audit for benai.co',
-  'Analyze YouTube Studio data structure',
-  'Curate newsletter ideas from AI source docs',
-  'Create Google Doc with campaign brief',
-  'Convert LinkedIn post to infographic outline',
-  'Build newsletter writer skill from examples',
-  'Review sales pipeline and next actions',
-];
 
 export function AppSidebar({
   sidebarOpen,
   activeMenuItem,
   activePage,
+  activeSessionKey,
   userEmail,
   guestMode,
+  recentItems,
+  onSelectRecentChat,
+  onStartNewChat,
   onSelectMenuItem,
   onSelectPage,
   onOpenSettings,
   onLogout,
-  onRequireCloudMode,
 }: AppSidebarProps) {
   return (
     <Sidebar
@@ -70,28 +71,33 @@ export function AppSidebar({
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu aria-label="primary workspace menu">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  type="button"
+                  className="gap-2 font-sans text-[13px]"
+                  title="New Chat"
+                  onClick={onStartNewChat}
+                >
+                  <Plus className="size-3.5 text-muted-foreground" />
+                  <span>New Chat</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.label}>
                   <SidebarMenuButton
                     type="button"
                     active={item.label === activeMenuItem}
                     onClick={() => {
-                      if (guestMode && item.cloudOnly) {
-                        onRequireCloudMode(item.label);
-                        return;
-                      }
-
                       onSelectMenuItem(item.label);
                       if (item.page) {
                         onSelectPage(item.page);
                       }
                     }}
                     className="gap-2 font-sans text-[13px]"
-                    title={guestMode && item.cloudOnly ? `${item.label} requires cloud sign-in` : item.label}
+                    title={item.label}
                   >
                     <item.icon className="size-3.5 text-muted-foreground" />
                     <span>{item.label}</span>
-                    {guestMode && item.cloudOnly ? <Lock className="ml-auto size-3.5 text-muted-foreground" /> : null}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -106,13 +112,29 @@ export function AppSidebar({
           <SidebarGroupContent className="min-h-0">
             <ScrollArea className="h-full min-h-0">
               <SidebarMenu className="gap-1 pr-1">
-                {recentTasks.map((task) => (
-                  <SidebarMenuItem key={task}>
-                    <SidebarMenuButton type="button" className="w-full truncate font-sans text-[12px]" title={task}>
-                      {task}
+                {recentItems.length === 0 ? (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton type="button" className="w-full justify-start font-sans text-[12px] text-muted-foreground" disabled>
+                      No recent chats yet
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                ))}
+                ) : (
+                  recentItems.map((item) => (
+                    <SidebarMenuItem key={item.id}>
+                      <SidebarMenuButton
+                        type="button"
+                        active={activePage === 'chat' && item.sessionKey === activeSessionKey}
+                        className="w-full truncate font-sans text-[12px]"
+                        title={item.label}
+                        onClick={() => {
+                          onSelectRecentChat(item.sessionKey);
+                        }}
+                      >
+                        {item.label}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))
+                )}
               </SidebarMenu>
             </ScrollArea>
           </SidebarGroupContent>

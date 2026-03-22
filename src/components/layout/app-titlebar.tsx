@@ -1,6 +1,7 @@
 import type { CSSProperties, MouseEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type AppPage = 'chat' | 'cowork' | 'scheduled' | 'settings';
 
@@ -91,28 +92,29 @@ export function AppTitlebar({
         onDoubleClick={handleTitlebarDoubleClick}
         onContextMenu={handleTitlebarContextMenu}
       >
-        <div className="inline-flex items-center gap-2" style={noDragStyle} aria-label="workspace mode">
-          <span className="rounded-full border border-border bg-background px-2 py-0.5 font-sans text-[10px] uppercase tracking-wide text-muted-foreground">
-            {usageModeLabel}
-          </span>
-          {modeOptions.map((mode) => (
-            <Button
-              key={mode}
-              type="button"
-              variant="ghost"
-              size="xs"
-              className={
-                activePage === mode
-                  ? 'h-6 rounded-md border border-border bg-background px-2.5 text-[11px] font-medium capitalize text-foreground'
-                  : 'h-6 rounded-md border border-transparent px-2.5 text-[11px] font-medium capitalize text-muted-foreground hover:text-foreground'
+        <div className="inline-flex items-center" style={noDragStyle} aria-label="workspace mode">
+          <Tabs
+            value={activePage === 'chat' || activePage === 'cowork' ? activePage : 'chat'}
+            onValueChange={(nextMode) => {
+              if (nextMode === 'chat' || nextMode === 'cowork') {
+                onSelectPage(nextMode);
               }
-              style={noDragStyle}
-              onClick={() => onSelectPage(mode)}
-              aria-pressed={activePage === mode}
-            >
-              {mode}
-            </Button>
-          ))}
+            }}
+            className="gap-0"
+          >
+            <TabsList className="h-9 rounded-xl border-0 bg-transparent px-1 py-1 shadow-none gap-1">
+              {modeOptions.map((mode) => (
+                <TabsTrigger
+                  key={mode}
+                  value={mode}
+                  className="h-7 min-w-[84px] rounded-lg px-3 font-sans text-[12px] font-semibold tracking-[0.03em] uppercase text-muted-foreground data-active:border-transparent data-active:bg-[linear-gradient(120deg,#e5a48a,#d98765)] data-active:text-[#fffefb]"
+                  style={noDragStyle}
+                >
+                  {mode}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
         </div>
       </div>
 
