@@ -283,6 +283,7 @@ export default function App() {
   const [health, setHealth] = useState<HealthCheckResult | null>(null);
   const [status, setStatus] = useState('Loading configuration...');
   const [sendingChat, setSendingChat] = useState(false);
+  const [awaitingChatStream, setAwaitingChatStream] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
 
@@ -767,6 +768,7 @@ export default function App() {
         const role = extractChatRole(message);
 
         if (state === 'error') {
+          setAwaitingChatStream(false);
           const errorMessage =
             typeof payload.errorMessage === 'string' && payload.errorMessage.trim()
               ? payload.errorMessage
@@ -776,6 +778,7 @@ export default function App() {
         }
 
         if (state === 'delta' && text) {
+          setAwaitingChatStream(false);
           const streamId = `stream-${runId}`;
           setChatMessages((current) => {
             const index = current.findIndex((entry) => entry.id === streamId);
@@ -790,6 +793,7 @@ export default function App() {
         }
 
         if ((state === 'final' || state === 'aborted') && text) {
+          setAwaitingChatStream(false);
           const streamId = `stream-${runId}`;
           const finalId = `final-${runId}`;
           setChatMessages((current) => {
@@ -1130,24 +1134,40 @@ export default function App() {
     }
 
     setSendingChat(true);
+    setAwaitingChatStream(false);
     setTaskPrompt('');
 
     try {
+      const shouldCreateFreshSession = chatMessages.length === 0;
+
+      let sessionKey = '';
+      if (shouldCreateFreshSession) {
+        await ensureConnectedClient(client);
+        sessionKey = normalizeSessionKey(await client.createChatSession());
+        if (!sessionKey) {
+          throw new Error('No session key returned from Gateway.');
+        }
+        // Avoid loading history immediately after creating a fresh session,
+        // which can race and overwrite the optimistic first user message.
+        skipNextChatEffectLoadRef.current = true;
+        commitActiveSessionKey(sessionKey);
+      } else {
+        sessionKey = await ensureActiveChatSession(client, { createIfMissing: true });
+      }
+
       setChatMessages((current) => {
         const next = [...current, { id: `local-${Date.now()}`, role: 'user' as const, text }];
-        const cacheKey = activeSessionKeyRef.current;
-        if (cacheKey) {
-          threadMessageCache.current.set(cacheKey, next);
-        }
+        threadMessageCache.current.set(sessionKey, next);
         return next;
       });
-      let sessionKey = await ensureActiveChatSession(client, { createIfMissing: true });
+
       upsertChatThread(sessionKey, {
         title: text,
         touchedAt: Date.now(),
       });
 
       const outboundMessage = buildOutboundChatPrompt(text, chatMessages);
+      setAwaitingChatStream(true);
       for (let attempt = 1; attempt <= 3; attempt += 1) {
         try {
           const sent = await client.sendChat(sessionKey, outboundMessage);
@@ -1167,6 +1187,7 @@ export default function App() {
       commitActiveSessionKey(sessionKey);
       setStatus(`Message sent to OpenClaw Gateway (session: ${sessionKey}). Waiting for streaming events...`);
     } catch (error) {
+      setAwaitingChatStream(false);
       const message = error instanceof Error ? error.message : 'Failed to send chat message.';
       setStatus(message);
     } finally {
@@ -1220,6 +1241,7 @@ export default function App() {
     }
 
     setChatMessages([]);
+    setAwaitingChatStream(false);
     setTaskPrompt('');
 
     try {
@@ -1259,6 +1281,7 @@ export default function App() {
     setActivePage('chat');
     commitActiveSessionKey(normalized);
     setTaskPrompt('');
+    setAwaitingChatStream(false);
 
     // Restore from local cache first
     const cached = threadMessageCache.current.get(normalized);
@@ -1272,6 +1295,7 @@ export default function App() {
 
     // Fall back to Gateway history
     setChatMessages([]);
+    setAwaitingChatStream(false);
     setStatus('Loading recent chat...');
     skipNextChatEffectLoadRef.current = true;
     void loadChatSession(normalized, 'Opened chat');
@@ -1591,6 +1615,7 @@ export default function App() {
                     taskPrompt={taskPrompt}
                     messages={chatMessages}
                     sending={sendingChat}
+                    awaitingStream={awaitingChatStream}
                     sessionKey={activeSessionKey}
                     models={chatModels}
                     selectedModel={selectedModel}
@@ -1600,7 +1625,6 @@ export default function App() {
                     onTaskPromptChange={setTaskPrompt}
                     onModelChange={handleModelChange}
                     onSubmit={handleSendChat}
-                    onStartNewChat={handleStartNewChat}
                   />
                 )}
 

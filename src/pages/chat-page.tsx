@@ -1,7 +1,7 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 
-import { ArrowUp, Loader2 } from 'lucide-react';
+import { ArrowUp, ChevronDown, FolderPlus, Loader2, Pencil, Star, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Components } from 'react-markdown';
@@ -47,6 +47,7 @@ type ChatPageProps = {
   taskPrompt: string;
   messages: ChatMessage[];
   sending: boolean;
+  awaitingStream: boolean;
   sessionKey: string;
   models: ChatModelOption[];
   selectedModel: string;
@@ -56,13 +57,13 @@ type ChatPageProps = {
   onTaskPromptChange: (value: string) => void;
   onModelChange: (value: string) => void;
   onSubmit: (event: FormEvent) => void;
-  onStartNewChat: () => void;
 };
 
 export function ChatPage({
   taskPrompt,
   messages,
   sending,
+  awaitingStream,
   sessionKey,
   models,
   selectedModel,
@@ -72,14 +73,33 @@ export function ChatPage({
   onTaskPromptChange,
   onModelChange,
   onSubmit,
-  onStartNewChat,
 }: ChatPageProps) {
   const trimmedStatus = status.trim();
   const isInitial = messages.length === 0;
   const firstUserMessage = messages.find((message) => message.role === 'user')?.text.trim() ?? '';
   const threadTitle = firstUserMessage ? firstUserMessage.slice(0, 64) : 'New conversation';
   const formRef = useRef<HTMLFormElement | null>(null);
+  const headerMenuRef = useRef<HTMLDivElement | null>(null);
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const canSend = taskPrompt.trim().length > 0 && !sending;
+
+  useEffect(() => {
+    if (!headerMenuOpen) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!headerMenuRef.current || !(event.target instanceof Node)) {
+        return;
+      }
+      if (!headerMenuRef.current.contains(event.target)) {
+        setHeaderMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => window.removeEventListener('mousedown', handleClickOutside);
+  }, [headerMenuOpen]);
 
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey) {
@@ -176,33 +196,60 @@ export function ChatPage({
 
   return (
     <section className="grid h-full w-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
-      <header className="flex items-center justify-between border-b border-[rgba(31,31,28,0.08)] px-4 py-3">
-        <div className="flex items-center gap-2">
-          <p className="max-w-[460px] truncate font-sans text-sm font-medium text-foreground">{threadTitle}</p>
-          <span className="font-sans text-xs text-muted-foreground">˅</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 rounded-md px-2.5 font-sans text-[11px]"
-            onClick={onStartNewChat}
-          >
-            New chat
-          </Button>
+      <header className="flex items-center px-3 py-1">
+        <div className="relative" ref={headerMenuRef}>
           <button
             type="button"
-            className="h-6 w-6 rounded-md border-0 bg-transparent text-sm text-muted-foreground transition hover:bg-muted"
-            aria-label="Open thread actions"
+            className="inline-flex h-8 max-w-[460px] items-center gap-2 rounded-md border border-[rgba(31,31,28,0.12)] bg-white px-2.5 font-sans text-sm font-medium text-foreground transition hover:bg-[rgba(31,31,28,0.03)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-haspopup="menu"
+            aria-expanded={headerMenuOpen}
+            onClick={() => setHeaderMenuOpen((open) => !open)}
+            title={threadTitle}
           >
-            ↗
+            <span className="truncate">{threadTitle}</span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </button>
+
+          {headerMenuOpen && (
+            <div className="absolute left-0 top-full z-30 mt-2 w-[224px] rounded-2xl border border-[rgba(31,31,28,0.14)] bg-[#f7f7f7] p-2 shadow-[0_8px_20px_rgba(18,18,16,0.14)]">
+              <button
+                type="button"
+                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-foreground/85 transition hover:bg-[rgba(31,31,28,0.08)]"
+              >
+                <Star className="h-4 w-4 text-muted-foreground" />
+                Markieren
+              </button>
+              <button
+                type="button"
+                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-foreground/85 transition hover:bg-[rgba(31,31,28,0.08)]"
+              >
+                <Pencil className="h-4 w-4 text-muted-foreground" />
+                Umbenennen
+              </button>
+              <button
+                type="button"
+                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-foreground/85 transition hover:bg-[rgba(31,31,28,0.08)]"
+              >
+                <FolderPlus className="h-4 w-4 text-muted-foreground" />
+                Zum Projekt hinzufugen
+              </button>
+
+              <div className="my-1 h-px bg-[rgba(31,31,28,0.12)]" />
+
+              <button
+                type="button"
+                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-[#b42318] transition hover:bg-[#fbe8e8]"
+              >
+                <Trash2 className="h-4 w-4" />
+                Loschen
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
-      <ScrollArea className="h-full px-4 py-4">
-        <div className="mx-auto grid w-full max-w-[760px] gap-5 pb-3">
+      <ScrollArea className="h-full px-3 py-0.5">
+        <div className="mx-auto grid w-full max-w-[760px] gap-4 pb-0">
           {messages.map((message) => (
             <article key={message.id} className={message.role === 'user' ? 'ml-auto w-[min(92%,620px)]' : 'w-[min(96%,760px)]'}>
               {message.role === 'user' ? (
@@ -218,12 +265,21 @@ export function ChatPage({
               )}
             </article>
           ))}
+
+          {awaitingStream && (
+            <article className="w-[min(96%,760px)]">
+              <div className="inline-flex items-center gap-2 rounded-xl bg-[rgba(31,31,28,0.06)] px-3 py-2 font-sans text-sm text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Thinking...
+              </div>
+            </article>
+          )}
         </div>
       </ScrollArea>
 
-      <div className="px-4 pb-3 pt-1">
+      <div className="px-3 pb-0.5 pt-0">
         <form
-          className="mx-auto w-full max-w-[760px] rounded-3xl border border-[rgba(31,31,28,0.12)] bg-[rgba(255,255,255,0.9)] p-4 shadow-[0_8px_24px_rgba(31,31,28,0.05)]"
+          className="mx-auto w-full max-w-[760px] rounded-3xl border border-[rgba(31,31,28,0.12)] bg-[rgba(255,255,255,0.9)] p-3 shadow-[0_8px_24px_rgba(31,31,28,0.05)]"
           onSubmit={onSubmit}
           ref={formRef}
         >
@@ -234,7 +290,7 @@ export function ChatPage({
             rows={2}
             onKeyDown={handleComposerKeyDown}
             aria-label="Message"
-            className="min-h-[72px] resize-none border-0 bg-transparent px-0 py-1 font-sans shadow-none focus-visible:ring-0"
+            className="min-h-[72px] resize-none border-0 bg-transparent px-0 py-0.5 font-sans shadow-none focus-visible:ring-0"
           />
 
           <div className="mt-2 flex items-center justify-between gap-2">
@@ -272,7 +328,7 @@ export function ChatPage({
           </p>
         </form>
 
-        <p className="mt-2 text-center font-sans text-[11px] text-muted-foreground">{trimmedStatus || 'Claude ist eine KI und kann Fehler machen. Bitte ueberpruefe die zitierten Quellen.'}</p>
+        <p className="mt-1 text-center font-sans text-[11px] text-muted-foreground">{trimmedStatus || 'Claude ist eine KI und kann Fehler machen. Bitte ueberpruefe die zitierten Quellen.'}</p>
       </div>
     </section>
   );
