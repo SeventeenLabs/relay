@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 
 import type {
   AppConfig,
+  ChatActivityItem,
   ChatMessage,
   ChatModelOption,
   HealthCheckResult,
@@ -530,6 +531,144 @@ function stripRelayActionPayloadFromText(rawText: string): string {
   return sanitized.replace(/\n{3,}/g, '\n\n').trim();
 }
 
+function parseRelayActivityItems(rawInput: unknown): ChatActivityItem[] {
+  const normalizeItems = (value: unknown): ChatActivityItem[] => {
+    const items = Array.isArray(value) ? value : [];
+    return items.reduce<ChatActivityItem[]>((acc, item, index) => {
+      if (!item || typeof item !== 'object') {
+        return acc;
+      }
+      const record = item as Record<string, unknown>;
+      const label = typeof record.label === 'string' ? record.label.trim() : '';
+      if (!label) {
+        return acc;
+      }
+      const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : `activity-${index + 1}`;
+      const toneValue = typeof record.tone === 'string' ? record.tone.trim().toLowerCase() : 'neutral';
+      const tone: ChatActivityItem['tone'] =
+        toneValue === 'success' || toneValue === 'danger' || toneValue === 'neutral' ? toneValue : 'neutral';
+      const details = typeof record.details === 'string' && record.details.trim() ? record.details.trim() : undefined;
+      acc.push({ id, label, details, tone });
+      return acc;
+    }, []);
+  };
+
+  const queue: unknown[] = [rawInput];
+  const seen = new Set<unknown>();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current === undefined || current === null) {
+      continue;
+    }
+
+    if (typeof current !== 'object') {
+      continue;
+    }
+
+    if (seen.has(current)) {
+      continue;
+    }
+    seen.add(current);
+
+    if (Array.isArray(current)) {
+      for (const item of current) {
+        queue.push(item);
+      }
+      continue;
+    }
+
+    const record = current as Record<string, unknown>;
+    const direct = normalizeItems(record.relay_activity ?? record.relayActivity);
+    if (direct.length > 0) {
+      return direct;
+    }
+
+    for (const value of Object.values(record)) {
+      queue.push(value);
+    }
+  }
+
+  return [];
+}
+
+function deriveActivityItemsFromAssistantText(text: string, runId: string): ChatActivityItem[] {
+  const normalized = text.trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const lower = normalized.toLowerCase();
+  const hasActionVerb =
+    lower.includes('created') ||
+    lower.includes('updated') ||
+    lower.includes('deleted') ||
+    lower.includes('scheduled') ||
+    lower.includes('applied') ||
+    lower.includes('presented');
+  const hasWindowsPathHint = normalized.includes(':\\');
+  const hasFolderHint = lower.includes(' folder ');
+  const hasFileHint = lower.includes(' file');
+  const hasInPhrase = lower.includes(' in ');
+  const tokens = normalized.split(' ');
+  const hasFileNameToken = tokens.some((token) => {
+    const trimmed = token.trim();
+    if (!trimmed || trimmed.length < 3 || trimmed.length > 80) {
+      return false;
+    }
+    if (trimmed.endsWith('.') || trimmed.endsWith(',')) {
+      return false;
+    }
+    const dotIndex = trimmed.lastIndexOf('.');
+    if (dotIndex <= 0 || dotIndex >= trimmed.length - 1) {
+      return false;
+    }
+    return true;
+  });
+
+  const hasContextHint = hasWindowsPathHint || hasFolderHint || hasFileHint || (hasInPhrase && hasFileNameToken);
+
+  if (!hasActionVerb || !hasContextHint) {
+    return [];
+  }
+
+  const tone: ChatActivityItem['tone'] =
+    lower.includes('failed') || lower.includes('error')
+      ? 'danger'
+      : lower.includes('created') || lower.includes('updated') || lower.includes('applied') || lower.includes('done')
+        ? 'success'
+        : 'neutral';
+
+  const firstLine = normalized.split('\n')[0]?.trim() || normalized;
+  return [
+    {
+      id: `activity-summary-${runId}`,
+      label: firstLine,
+      details: normalized,
+      tone,
+    },
+  ];
+}
+
+function normalizeCoworkMessage(message: ChatMessage): ChatMessage {
+  if (message.meta?.kind === 'activity' || message.role !== 'assistant') {
+    return message;
+  }
+
+  const items = deriveActivityItemsFromAssistantText(message.text, message.id);
+  if (items.length === 0) {
+    return message;
+  }
+
+  return {
+    ...message,
+    meta: {
+      kind: 'activity',
+      items,
+    },
+  };
+}
+
 export default function App() {
   const bridge = window.relay;
   const gatewayClientRef = useRef<OpenClawGatewayClient | null>(null);
@@ -821,6 +960,7 @@ export default function App() {
       });
 
       const history = await client.getHistory(requestedSessionKey, 50);
+      const normalizedHistory = history.map(normalizeCoworkMessage);
 
       if (requestId !== coworkLoadRequestRef.current) {
         return;
@@ -828,12 +968,12 @@ export default function App() {
 
       void loadCoworkModels(client, requestedSessionKey);
 
-      setCoworkMessages(history);
-      if (history.length > 0) {
-        coworkMessageCache.current.set(requestedSessionKey, history);
+      setCoworkMessages(normalizedHistory);
+      if (normalizedHistory.length > 0) {
+        coworkMessageCache.current.set(requestedSessionKey, normalizedHistory);
       }
 
-      const titleFromHistory = deriveThreadTitleFromMessages(history);
+      const titleFromHistory = deriveThreadTitleFromMessages(normalizedHistory);
       upsertCoworkThread(requestedSessionKey, {
         title: titleFromHistory || undefined,
       });
@@ -1223,28 +1363,74 @@ export default function App() {
             setCoworkStreamingText(visibleText);
             const streamId = `cowork-stream-${runId}`;
             const finalId = `cowork-final-${runId}`;
+            const relayActions = parseRelayFileActions({
+              text,
+              message,
+              payload,
+            });
+            const structuredActivityItems = parseRelayActivityItems({
+              text,
+              message,
+              payload,
+            });
+            const fallbackActivityItems = deriveActivityItemsFromAssistantText(visibleText, runId);
+            const activityItems = structuredActivityItems.length > 0 ? structuredActivityItems : fallbackActivityItems;
+            const hasStructuredActions = relayActions.length > 0;
+            const hasStructuredActivity = activityItems.length > 0;
             setCoworkMessages((current) => {
-              const withoutStream = current.filter((entry) => entry.id !== streamId);
+              const withoutStream = current.filter((entry) => {
+                if (entry.id === streamId) {
+                  return false;
+                }
+                if ((hasStructuredActions || hasStructuredActivity) && entry.id.startsWith('cowork-stream-')) {
+                  return false;
+                }
+                return true;
+              });
               if (withoutStream.some((entry) => entry.id === finalId)) {
                 return withoutStream;
               }
-              const next = visibleText ? [...withoutStream, { id: finalId, role, text: visibleText }] : withoutStream;
+              // When the final event includes structured relay_actions, activity receipts are the
+              // canonical UI output and we suppress duplicate assistant confirmation text.
+              const next =
+                !hasStructuredActions && !hasStructuredActivity && visibleText
+                  ? [...withoutStream, { id: finalId, role, text: visibleText }]
+                  : withoutStream;
               if (eventSessionKey) {
                 coworkMessageCache.current.set(eventSessionKey, next);
               }
               return next;
             });
+
+            if (!hasStructuredActions && hasStructuredActivity) {
+              const activityMessage: ChatMessage = {
+                id: `cowork-activity-${runId}`,
+                role: 'system',
+                text: activityItems.map((item) => item.label).join('\n'),
+                meta: {
+                  kind: 'activity',
+                  items: activityItems,
+                },
+              };
+
+              setCoworkMessages((current) => {
+                if (current.some((entry) => entry.id === activityMessage.id)) {
+                  return current;
+                }
+
+                const next = [...current, activityMessage];
+                if (eventSessionKey) {
+                  coworkMessageCache.current.set(eventSessionKey, next);
+                }
+                return next;
+              });
+            }
             if (eventSessionKey) {
               upsertCoworkThread(eventSessionKey, {
                 touchedAt: Date.now(),
               });
             }
 
-            const relayActions = parseRelayFileActions({
-              text,
-              message,
-              payload,
-            });
             const actionRunKey = `${eventSessionKey || 'unknown'}:${runId}`;
             if (
               relayActions.length > 0 &&
@@ -1275,10 +1461,35 @@ export default function App() {
                     '```',
                   ];
 
+                  const activityItems: ChatActivityItem[] = [
+                    {
+                      id: `activity-summary-${runId}`,
+                      label: summary,
+                      details: [
+                        ...previews,
+                        ...errors.map((line) => `! ${line}`),
+                      ].join('\n').trim() || summary,
+                      tone: errors.length > 0 ? 'danger' : 'success',
+                    },
+                    ...actionReceipts.map((receipt, index): ChatActivityItem => {
+                      const tone: ChatActivityItem['tone'] = receipt.status === 'ok' ? 'success' : 'danger';
+                      return {
+                        id: `activity-receipt-${runId}-${index + 1}`,
+                        label: `${receipt.status === 'ok' ? 'Done.' : 'Failed.'} ${receipt.type} ${receipt.path}`,
+                        details: receipt.message || receipt.errorCode || receipt.path,
+                        tone,
+                      };
+                    }),
+                  ];
+
                   const receiptMessage: ChatMessage = {
                     id: `cowork-actions-${runId}`,
                     role: 'system',
                     text: receiptLines.join('\n'),
+                    meta: {
+                      kind: 'activity',
+                      items: activityItems,
+                    },
                   };
 
                   setCoworkMessages((current) => {
@@ -1296,14 +1507,14 @@ export default function App() {
 
                 if (!bridge) {
                   const noBridgeMessage = 'AI requested local file actions, but Electron desktop bridge is unavailable.';
-                  postActionReceipt(noBridgeMessage, [], [], []);
+                  postActionReceipt(noBridgeMessage, [], [], [noBridgeMessage]);
                   return;
                 }
 
                 const rootPath = workingFolderRef.current;
                 if (!rootPath) {
                   const noFolderMessage = 'AI requested local file actions, but no working folder is selected.';
-                  postActionReceipt(noFolderMessage, [], [], []);
+                  postActionReceipt(noFolderMessage, [], [], [noFolderMessage]);
                   return;
                 }
 
@@ -1512,6 +1723,17 @@ export default function App() {
                   'No executable relay_actions were found in the cowork final event.',
                   `Folder: ${workingFolderRef.current || '(not set)'}`,
                 ].join('\n'),
+                meta: {
+                  kind: 'activity',
+                  items: [
+                    {
+                      id: `activity-no-actions-${runId}`,
+                      label: 'No executable relay_actions were found.',
+                      details: `Folder: ${workingFolderRef.current || '(not set)'}`,
+                      tone: 'neutral',
+                    },
+                  ],
+                },
               };
 
               setCoworkMessages((current) => {

@@ -5,7 +5,7 @@ import { ArrowUp, ChevronRight, Clock3, FileText, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ChatModelOption, LocalActionReceipt, LocalFilePlanAction } from '@/app-types';
+import type { ChatActivityItem, ChatMessage, ChatModelOption, LocalActionReceipt, LocalFilePlanAction } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,12 +15,6 @@ import { Textarea } from '@/components/ui/textarea';
 
 type TaskState = 'idle' | 'planned';
 type CoworkRunPhase = 'idle' | 'sending' | 'streaming' | 'completed' | 'error';
-
-type CoworkMessage = {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  text: string;
-};
 
 type InlineActivityCard = {
   id: string;
@@ -34,7 +28,7 @@ type CoworkPageProps = {
   workingFolder: string;
   taskState: TaskState;
   status: string;
-  messages: CoworkMessage[];
+  messages: ChatMessage[];
   rightPanelOpen: boolean;
   awaitingStream: boolean;
   streamingAssistantText: string;
@@ -123,111 +117,23 @@ const markdownComponents: Components = {
   pre: ({ children }) => <pre className="mb-3 last:mb-0">{children}</pre>,
 };
 
-function isSystemLikeMessage(message: CoworkMessage): boolean {
-  if (message.role === 'system') {
-    return true;
-  }
-
-  const text = message.text.trim();
-  if (!text) {
-    return false;
-  }
-
-  return (
-    /relay_action_receipts/i.test(text) ||
-    /^No executable relay_actions/i.test(text) ||
-    /^Executed\s+\d+\s+local action/i.test(text) ||
-    /^AI requested local file actions/i.test(text) ||
-    /^Folder:\s+/im.test(text)
-  );
+function isSystemLikeMessage(message: ChatMessage): boolean {
+  return message.role === 'system' && message.meta?.kind !== 'activity';
 }
 
-function extractInlineActivityCards(message: CoworkMessage): { body: string; cards: InlineActivityCard[] } {
-  if (message.role !== 'assistant') {
+function extractInlineActivityCards(message: ChatMessage): { body: string; cards: InlineActivityCard[] } {
+  if (message.meta?.kind !== 'activity') {
     return { body: message.text, cards: [] };
   }
 
-  const lines = message.text.split('\n');
-  const kept: string[] = [];
-  const cards: InlineActivityCard[] = [];
+  const toCard = (item: ChatActivityItem): InlineActivityCard => ({
+    id: item.id,
+    label: item.label,
+    details: item.details || `Raw event: ${item.label}`,
+    tone: item.tone,
+  });
 
-  const looksLikeActivity = (line: string) => {
-    const normalized = line.trim();
-    if (!normalized) {
-      return false;
-    }
-
-    return (
-      /^Presented\s+.+\s+file\s+from\s+.+\s+directory\s*>?$/i.test(normalized) ||
-      /^Created\s+scheduled\s+task\s*:/i.test(normalized) ||
-      /^(?:Done\.?\s+)?(Created|Updated|Deleted|Scheduled|Queued|Applied|Presented)\b/i.test(normalized)
-    );
-  };
-
-  const toTone = (line: string): InlineActivityCard['tone'] => {
-    if (/failed|error|unavailable/i.test(line)) {
-      return 'danger';
-    }
-    if (/created|scheduled|applied|updated/i.test(line)) {
-      return 'success';
-    }
-    return 'neutral';
-  };
-
-  const looksLikeContinuationDetail = (line: string) => {
-    const normalized = line.trim();
-    if (!normalized) {
-      return false;
-    }
-
-    return (
-      /^[-*•]\s+/.test(normalized) ||
-      /^(Path|Directory|File|Task|Id|ID|Source|Result|Status)\s*:/i.test(normalized) ||
-      /^\s+/.test(line)
-    );
-  };
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? '';
-    if (!looksLikeActivity(line)) {
-      kept.push(line);
-      continue;
-    }
-
-    const label = line.trim().replace(/\s*>$/, '');
-    const detailLines: string[] = [];
-    let cursor = index + 1;
-    while (cursor < lines.length) {
-      const candidate = lines[cursor] ?? '';
-      if (!candidate.trim()) {
-        break;
-      }
-      if (looksLikeActivity(candidate)) {
-        break;
-      }
-      if (!looksLikeContinuationDetail(candidate)) {
-        break;
-      }
-
-      detailLines.push(candidate.trim());
-      cursor += 1;
-    }
-
-    if (detailLines.length > 0) {
-      index = cursor - 1;
-    }
-
-    const details = detailLines.length > 0 ? detailLines.join('\n') : `Raw event: ${label}`;
-    cards.push({
-      id: `${message.id}-activity-${index}`,
-      label,
-      details,
-      tone: toTone(label),
-    });
-  }
-
-  const body = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-  return { body, cards };
+  return { body: '', cards: message.meta.items.map(toCard) };
 }
 
 export function CoworkPage({

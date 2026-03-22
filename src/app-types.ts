@@ -13,7 +13,23 @@ export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant' | 'system';
   text: string;
+  meta?: ChatMessageMeta;
 };
+
+export type ChatActivityTone = 'neutral' | 'success' | 'danger';
+
+export type ChatActivityItem = {
+  id: string;
+  label: string;
+  details?: string;
+  tone: ChatActivityTone;
+};
+
+export type ChatMessageMeta =
+  | {
+      kind: 'activity';
+      items: ChatActivityItem[];
+    };
 
 export type ChatModelOption = {
   value: string;
