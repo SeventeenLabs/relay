@@ -1,9 +1,10 @@
 import type { CSSProperties, MouseEvent } from 'react';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-type AppPage = 'chat' | 'cowork' | 'scheduled' | 'settings';
+type AppPage = 'chat' | 'cowork' | 'settings';
 
 type AppTitlebarProps = {
   sidebarOpen: boolean;
@@ -79,7 +80,7 @@ export function AppTitlebar({
           onClick={onToggleSidebar}
           aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
         >
-          ☰
+          {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
         </Button>
         <Button type="button" variant="ghost" size="icon-xs" className="size-6 text-muted-foreground" aria-label="Back">
           ←

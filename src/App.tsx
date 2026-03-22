@@ -1504,7 +1504,7 @@ export default function App() {
       ) : canUseAppShell ? (
         <SidebarProvider
           className={`grid h-full overflow-hidden transition-[grid-template-columns] duration-200 ${
-            sidebarOpen ? 'grid-cols-[280px_minmax(0,1fr)]' : 'grid-cols-[0px_minmax(0,1fr)]'
+            sidebarOpen ? 'grid-cols-[280px_minmax(0,1fr)]' : 'grid-cols-[64px_minmax(0,1fr)]'
           }`}
         >
           <AppSidebar
