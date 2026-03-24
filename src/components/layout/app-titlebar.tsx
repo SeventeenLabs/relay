@@ -123,7 +123,7 @@ export function AppTitlebar({
                 <TabsTrigger
                   key={mode}
                   value={mode}
-                  className="h-7 min-w-[84px] rounded-lg px-3 font-sans text-[12px] font-semibold tracking-[0.03em] uppercase text-muted-foreground data-active:border-transparent data-active:bg-[linear-gradient(120deg,#e5a48a,#d98765)] data-active:text-[#fffefb]"
+                  className="titlebar-mode-trigger h-7 min-w-[84px] rounded-lg px-3 font-sans text-[12px] font-semibold tracking-[0.03em] uppercase text-muted-foreground data-active:border-transparent data-active:bg-[linear-gradient(120deg,#e5a48a,#d98765)] data-active:text-[#fffefb]"
                   style={noDragStyle}
                 >
                   {mode}

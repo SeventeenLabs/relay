@@ -3,6 +3,8 @@ import {
   ArrowLeft,
   Brain,
   CalendarClock,
+  Check,
+  ChevronRight,
   ChevronUp,
   Code2,
   Download,
@@ -78,6 +80,7 @@ type AppSidebarProps = {
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   onSettingsSectionChange: (section: SettingsSection) => void;
+  onLanguageChange: (language: AppLanguage) => void;
   onLogout: () => void;
 };
 
@@ -139,6 +142,7 @@ export function AppSidebar({
   onOpenSearch,
   onOpenSettings,
   onSettingsSectionChange,
+  onLanguageChange,
   onLogout,
 }: AppSidebarProps) {
   const t = (en: string, de: string) => (language === 'de' ? de : en);
@@ -150,10 +154,13 @@ export function AppSidebar({
   const safeRecentItems = recentItems ?? [];
   const safeScheduledItems = scheduledItems ?? [];
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
+  const languageMenuCloseTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const profilePopupPositionClass = compact
-    ? 'left-full bottom-0 ml-2'
-    : 'bottom-full right-0 mb-2';
+    ? 'bottom-0 left-[calc(100%+0.5rem)]'
+    : 'left-0 right-0 bottom-[calc(100%+0.5rem)]';
+  const profilePopupWidthClass = compact ? 'w-72' : 'w-auto';
   const userInitials = useMemo(() => {
     const trimmed = userEmail.split('(')[0]?.trim() || userEmail.trim();
     const parts = trimmed.split(/[^a-zA-Z0-9]+/).filter(Boolean);
@@ -165,6 +172,13 @@ export function AppSidebar({
       .map((part) => part[0]?.toUpperCase() || '')
       .join('');
   }, [userEmail]);
+  const profileMenuItemClass =
+    'group flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] font-medium text-foreground/80 transition-[background-color,color,box-shadow] hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40';
+  const profileMenuIconClass = 'size-4 text-muted-foreground transition-colors group-hover:text-foreground/80';
+  const languageOptions: { value: AppLanguage; label: string }[] = [
+    { value: 'en', label: 'English (United States)' },
+    { value: 'de', label: 'Deutsch (Deutschland)' },
+  ];
 
   useEffect(() => {
     if (!profileMenuOpen) {
@@ -183,6 +197,38 @@ export function AppSidebar({
     window.addEventListener('mousedown', handleClickOutside);
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, [profileMenuOpen]);
+
+  useEffect(() => {
+    if (!profileMenuOpen) {
+      setLanguageMenuOpen(false);
+    }
+  }, [profileMenuOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (languageMenuCloseTimerRef.current) {
+        clearTimeout(languageMenuCloseTimerRef.current);
+      }
+    };
+  }, []);
+
+  const openLanguageMenu = () => {
+    if (languageMenuCloseTimerRef.current) {
+      clearTimeout(languageMenuCloseTimerRef.current);
+      languageMenuCloseTimerRef.current = null;
+    }
+    setLanguageMenuOpen(true);
+  };
+
+  const scheduleLanguageMenuClose = () => {
+    if (languageMenuCloseTimerRef.current) {
+      clearTimeout(languageMenuCloseTimerRef.current);
+    }
+    languageMenuCloseTimerRef.current = window.setTimeout(() => {
+      setLanguageMenuOpen(false);
+      languageMenuCloseTimerRef.current = null;
+    }, 130);
+  };
 
   return (
     <Sidebar
@@ -377,42 +423,104 @@ export function AppSidebar({
         </div>
         <div className="relative" ref={profileMenuRef}>
           {profileMenuOpen && (
-            <div className={`absolute z-50 w-64 rounded-xl border border-border bg-background p-1 shadow-xl ${profilePopupPositionClass}`}>
-              <div className="flex items-center gap-3 px-2.5 py-2">
-                <div className="flex size-9 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground">
+            <div className={`absolute z-50 ${profilePopupWidthClass} rounded-2xl border border-border bg-popover p-1.5 shadow-2xl backdrop-blur-sm ${profilePopupPositionClass}`}>
+              <div className="px-2 py-1.5">
+                <p className="truncate text-[13px] font-medium text-foreground/90">{userEmail}</p>
+              </div>
+              <div className="flex items-center gap-3 px-2.5 pb-2 pt-1">
+                <div className="flex size-9 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold text-foreground">
                   {userInitials}
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{userEmail}</p>
-                  <p className="text-xs text-muted-foreground">{guestMode ? 'Local mode' : 'Cloud mode'}</p>
+                  <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{guestMode ? 'Local mode' : 'Cloud mode'}</p>
                 </div>
               </div>
-              <Separator />
-              <div className="grid gap-1 p-1">
-                <button type="button" className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground/80 hover:bg-muted hover:text-foreground" onClick={onOpenSettings}>
-                  <Settings data-icon="inline-start" />
-                  {t('Settings', 'Einstellungen')}
-                </button>
+              <Separator className="my-1" />
+              <div className="grid gap-0.5 p-1">
                 <button
                   type="button"
-                  className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground/80 hover:bg-muted hover:text-foreground"
+                  className={profileMenuItemClass}
                   onClick={() => {
                     onOpenSettings();
-                    onSettingsSectionChange('Appearance');
                     setProfileMenuOpen(false);
                   }}
                 >
-                  <Globe data-icon="inline-start" />
-                  {t('Language', 'Sprache')}
+                  <span className="flex items-center gap-2">
+                    <Settings data-icon="inline-start" className={profileMenuIconClass} />
+                    {t('Settings', 'Einstellungen')}
+                  </span>
+                  <span className="text-xs text-muted-foreground">Ctrl+,</span>
                 </button>
-                <button type="button" className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground/80 hover:bg-muted hover:text-foreground">
-                  <HelpCircle data-icon="inline-start" />
-                  {t('Get help', 'Hilfe erhalten')}
+                <div
+                  className="relative"
+                  onMouseEnter={openLanguageMenu}
+                  onMouseLeave={scheduleLanguageMenuClose}
+                >
+                  <button
+                    type="button"
+                    className={`${profileMenuItemClass} ${languageMenuOpen ? 'bg-muted text-foreground' : ''}`}
+                    aria-expanded={languageMenuOpen}
+                    aria-haspopup="menu"
+                    onFocus={openLanguageMenu}
+                    onClick={() => setLanguageMenuOpen((open) => !open)}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Globe data-icon="inline-start" className={profileMenuIconClass} />
+                      {t('Language', 'Sprache')}
+                    </span>
+                    <ChevronRight className="size-4 text-muted-foreground transition-colors group-hover:text-foreground/80" />
+                  </button>
+                  {languageMenuOpen && (
+                    <div
+                      className="absolute top-0 left-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-border bg-popover p-1.5 shadow-2xl backdrop-blur-sm"
+                      role="menu"
+                      onMouseEnter={openLanguageMenu}
+                      onMouseLeave={scheduleLanguageMenuClose}
+                    >
+                      <div className="grid gap-0.5">
+                        {languageOptions.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-[13px] font-medium transition-[background-color,color] hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                              language === option.value ? 'bg-muted text-foreground' : 'text-foreground/80'
+                            }`}
+                            onClick={() => {
+                              onLanguageChange(option.value);
+                              setLanguageMenuOpen(false);
+                              setProfileMenuOpen(false);
+                            }}
+                          >
+                            <span>{option.label}</span>
+                            {language === option.value ? <Check className="size-4 text-foreground/80" /> : null}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className={profileMenuItemClass}
+                  onClick={() => setProfileMenuOpen(false)}
+                >
+                  <span className="flex items-center gap-2">
+                    <HelpCircle data-icon="inline-start" className={profileMenuIconClass} />
+                    {t('Get help', 'Hilfe erhalten')}
+                  </span>
+                  <ChevronRight className="size-4 text-muted-foreground" />
                 </button>
                 <Separator className="my-1" />
-                <button type="button" className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground/80 hover:bg-muted hover:text-foreground" onClick={onLogout}>
-                  <LogOut data-icon="inline-start" />
-                  {guestMode ? t('Exit local mode', 'Lokalen Modus beenden') : t('Sign out', 'Abmelden')}
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] font-medium text-foreground/80 transition-[background-color,color] hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  onClick={() => {
+                    setProfileMenuOpen(false);
+                    onLogout();
+                  }}
+                >
+                  <LogOut data-icon="inline-start" className={profileMenuIconClass} />
+                  <span>{guestMode ? t('Exit local mode', 'Lokalen Modus beenden') : t('Sign out', 'Abmelden')}</span>
                 </button>
               </div>
             </div>

@@ -60,6 +60,7 @@ type UserPreferences = {
   responsePreferences: string;
   systemPrompt: string;
   theme: 'light' | 'auto' | 'dark';
+  style: 'claude' | 'relay';
   language: 'en' | 'de';
 };
 
@@ -70,6 +71,7 @@ const defaultPreferences: UserPreferences = {
   responsePreferences: '',
   systemPrompt: '',
   theme: 'light',
+  style: 'claude',
   language: 'en',
 };
 
@@ -1282,6 +1284,11 @@ export default function App() {
   useEffect(() => {
     document.documentElement.lang = preferences.language;
   }, [preferences.language]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('relay-style', preferences.style === 'relay');
+  }, [preferences.style]);
 
   useEffect(() => {
     const storedUsageMode = localStorage.getItem(RELAY_USAGE_MODE_KEY);
@@ -2979,6 +2986,7 @@ export default function App() {
             onOpenSearch={() => handleSearchOpenChange(true)}
             onOpenSettings={() => setActivePage('settings')}
             onSettingsSectionChange={setSettingsSection}
+            onLanguageChange={(language) => updatePreferences({ language })}
             onLogout={handleLogout}
           />
 

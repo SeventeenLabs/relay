@@ -40,3 +40,204 @@ html.dark .bg-muted { background-color: #2a2924; }
 html.dark .bg-white { background-color: #242320; }
 html.dark .text-foreground { color: #e8e6e0; }
 html.dark .text-muted-foreground { color: #8a887e; }
+
+/* Relay style variant */
+html.relay-style body {
+  color: #070707;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at 12% -10%, rgba(200, 214, 248, 0.2) 0%, transparent 30%),
+    radial-gradient(circle at 92% 2%, rgba(208, 242, 224, 0.15) 0%, transparent 28%),
+    #ffffff;
+}
+
+html.relay-style * {
+  border-color: #e8e8e8;
+}
+
+html.relay-style .font-sans {
+  font-family: "Manrope", "Segoe UI", sans-serif;
+}
+
+html.relay-style .bg-background {
+  background-color: #ffffff;
+}
+
+html.relay-style [data-slot="sidebar"] {
+  background-color: #f8f8f8;
+}
+
+html.relay-style .bg-card {
+  background-color: #ffffff;
+}
+
+html.relay-style .bg-muted {
+  background-color: #f6f6f6;
+}
+
+html.relay-style .bg-popover {
+  background-color: #ffffff;
+}
+
+html.relay-style .bg-primary {
+  background-color: #bbf451;
+}
+
+html.relay-style .text-primary-foreground {
+  color: #1f2b09;
+}
+
+html.relay-style .text-primary {
+  color: #7b9f2f;
+}
+
+html.relay-style .border-primary {
+  border-color: #bbf451;
+}
+
+html.relay-style .ring-ring {
+  --tw-ring-color: rgb(187 244 81 / 0.4);
+}
+
+html.relay-style :is(button.bg-primary, a.bg-primary) {
+  border-color: #a8df44;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(187, 244, 81, 0.2) inset;
+}
+
+html.relay-style :is(button.bg-primary:hover, a.bg-primary:hover) {
+  background-color: #a8df44;
+}
+
+html.relay-style .titlebar-mode-trigger[data-active] {
+  background: #bbf451 !important;
+  color: #1f2b09 !important;
+}
+
+html.relay-style .titlebar-mode-trigger[data-active]:hover {
+  background: #a8df44 !important;
+}
+
+html.relay-style .text-foreground {
+  color: #070707;
+}
+
+html.relay-style .text-muted-foreground {
+  color: #666666;
+}
+
+html.relay-style .text-destructive {
+  color: #c53737;
+}
+
+html.relay-style .border-border {
+  border-color: #e8e8e8;
+}
+
+html.relay-style :is(button, a, input, select, textarea) {
+  border-radius: 10px;
+}
+
+html.relay-style :is(button, a) {
+  font-weight: 600;
+}
+
+html.relay-style.dark body,
+html.dark.relay-style body {
+  color: #fafafa;
+  background:
+    radial-gradient(circle at 14% -10%, rgba(141, 255, 194, 0.08) 0%, transparent 28%),
+    radial-gradient(circle at 90% 3%, rgba(140, 169, 255, 0.09) 0%, transparent 24%),
+    #090909;
+}
+
+html.relay-style.dark *,
+html.dark.relay-style * {
+  border-color: #2b2b2b;
+}
+
+html.relay-style.dark .bg-background,
+html.dark.relay-style .bg-background {
+  background-color: #090909;
+}
+
+html.relay-style.dark [data-slot="sidebar"],
+html.dark.relay-style [data-slot="sidebar"] {
+  background-color: #080808;
+}
+
+html.relay-style.dark .bg-card,
+html.dark.relay-style .bg-card {
+  background-color: #121212;
+}
+
+html.relay-style.dark .bg-muted,
+html.dark.relay-style .bg-muted {
+  background-color: #1a1a1a;
+}
+
+html.relay-style.dark .bg-popover,
+html.dark.relay-style .bg-popover {
+  background-color: #141414;
+}
+
+html.relay-style.dark .bg-primary,
+html.dark.relay-style .bg-primary {
+  background-color: #bbf451;
+}
+
+html.relay-style.dark .text-primary-foreground,
+html.dark.relay-style .text-primary-foreground {
+  color: #1f2b09;
+}
+
+html.relay-style.dark .text-primary,
+html.dark.relay-style .text-primary {
+  color: #bbf451;
+}
+
+html.relay-style.dark .border-primary,
+html.dark.relay-style .border-primary {
+  border-color: #bbf451;
+}
+
+html.relay-style.dark .ring-ring,
+html.dark.relay-style .ring-ring {
+  --tw-ring-color: rgb(187 244 81 / 0.42);
+}
+
+html.relay-style.dark :is(button.bg-primary, a.bg-primary),
+html.dark.relay-style :is(button.bg-primary, a.bg-primary) {
+  border-color: #a8df44;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(187, 244, 81, 0.24) inset;
+}
+
+html.relay-style.dark :is(button.bg-primary:hover, a.bg-primary:hover),
+html.dark.relay-style :is(button.bg-primary:hover, a.bg-primary:hover) {
+  background-color: #a8df44;
+}
+
+html.relay-style.dark .titlebar-mode-trigger[data-active],
+html.dark.relay-style .titlebar-mode-trigger[data-active] {
+  background: #bbf451 !important;
+  color: #1f2b09 !important;
+}
+
+html.relay-style.dark .titlebar-mode-trigger[data-active]:hover,
+html.dark.relay-style .titlebar-mode-trigger[data-active]:hover {
+  background: #a8df44 !important;
+}
+
+html.relay-style.dark .text-foreground,
+html.dark.relay-style .text-foreground {
+  color: #fafafa;
+}
+
+html.relay-style.dark .text-muted-foreground,
+html.dark.relay-style .text-muted-foreground {
+  color: #a6a6a6;
+}
+
+html.relay-style.dark .border-border,
+html.dark.relay-style .border-border {
+  border-color: #2b2b2b;
+}

@@ -18,6 +18,7 @@ type UserPreferences = {
   responsePreferences: string;
   systemPrompt: string;
   theme: 'light' | 'auto' | 'dark';
+  style: 'claude' | 'relay';
   language: AppLanguage;
 };
 
@@ -197,6 +198,34 @@ export function SettingsPage({
                 >
                   <div className={`h-16 w-full rounded-lg border border-border ${value === 'dark' ? 'bg-[#2a2a28]' : 'bg-muted'}`} />
                   {label}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <Separator />
+
+          <section>
+            <div className="mb-3">
+              <h2 className="text-base font-medium">{t('Style', 'Stil')}</h2>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {([
+                ['claude', t('Claude Cowork', 'Claude Cowork'), t('Warm editorial look', 'Warmer Editorial-Look')],
+                ['relay', t('Relay', 'Relay'), t('Crisp product look', 'Klarer Produkt-Look')],
+              ] as const).map(([value, label, description]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => onUpdatePreferences({ style: value })}
+                  className={`rounded-xl border px-3 py-3 text-left transition ${
+                    preferences.style === value
+                      ? 'border-primary/40 bg-primary/10 text-foreground'
+                      : 'border-border bg-background text-muted-foreground hover:bg-muted'
+                  }`}
+                >
+                  <p className="text-sm font-medium text-foreground">{label}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{description}</p>
                 </button>
               ))}
             </div>
