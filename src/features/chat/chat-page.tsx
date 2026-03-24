@@ -58,6 +58,10 @@ export function ChatPage({
   const threadTitle = firstUserMessage ? firstUserMessage.slice(0, 64) : 'New conversation';
   const formRef = useRef<HTMLFormElement | null>(null);
   const headerMenuRef = useRef<HTMLDivElement | null>(null);
+  const composerDockRef = useRef<HTMLDivElement | null>(null);
+  const messageViewportRef = useRef<HTMLDivElement | null>(null);
+  const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const autoScrollEnabledRef = useRef(true);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string }[]>([]);
@@ -65,7 +69,21 @@ export function ChatPage({
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const [greetingNow, setGreetingNow] = useState(() => new Date());
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [composerDockHeight, setComposerDockHeight] = useState(170);
   const canSend = (taskPrompt.trim().length > 0 || attachedFiles.length > 0) && !sending;
+
+  const scrollMessagesToBottom = (behavior: ScrollBehavior = 'auto') => {
+    if (messageEndRef.current) {
+      messageEndRef.current.scrollIntoView({ behavior, block: 'end' });
+      return;
+    }
+    const viewport = messageViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior });
+  };
 
   const greetingTitle = useMemo(() => {
     const hour = greetingNow.getHours();
@@ -104,6 +122,31 @@ export function ChatPage({
 
     return () => {
       window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const dock = composerDockRef.current;
+    if (!dock) {
+      return;
+    }
+
+    const updateHeight = () => {
+      const nextHeight = Math.ceil(dock.getBoundingClientRect().height);
+      if (nextHeight > 0) {
+        setComposerDockHeight(nextHeight);
+      }
+    };
+
+    updateHeight();
+
+    const observer = new ResizeObserver(() => updateHeight());
+    observer.observe(dock);
+
+    window.addEventListener('resize', updateHeight);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHeight);
     };
   }, []);
 
@@ -183,6 +226,35 @@ export function ChatPage({
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, [headerMenuOpen]);
 
+  useEffect(() => {
+    autoScrollEnabledRef.current = true;
+    setShowJumpToLatest(false);
+    window.requestAnimationFrame(() => scrollMessagesToBottom('auto'));
+  }, [sessionKey]);
+
+  useEffect(() => {
+    if (!autoScrollEnabledRef.current) {
+      return;
+    }
+
+    const behavior: ScrollBehavior = messages.length <= 1 ? 'auto' : 'smooth';
+    window.requestAnimationFrame(() => scrollMessagesToBottom(behavior));
+  }, [messages, awaitingStream]);
+
+  const handleMessageViewportScroll = () => {
+    const viewport = messageViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    const thresholdPx = 80;
+    const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    const nearBottom = distanceFromBottom <= thresholdPx;
+
+    autoScrollEnabledRef.current = nearBottom;
+    setShowJumpToLatest(!nearBottom);
+  };
+
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Slash command navigation
     if (slashMenuOpen && slashCommands.length > 0) {
@@ -225,7 +297,7 @@ export function ChatPage({
   if (isInitial) {
     return (
       <section
-        className="grid h-full w-full place-items-center px-6 py-8"
+        className="grid h-full w-full min-h-0 content-center px-3 pb-2 pt-4"
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => void handleDrop(e)}
@@ -238,85 +310,85 @@ export function ChatPage({
               </div>
             </div>
           )}
-          <div className="w-full max-w-[760px]">
-            <h1 className="mb-6 text-center text-[clamp(2rem,4vw,3rem)] tracking-tight text-foreground">{greetingTitle}</h1>
+          <div className="min-h-0 w-full max-w-[760px] mx-auto">
+              <h1 className="mb-6 text-center text-[clamp(2rem,4vw,3rem)] tracking-tight text-foreground">{greetingTitle}</h1>
 
-            <form
-              className="relative rounded-[28px] border border-border bg-card p-4 shadow-[0_16px_34px_rgba(24,23,20,0.08)]"
-              onSubmit={handleSubmitWithFiles}
-              ref={formRef}
-            >
-              {slashMenuOpen && slashCommands.length > 0 && (
-                <div className="absolute bottom-full left-4 z-20 mb-1 w-56 rounded-xl border border-border bg-popover p-1.5 shadow-lg">
-                  {slashCommands.map((cmd, i) => (
-                    <button
-                      key={cmd.cmd}
-                      type="button"
-                      onClick={() => { onTaskPromptChange(''); cmd.action(); }}
-                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-sans text-sm transition ${i === slashMenuIndex ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/70'}`}
-                    >
-                      <span className="font-mono text-xs">{cmd.cmd}</span>
-                      <span>{cmd.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <Textarea
-                value={taskPrompt}
-                onChange={(event) => onTaskPromptChange(event.target.value)}
-                placeholder="How can I help you today?"
-                rows={2}
-                onKeyDown={handleComposerKeyDown}
-                aria-label="Message"
-                className="min-h-[86px] resize-none border-0 bg-transparent px-0 py-1.5 font-sans text-[17px] leading-7 text-foreground shadow-none focus-visible:ring-0"
-              />
-
-              {attachedFiles.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {attachedFiles.map((f, i) => (
-                    <span key={i} className="inline-flex items-center gap-1 rounded-lg bg-muted px-2 py-1 font-sans text-[11px] text-muted-foreground">
-                      <Paperclip className="h-3 w-3" />
-                      {f.name}
-                      <button type="button" onClick={() => setAttachedFiles((prev) => prev.filter((_, j) => j !== i))} className="ml-0.5 rounded hover:bg-muted/80" aria-label={`Remove ${f.name}`}>
-                        <X className="h-3 w-3" />
+              <form
+                className="relative rounded-[28px] border border-border bg-card p-4 shadow-[0_16px_34px_rgba(24,23,20,0.08)]"
+                onSubmit={handleSubmitWithFiles}
+                ref={formRef}
+              >
+                {slashMenuOpen && slashCommands.length > 0 && (
+                  <div className="absolute bottom-full left-4 z-20 mb-1 w-56 rounded-xl border border-border bg-popover p-1.5 shadow-lg">
+                    {slashCommands.map((cmd, i) => (
+                      <button
+                        key={cmd.cmd}
+                        type="button"
+                        onClick={() => { onTaskPromptChange(''); cmd.action(); }}
+                        className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-sans text-sm transition ${i === slashMenuIndex ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/70'}`}
+                      >
+                        <span className="font-mono text-xs">{cmd.cmd}</span>
+                        <span>{cmd.label}</span>
                       </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              <div className="mt-3 flex items-center justify-end gap-2 border-t border-border pt-3">
-                <div className="flex items-center gap-2">
-                  <select
-                    value={selectedModel}
-                    onChange={(event) => onModelChange(event.target.value)}
-                    disabled={modelsLoading || changingModel || models.length === 0}
-                    className="h-9 max-w-[240px] rounded-xl border border-border bg-background px-3 font-sans text-xs text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <option value="">Sonnet 4.6</option>
-                    {models.map((model) => (
-                      <option key={model.value} value={model.value}>
-                        {model.label}
-                      </option>
                     ))}
-                  </select>
-                  <Button
-                    type="submit"
-                    size="icon"
-                    aria-label={sending ? 'Sending' : 'Send message'}
-                    disabled={!canSend}
-                    className="h-9 w-9 rounded-xl border-0 bg-primary text-primary-foreground hover:bg-primary/90"
-                  >
-                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-              <p className="mt-2 text-right font-sans text-[11px] text-muted-foreground">
-                Press Enter to send, Shift+Enter for a new line
-              </p>
-            </form>
+                  </div>
+                )}
+                <Textarea
+                  value={taskPrompt}
+                  onChange={(event) => onTaskPromptChange(event.target.value)}
+                  placeholder="How can I help you today?"
+                  rows={2}
+                  onKeyDown={handleComposerKeyDown}
+                  aria-label="Message"
+                  className="min-h-[86px] max-h-[40vh] resize-none border-0 bg-transparent px-0 py-1.5 font-sans text-[17px] leading-7 text-foreground shadow-none focus-visible:ring-0"
+                />
 
-            <div className="mt-3 flex flex-wrap justify-center gap-2">
+                {attachedFiles.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {attachedFiles.map((f, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 rounded-lg bg-muted px-2 py-1 font-sans text-[11px] text-muted-foreground">
+                        <Paperclip className="h-3 w-3" />
+                        {f.name}
+                        <button type="button" onClick={() => setAttachedFiles((prev) => prev.filter((_, j) => j !== i))} className="ml-0.5 rounded hover:bg-muted/80" aria-label={`Remove ${f.name}`}>
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-3 flex items-center justify-end gap-2 border-t border-border pt-3">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedModel}
+                      onChange={(event) => onModelChange(event.target.value)}
+                      disabled={modelsLoading || changingModel || models.length === 0}
+                      className="h-9 max-w-[240px] rounded-xl border border-border bg-background px-3 font-sans text-xs text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <option value="">Sonnet 4.6</option>
+                      {models.map((model) => (
+                        <option key={model.value} value={model.value}>
+                          {model.label}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      type="submit"
+                      size="icon"
+                      aria-label={sending ? 'Sending' : 'Send message'}
+                      disabled={!canSend}
+                      className="h-9 w-9 rounded-xl border-0 bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
+                <p className="mt-2 text-right font-sans text-[11px] text-muted-foreground">
+                  Press Enter to send, Shift+Enter for a new line
+                </p>
+              </form>
+
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
               {['Writing', 'Learning', 'Code', 'Personal', "Claude's picks"].map((item) => (
                 <Button
                   key={item}
@@ -328,9 +400,9 @@ export function ChatPage({
                   {item}
                 </Button>
               ))}
-            </div>
+              </div>
 
-            <p className="mt-3 text-center font-sans text-[11px] text-muted-foreground">{trimmedStatus || 'Connected. Ready.'}</p>
+              <p className="mt-3 text-center font-sans text-[11px] text-muted-foreground">{trimmedStatus || 'Connected. Ready.'}</p>
           </div>
       </section>
     );
@@ -338,7 +410,7 @@ export function ChatPage({
 
   return (
     <section
-      className="grid h-full w-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]"
+      className="relative grid h-full w-full min-h-0 grid-rows-[auto_minmax(0,1fr)]"
       onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => void handleDrop(e)}
@@ -426,16 +498,21 @@ export function ChatPage({
       </header>
 
       <div className={`grid min-h-0 ${artifactPanelOpen && codeArtifacts.length > 0 ? 'grid-cols-[minmax(0,1fr)_340px]' : 'grid-cols-[minmax(0,1fr)]'} gap-0 transition-[grid-template-columns] duration-200`}>
-      <ScrollArea className="h-full px-3 py-0.5">
-        <div className="mx-auto grid w-full max-w-[760px] gap-4 pb-0">
+      <div className="relative min-h-0">
+        <div
+          ref={messageViewportRef}
+          onScroll={handleMessageViewportScroll}
+          className="h-full overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-1"
+        >
+        <div className="mx-auto grid w-full max-w-[760px] gap-4 pb-4" style={{ paddingBottom: `${composerDockHeight + 24}px` }}>
           {messages.map((message) => (
-            <article key={message.id} className={message.role === 'user' ? 'ml-auto w-[min(92%,620px)]' : 'w-[min(96%,760px)]'}>
+            <article key={message.id} className={message.role === 'user' ? 'ml-auto min-w-0 w-[min(92%,620px)]' : 'min-w-0 w-full'}>
               {message.role === 'user' ? (
-                <p className="rounded-xl bg-muted px-4 py-3 text-right font-sans text-[15px] leading-6 text-foreground">
+                <p className="break-words rounded-xl bg-muted px-4 py-3 text-right font-sans text-[15px] leading-6 text-foreground [overflow-wrap:anywhere]">
                   {message.text}
                 </p>
               ) : (
-                <div className="font-sans text-[15px] leading-7 text-foreground">
+                <div className="min-w-0 font-sans text-[15px] leading-7 text-foreground [overflow-wrap:anywhere]">
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
                     {message.text}
                   </ReactMarkdown>
@@ -445,15 +522,35 @@ export function ChatPage({
           ))}
 
           {awaitingStream && (
-            <article className="w-[min(96%,760px)]">
+            <article className="w-full">
               <div className="inline-flex items-center gap-2 rounded-xl bg-muted px-3 py-2 font-sans text-sm text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Thinking...
               </div>
             </article>
           )}
+          <div ref={messageEndRef} className="h-px w-full" />
         </div>
-      </ScrollArea>
+        </div>
+        {showJumpToLatest && (
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            className="absolute right-5 z-20 h-9 w-9 rounded-full border-border bg-card/95 text-muted-foreground shadow-md hover:bg-muted"
+            style={{ bottom: `${composerDockHeight + 12}px` }}
+            onClick={() => {
+              autoScrollEnabledRef.current = true;
+              setShowJumpToLatest(false);
+              scrollMessagesToBottom('smooth');
+            }}
+            aria-label="Jump to latest message"
+            title="Jump to latest"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
 
       {artifactPanelOpen && codeArtifacts.length > 0 && (
         <ScrollArea className="h-full border-l border-border px-3 py-2">
@@ -481,7 +578,11 @@ export function ChatPage({
       )}
       </div>
 
-      <div className="px-3 pb-0.5 pt-0">
+      <div
+        ref={composerDockRef}
+        className="pointer-events-none absolute right-0 bottom-0 left-0 z-30 px-3 pb-1 pt-2"
+      >
+        <div className="pointer-events-auto bg-background/95 supports-[backdrop-filter]:backdrop-blur">
         <form
           className="relative mx-auto w-full max-w-[760px] rounded-[26px] border border-border bg-card p-3.5 shadow-[0_12px_28px_rgba(24,23,20,0.08)]"
           onSubmit={handleSubmitWithFiles}
@@ -509,7 +610,7 @@ export function ChatPage({
             rows={2}
             onKeyDown={handleComposerKeyDown}
             aria-label="Message"
-            className="min-h-[84px] resize-none border-0 bg-transparent px-0 py-1 font-sans text-[16px] leading-7 shadow-none focus-visible:ring-0"
+            className="min-h-[84px] max-h-[40vh] resize-none border-0 bg-transparent px-0 py-1 font-sans text-[16px] leading-7 shadow-none focus-visible:ring-0"
           />
 
           {attachedFiles.length > 0 && (
@@ -558,6 +659,7 @@ export function ChatPage({
         </form>
 
         <p className="mt-1 text-center font-sans text-[11px] text-muted-foreground">{trimmedStatus || 'Claude is an AI and can make mistakes. Please verify cited sources.'}</p>
+        </div>
       </div>
     </section>
   );

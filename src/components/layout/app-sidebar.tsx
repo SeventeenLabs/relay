@@ -256,7 +256,7 @@ export function AppSidebar({
                       onClick={onStartNewChat}
                     >
                       <ArrowLeft data-icon="inline-start" />
-                      {!compact && <span>{t('Back', 'Zurueck')}</span>}
+                      {!compact && <span className="min-w-0 flex-1 truncate">{t('Back', 'Zurueck')}</span>}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </SidebarMenu>
@@ -278,7 +278,7 @@ export function AppSidebar({
                         title={sectionLabels[item.label][language]}
                       >
                         <item.icon data-icon="inline-start" />
-                        {!compact && <span>{sectionLabels[item.label][language]}</span>}
+                        {!compact && <span className="min-w-0 flex-1 truncate">{sectionLabels[item.label][language]}</span>}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
@@ -302,7 +302,7 @@ export function AppSidebar({
                         onClick={() => onSelectPage('cowork')}
                       >
                         <ArrowLeft data-icon="inline-start" />
-                        {!compact && <span>Back to Cowork</span>}
+                        {!compact && <span className="min-w-0 flex-1 truncate">Back to Cowork</span>}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   )}
@@ -315,7 +315,7 @@ export function AppSidebar({
                       onClick={isChatView ? onStartNewChat : onStartNewTask}
                     >
                       <Plus data-icon="inline-start" />
-                      {!compact && <span>{isChatView ? 'New Chat' : 'New Task'}</span>}
+                      {!compact && <span className="min-w-0 flex-1 truncate">{isChatView ? 'New Chat' : 'New Task'}</span>}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   {navItems.map((item) => (
@@ -335,7 +335,7 @@ export function AppSidebar({
                         title={item.label}
                       >
                         <item.icon data-icon="inline-start" />
-                        {!compact && <span>{item.label}</span>}
+                        {!compact && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
@@ -360,7 +360,7 @@ export function AppSidebar({
                           title={item.label}
                         >
                           <item.icon data-icon="inline-start" />
-                          {!compact && <span>{item.label}</span>}
+                          {!compact && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     ))}
@@ -377,14 +377,14 @@ export function AppSidebar({
                     <SidebarMenu className="pr-0.5">
                       {safeRecentItems.length === 0 ? (
                         <SidebarMenuItem>
-                          <SidebarMenuButton type="button" className="w-full justify-start font-sans text-[12px] text-muted-foreground" disabled>
+                          <SidebarMenuButton type="button" className="w-full justify-start truncate font-sans text-[12px] text-muted-foreground" disabled>
                             {isChatView ? 'No recent chats yet' : 'No recent runs yet'}
                           </SidebarMenuButton>
                         </SidebarMenuItem>
                       ) : (
                         safeRecentItems.map((item) => (
                           <SidebarMenuItem key={item.id}>
-                            <div className="group flex items-center gap-1">
+                            <div className="group grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-1">
                               <SidebarMenuButton
                                 type="button"
                                 active={
@@ -398,14 +398,14 @@ export function AppSidebar({
                                     : undefined
                                 }
                                 aria-label={`Open ${item.kind === 'cowork' ? 'task' : 'chat'} ${item.label}`}
-                                className="min-w-0 flex-1 gap-2 font-sans text-[12px]"
+                                className="min-w-0 w-full gap-2 font-sans text-[12px]"
                                 title={item.label}
                                 onClick={() => onSelectRecentItem(item)}
                               >
-                                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
                                   {item.kind === 'cowork' ? 'Task' : 'Chat'}
                                 </span>
-                                <span className="block truncate">{item.label}</span>
+                                <span className="block min-w-0 flex-1 truncate">{item.label}</span>
                               </SidebarMenuButton>
                               <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
                                 <Button

@@ -10,7 +10,7 @@ function Sidebar({ className, ...props }: React.ComponentProps<'aside'>) {
   return (
     <aside
       data-slot="sidebar"
-      className={cn('flex h-full w-full flex-col rounded-none border-r border-border bg-background text-foreground', className)}
+      className={cn('flex h-full w-full min-w-0 flex-col rounded-none border-r border-border bg-background text-foreground', className)}
       {...props}
     />
   );
@@ -67,7 +67,7 @@ function SidebarMenuButton({
       data-slot="sidebar-menu-button"
       data-active={resolvedActive ? 'true' : undefined}
       className={cn(
-        'group inline-flex h-8 w-full items-center rounded-md px-2 text-left text-sm text-muted-foreground transition-[background-color,color] duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-60 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground hover:[&>svg]:text-foreground data-[active=true]:text-foreground data-[active=true]:[&>svg]:text-foreground',
+        'group inline-flex h-8 w-full min-w-0 items-center overflow-hidden rounded-md px-2 text-left text-sm text-muted-foreground transition-[background-color,color] duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-60 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground hover:[&>svg]:text-foreground data-[active=true]:text-foreground data-[active=true]:[&>svg]:text-foreground',
         resolvedActive && 'bg-muted',
         className,
       )}

@@ -53,12 +53,12 @@ export const chatMarkdownComponents: Components = {
   h1: ({ children }) => <h1 className="mb-2 mt-4 text-xl font-semibold leading-7 first:mt-0">{children}</h1>,
   h2: ({ children }) => <h2 className="mb-2 mt-4 text-lg font-semibold leading-7 first:mt-0">{children}</h2>,
   h3: ({ children }) => <h3 className="mb-2 mt-4 text-base font-semibold leading-6 first:mt-0">{children}</h3>,
-  p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+  p: ({ children }) => <p className="mb-3 break-words last:mb-0 [overflow-wrap:anywhere]">{children}</p>,
   ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-6 last:mb-0">{children}</ul>,
   ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-6 last:mb-0">{children}</ol>,
-  li: ({ children }) => <li className="leading-6">{children}</li>,
+  li: ({ children }) => <li className="break-words leading-6 [overflow-wrap:anywhere]">{children}</li>,
   blockquote: ({ children }) => (
-    <blockquote className="mb-3 border-l-2 border-[rgba(31,31,28,0.15)] pl-3 italic text-muted-foreground">{children}</blockquote>
+    <blockquote className="mb-3 break-words border-l-2 border-[rgba(31,31,28,0.15)] pl-3 italic text-muted-foreground [overflow-wrap:anywhere]">{children}</blockquote>
   ),
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noreferrer" className="underline decoration-[rgba(31,31,28,0.35)] underline-offset-2 hover:text-foreground">
@@ -70,7 +70,7 @@ export const chatMarkdownComponents: Components = {
     if (isBlock) {
       return <CodeBlock className={className}>{children}</CodeBlock>;
     }
-    return <code className="rounded bg-[rgba(31,31,28,0.08)] px-1 py-0.5 font-mono text-[13px] text-foreground">{children}</code>;
+    return <code className="rounded bg-[rgba(31,31,28,0.08)] px-1 py-0.5 font-mono text-[13px] text-foreground break-all">{children}</code>;
   },
   pre: ({ children }) => {
     // If child is already a CodeBlock, render without extra wrapper
@@ -87,4 +87,14 @@ export const chatMarkdownComponents: Components = {
     }
     return <pre className="mb-3 last:mb-0">{children}</pre>;
   },
+  table: ({ children }) => (
+    <div className="mb-3 max-w-full overflow-x-auto rounded-lg border border-border last:mb-0">
+      <table className="min-w-full border-collapse text-sm">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-muted/60">{children}</thead>,
+  tbody: ({ children }) => <tbody>{children}</tbody>,
+  tr: ({ children }) => <tr className="border-b border-border last:border-b-0">{children}</tr>,
+  th: ({ children }) => <th className="px-3 py-2 text-left font-semibold whitespace-nowrap">{children}</th>,
+  td: ({ children }) => <td className="px-3 py-2 align-top break-words [overflow-wrap:anywhere]">{children}</td>,
 };

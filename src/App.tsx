@@ -3359,7 +3359,7 @@ export default function App() {
             onLogout={handleLogout}
           />
 
-          <main className={`relative min-h-0 overflow-hidden ${activePage === 'files' ? 'p-0' : 'p-5'}`}>
+          <main className={`relative min-h-0 overflow-hidden ${activePage === 'files' || activePage === 'chat' ? 'p-0' : 'p-5'}`}>
             <Dialog
               open={Boolean(recentRenameTarget)}
               onOpenChange={(nextOpen) => {
@@ -3521,7 +3521,7 @@ export default function App() {
                   localFileService={localFileService}
                 />
               ) : (
-                <ScrollArea className="h-full">
+                <>
                 {activePage === 'chat' && (
                   <ChatPage
                     taskPrompt={taskPrompt}
@@ -3545,55 +3545,59 @@ export default function App() {
                   />
                 )}
 
-                {activePage === 'activity' && (
-                  <ActivityPage
-                    chatMessages={chatMessages}
-                    coworkMessages={coworkMessages}
-                    activeSessionKey={activeSessionKey}
-                    coworkSessionKey={coworkSessionKey}
-                    gatewayConnected={gatewayConnected}
-                  />
-                )}
+                {activePage !== 'chat' && (
+                  <ScrollArea className="h-full">
+                    {activePage === 'activity' && (
+                      <ActivityPage
+                        chatMessages={chatMessages}
+                        coworkMessages={coworkMessages}
+                        activeSessionKey={activeSessionKey}
+                        coworkSessionKey={coworkSessionKey}
+                        gatewayConnected={gatewayConnected}
+                      />
+                    )}
 
-                {activePage === 'memory' && (
-                  <MemoryPage
-                    gatewayConnected={gatewayConnected}
-                  />
-                )}
+                    {activePage === 'memory' && (
+                      <MemoryPage
+                        gatewayConnected={gatewayConnected}
+                      />
+                    )}
 
-                {activePage === 'scheduled' && (
-                  <ScheduledPage
-                    jobs={scheduledJobs}
-                    loading={scheduledLoading}
-                    status={status}
-                    onRefresh={loadScheduledJobs}
-                  />
-                )}
+                    {activePage === 'scheduled' && (
+                      <ScheduledPage
+                        jobs={scheduledJobs}
+                        loading={scheduledLoading}
+                        status={status}
+                        onRefresh={loadScheduledJobs}
+                      />
+                    )}
 
-                {activePage === 'safety' && (
-                  <SafetyPage
-                    gatewayConnected={gatewayConnected}
-                  />
-                )}
+                    {activePage === 'safety' && (
+                      <SafetyPage
+                        gatewayConnected={gatewayConnected}
+                      />
+                    )}
 
-                {activePage === 'settings' && (
-                  <SettingsPage
-                    activeSection={settingsSection}
-                    draftGatewayUrl={draftGatewayUrl}
-                    draftGatewayToken={draftGatewayToken}
-                    health={health}
-                    status={status}
-                    saving={saving}
-                    pairingRequestId={pairingRequestId}
-                    preferences={preferences}
-                    onDraftGatewayUrlChange={setDraftGatewayUrl}
-                    onDraftGatewayTokenChange={setDraftGatewayToken}
-                    onSave={handleSave}
-                    onResetPairing={handleResetPairing}
-                    onUpdatePreferences={updatePreferences}
-                  />
+                    {activePage === 'settings' && (
+                      <SettingsPage
+                        activeSection={settingsSection}
+                        draftGatewayUrl={draftGatewayUrl}
+                        draftGatewayToken={draftGatewayToken}
+                        health={health}
+                        status={status}
+                        saving={saving}
+                        pairingRequestId={pairingRequestId}
+                        preferences={preferences}
+                        onDraftGatewayUrlChange={setDraftGatewayUrl}
+                        onDraftGatewayTokenChange={setDraftGatewayToken}
+                        onSave={handleSave}
+                        onResetPairing={handleResetPairing}
+                        onUpdatePreferences={updatePreferences}
+                      />
+                    )}
+                  </ScrollArea>
                 )}
-                </ScrollArea>
+                </>
               )}
             </Suspense>
           </main>
