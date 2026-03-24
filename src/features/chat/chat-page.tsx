@@ -206,8 +206,8 @@ export function ChatPage({
       >
           {dragOver && (
             <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-[rgba(31,31,28,0.08)] backdrop-blur-sm">
-              <div className="rounded-2xl border-2 border-dashed border-[#d98765] bg-white/90 px-8 py-6 text-center">
-                <Paperclip className="mx-auto mb-2 h-6 w-6 text-[#d98765]" />
+              <div className="rounded-2xl border-2 border-dashed border-border bg-card px-8 py-6 text-center">
+                <Paperclip className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
                 <p className="font-sans text-sm text-foreground">Drop files to attach</p>
               </div>
             </div>
@@ -216,18 +216,18 @@ export function ChatPage({
             <h1 className="mb-6 text-center text-[clamp(2rem,4vw,3rem)] tracking-tight text-foreground">Guten Tag, Christian</h1>
 
             <form
-              className="relative rounded-[28px] border border-[rgba(31,31,28,0.14)] bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(250,248,243,0.95))] p-4 shadow-[0_16px_34px_rgba(24,23,20,0.08)]"
+              className="relative rounded-[28px] border border-border bg-card p-4 shadow-[0_16px_34px_rgba(24,23,20,0.08)]"
               onSubmit={handleSubmitWithFiles}
               ref={formRef}
             >
               {slashMenuOpen && slashCommands.length > 0 && (
-                <div className="absolute bottom-full left-4 z-20 mb-1 w-56 rounded-xl border border-[rgba(31,31,28,0.14)] bg-white p-1.5 shadow-lg">
+                <div className="absolute bottom-full left-4 z-20 mb-1 w-56 rounded-xl border border-border bg-popover p-1.5 shadow-lg">
                   {slashCommands.map((cmd, i) => (
                     <button
                       key={cmd.cmd}
                       type="button"
                       onClick={() => { onTaskPromptChange(''); cmd.action(); }}
-                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-sans text-sm transition ${i === slashMenuIndex ? 'bg-[rgba(31,31,28,0.08)] text-foreground' : 'text-muted-foreground hover:bg-[rgba(31,31,28,0.04)]'}`}
+                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-sans text-sm transition ${i === slashMenuIndex ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/70'}`}
                     >
                       <span className="font-mono text-xs">{cmd.cmd}</span>
                       <span>{cmd.label}</span>
@@ -248,10 +248,10 @@ export function ChatPage({
               {attachedFiles.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {attachedFiles.map((f, i) => (
-                    <span key={i} className="inline-flex items-center gap-1 rounded-lg bg-[rgba(31,31,28,0.06)] px-2 py-1 font-sans text-[11px] text-muted-foreground">
+                    <span key={i} className="inline-flex items-center gap-1 rounded-lg bg-muted px-2 py-1 font-sans text-[11px] text-muted-foreground">
                       <Paperclip className="h-3 w-3" />
                       {f.name}
-                      <button type="button" onClick={() => setAttachedFiles((prev) => prev.filter((_, j) => j !== i))} className="ml-0.5 rounded hover:bg-[rgba(31,31,28,0.1)]" aria-label={`Remove ${f.name}`}>
+                      <button type="button" onClick={() => setAttachedFiles((prev) => prev.filter((_, j) => j !== i))} className="ml-0.5 rounded hover:bg-muted/80" aria-label={`Remove ${f.name}`}>
                         <X className="h-3 w-3" />
                       </button>
                     </span>
@@ -259,7 +259,7 @@ export function ChatPage({
                 </div>
               )}
 
-              <div className="mt-3 flex items-center justify-between gap-3 border-t border-[rgba(31,31,28,0.08)] pt-3">
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
                 <Button
                   type="button"
                   variant="ghost"
@@ -274,7 +274,7 @@ export function ChatPage({
                     value={selectedModel}
                     onChange={(event) => onModelChange(event.target.value)}
                     disabled={modelsLoading || changingModel || models.length === 0}
-                    className="h-9 max-w-[240px] rounded-xl border border-[rgba(31,31,28,0.14)] bg-white px-3 font-sans text-xs text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
+                    className="h-9 max-w-[240px] rounded-xl border border-border bg-background px-3 font-sans text-xs text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <option value="">Sonnet 4.6</option>
                     {models.map((model) => (
@@ -288,7 +288,7 @@ export function ChatPage({
                     size="icon"
                     aria-label={sending ? 'Sending' : 'Send message'}
                     disabled={!canSend}
-                    className="h-9 w-9 rounded-xl border-0 bg-[linear-gradient(120deg,#e5a48a,#d98765)] text-[#fffefb]"
+                    className="h-9 w-9 rounded-xl border-0 bg-primary text-primary-foreground hover:bg-primary/90"
                   >
                     {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
                   </Button>
@@ -306,7 +306,7 @@ export function ChatPage({
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-7 rounded-md border-[rgba(31,31,28,0.12)] bg-[rgba(255,255,255,0.65)] px-3 font-sans text-xs text-muted-foreground"
+                  className="h-7 rounded-md border-border bg-card px-3 font-sans text-xs text-muted-foreground"
                 >
                   {item}
                 </Button>
@@ -328,8 +328,8 @@ export function ChatPage({
     >
       {dragOver && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-[rgba(31,31,28,0.08)] backdrop-blur-sm">
-          <div className="rounded-2xl border-2 border-dashed border-[#d98765] bg-white/90 px-8 py-6 text-center">
-            <Paperclip className="mx-auto mb-2 h-6 w-6 text-[#d98765]" />
+          <div className="rounded-2xl border-2 border-dashed border-border bg-card px-8 py-6 text-center">
+            <Paperclip className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
             <p className="font-sans text-sm text-foreground">Drop files to attach</p>
           </div>
         </div>
@@ -338,7 +338,7 @@ export function ChatPage({
         <div className="relative" ref={headerMenuRef}>
           <button
             type="button"
-            className="inline-flex h-8 max-w-[460px] items-center gap-2 rounded-md border border-[rgba(31,31,28,0.12)] bg-white px-2.5 font-sans text-sm font-medium text-foreground transition hover:bg-[rgba(31,31,28,0.03)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex h-8 max-w-[460px] items-center gap-2 rounded-md border border-border bg-background px-2.5 font-sans text-sm font-medium text-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-haspopup="menu"
             aria-expanded={headerMenuOpen}
             onClick={() => setHeaderMenuOpen((open) => !open)}
@@ -349,24 +349,24 @@ export function ChatPage({
           </button>
 
           {headerMenuOpen && (
-            <div className="absolute left-0 top-full z-30 mt-2 w-[224px] rounded-2xl border border-[rgba(31,31,28,0.14)] bg-[#f7f7f7] p-2 shadow-[0_8px_20px_rgba(18,18,16,0.14)]">
+            <div className="absolute left-0 top-full z-30 mt-2 w-[224px] rounded-2xl border border-border bg-popover p-2 shadow-[0_8px_20px_rgba(18,18,16,0.14)]">
               <button
                 type="button"
-                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-foreground/85 transition hover:bg-[rgba(31,31,28,0.08)]"
+                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-foreground/85 transition hover:bg-muted"
               >
                 <Star className="h-4 w-4 text-muted-foreground" />
                 Star
               </button>
               <button
                 type="button"
-                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-foreground/85 transition hover:bg-[rgba(31,31,28,0.08)]"
+                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-foreground/85 transition hover:bg-muted"
               >
                 <Pencil className="h-4 w-4 text-muted-foreground" />
                 Rename
               </button>
               <button
                 type="button"
-                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-foreground/85 transition hover:bg-[rgba(31,31,28,0.08)]"
+                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-foreground/85 transition hover:bg-muted"
               >
                 <FolderPlus className="h-4 w-4 text-muted-foreground" />
                 Add to project
@@ -375,18 +375,18 @@ export function ChatPage({
                 <button
                   type="button"
                   onClick={() => { onExport(); setHeaderMenuOpen(false); }}
-                  className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-foreground/85 transition hover:bg-[rgba(31,31,28,0.08)]"
+                  className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-foreground/85 transition hover:bg-muted"
                 >
                   <Download className="h-4 w-4 text-muted-foreground" />
                   Export
                 </button>
               )}
 
-              <div className="my-1 h-px bg-[rgba(31,31,28,0.12)]" />
+              <div className="my-1 h-px bg-border" />
 
               <button
                 type="button"
-                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-[#b42318] transition hover:bg-[#fbe8e8]"
+                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-sans text-[16px] text-destructive transition hover:bg-destructive/10"
               >
                 <Trash2 className="h-4 w-4" />
                 Delete
@@ -398,7 +398,7 @@ export function ChatPage({
           <button
             type="button"
             onClick={() => setArtifactPanelOpen((v) => !v)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[rgba(31,31,28,0.12)] bg-white px-2.5 font-sans text-xs text-muted-foreground transition hover:bg-[rgba(31,31,28,0.03)]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 font-sans text-xs text-muted-foreground transition hover:bg-muted"
             title={artifactPanelOpen ? 'Close artifacts' : 'Show code artifacts'}
           >
             {artifactPanelOpen ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
@@ -414,7 +414,7 @@ export function ChatPage({
           {messages.map((message) => (
             <article key={message.id} className={message.role === 'user' ? 'ml-auto w-[min(92%,620px)]' : 'w-[min(96%,760px)]'}>
               {message.role === 'user' ? (
-                <p className="rounded-xl bg-[rgba(228,226,217,0.9)] px-4 py-3 text-right font-sans text-[15px] leading-6 text-foreground">
+                <p className="rounded-xl bg-muted px-4 py-3 text-right font-sans text-[15px] leading-6 text-foreground">
                   {message.text}
                 </p>
               ) : (
@@ -429,7 +429,7 @@ export function ChatPage({
 
           {awaitingStream && (
             <article className="w-[min(96%,760px)]">
-              <div className="inline-flex items-center gap-2 rounded-xl bg-[rgba(31,31,28,0.06)] px-3 py-2 font-sans text-sm text-muted-foreground">
+              <div className="inline-flex items-center gap-2 rounded-xl bg-muted px-3 py-2 font-sans text-sm text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Thinking...
               </div>
@@ -439,12 +439,12 @@ export function ChatPage({
       </ScrollArea>
 
       {artifactPanelOpen && codeArtifacts.length > 0 && (
-        <ScrollArea className="h-full border-l border-[rgba(31,31,28,0.12)] px-3 py-2">
+        <ScrollArea className="h-full border-l border-border px-3 py-2">
           <h3 className="mb-3 font-sans text-xs font-medium uppercase tracking-wide text-muted-foreground">Code Artifacts</h3>
           <div className="grid gap-3">
             {codeArtifacts.map((artifact, i) => (
-              <div key={i} className="rounded-lg border border-[rgba(31,31,28,0.1)] bg-[rgba(31,31,28,0.04)]">
-                <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-[rgba(31,31,28,0.08)]">
+              <div key={i} className="rounded-lg border border-border bg-muted/40">
+                <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-border">
                   <span className="font-mono text-[11px] text-muted-foreground">{artifact.lang}</span>
                   <button
                     type="button"
@@ -466,18 +466,18 @@ export function ChatPage({
 
       <div className="px-3 pb-0.5 pt-0">
         <form
-          className="relative mx-auto w-full max-w-[760px] rounded-[26px] border border-[rgba(31,31,28,0.14)] bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(250,248,243,0.95))] p-3.5 shadow-[0_12px_28px_rgba(24,23,20,0.08)]"
+          className="relative mx-auto w-full max-w-[760px] rounded-[26px] border border-border bg-card p-3.5 shadow-[0_12px_28px_rgba(24,23,20,0.08)]"
           onSubmit={handleSubmitWithFiles}
           ref={formRef}
         >
           {slashMenuOpen && slashCommands.length > 0 && (
-            <div className="absolute bottom-full left-4 z-20 mb-1 w-56 rounded-xl border border-[rgba(31,31,28,0.14)] bg-white p-1.5 shadow-lg">
+            <div className="absolute bottom-full left-4 z-20 mb-1 w-56 rounded-xl border border-border bg-popover p-1.5 shadow-lg">
               {slashCommands.map((cmd, i) => (
                 <button
                   key={cmd.cmd}
                   type="button"
                   onClick={() => { onTaskPromptChange(''); cmd.action(); }}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-sans text-sm transition ${i === slashMenuIndex ? 'bg-[rgba(31,31,28,0.08)] text-foreground' : 'text-muted-foreground hover:bg-[rgba(31,31,28,0.04)]'}`}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-sans text-sm transition ${i === slashMenuIndex ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/70'}`}
                 >
                   <span className="font-mono text-xs">{cmd.cmd}</span>
                   <span>{cmd.label}</span>
@@ -498,10 +498,10 @@ export function ChatPage({
           {attachedFiles.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {attachedFiles.map((f, i) => (
-                <span key={i} className="inline-flex items-center gap-1 rounded-lg bg-[rgba(31,31,28,0.06)] px-2 py-1 font-sans text-[11px] text-muted-foreground">
+                <span key={i} className="inline-flex items-center gap-1 rounded-lg bg-muted px-2 py-1 font-sans text-[11px] text-muted-foreground">
                   <Paperclip className="h-3 w-3" />
                   {f.name}
-                  <button type="button" onClick={() => setAttachedFiles((prev) => prev.filter((_, j) => j !== i))} className="ml-0.5 rounded hover:bg-[rgba(31,31,28,0.1)]" aria-label={`Remove ${f.name}`}>
+                  <button type="button" onClick={() => setAttachedFiles((prev) => prev.filter((_, j) => j !== i))} className="ml-0.5 rounded hover:bg-muted/80" aria-label={`Remove ${f.name}`}>
                     <X className="h-3 w-3" />
                   </button>
                 </span>
@@ -509,7 +509,7 @@ export function ChatPage({
             </div>
           )}
 
-          <div className="mt-3 flex items-center justify-between gap-2 border-t border-[rgba(31,31,28,0.08)] pt-3">
+          <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3">
             <Button type="button" variant="ghost" className="h-9 rounded-xl px-3 font-sans text-xs text-muted-foreground" aria-label="Add attachment">
               Context
             </Button>
@@ -519,7 +519,7 @@ export function ChatPage({
                 value={selectedModel}
                 onChange={(event) => onModelChange(event.target.value)}
                 disabled={modelsLoading || changingModel || models.length === 0}
-                className="h-9 max-w-[240px] rounded-xl border border-[rgba(31,31,28,0.14)] bg-white px-3 font-sans text-xs text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-9 max-w-[240px] rounded-xl border border-border bg-background px-3 font-sans text-xs text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <option value="">Sonnet 4.5</option>
                 {models.map((model) => (
@@ -533,7 +533,7 @@ export function ChatPage({
                 size="icon"
                 aria-label={sending ? 'Sending' : 'Send message'}
                 disabled={!canSend}
-                className="h-9 w-9 rounded-xl border-0 bg-[linear-gradient(120deg,#e5a48a,#d98765)] text-[#fffefb]"
+                className="h-9 w-9 rounded-xl border-0 bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
               </Button>

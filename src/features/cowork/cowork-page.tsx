@@ -66,15 +66,15 @@ const connectors = ['Web search', 'Desktop files', 'Gateway tools'];
 
 function runPhaseClasses(phase: CoworkRunPhase): string {
   if (phase === 'completed') {
-    return 'border-[rgba(47,122,88,0.35)] bg-[rgba(47,122,88,0.08)] text-[#2f7a58]';
+    return 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
   }
   if (phase === 'streaming' || phase === 'sending') {
-    return 'border-[rgba(222,130,94,0.45)] bg-[rgba(222,130,94,0.12)] text-[#8a4b31]';
+    return 'border-amber-500/40 bg-amber-500/12 text-amber-800 dark:text-amber-300';
   }
   if (phase === 'error') {
-    return 'border-[rgba(173,56,56,0.34)] bg-[rgba(173,56,56,0.1)] text-[#7f2c2c]';
+    return 'border-destructive/35 bg-destructive/10 text-destructive';
   }
-  return 'border-[rgba(98,96,90,0.3)] bg-[rgba(98,96,90,0.09)] text-[#4d4b45]';
+  return 'border-border bg-muted text-muted-foreground';
 }
 
 function runPhaseLabel(phase: CoworkRunPhase): string {
@@ -209,13 +209,13 @@ export function CoworkPage({
             <div className="mx-auto grid h-full w-full max-w-[860px] place-items-center">
               <div className="w-full max-w-[640px]">
                 <p className="mb-3 text-[clamp(1.8rem,2.8vw,2.5rem)] tracking-tight text-foreground">Let's knock something off your list</p>
-                <div className="rounded-2xl border border-[rgba(31,31,28,0.1)] bg-[rgba(255,255,255,0.7)] p-4">
+                <div className="rounded-2xl border border-border bg-card p-4">
                   <p className="font-sans text-sm text-muted-foreground">
                     Cowork runs against your configured gateway and supports file-aware task context.
                   </p>
                 </div>
 
-                <form className="mt-4 rounded-[28px] border border-[rgba(31,31,28,0.14)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(250,248,243,0.95))] px-4 py-3.5 shadow-[0_16px_34px_rgba(24,23,20,0.08)]" onSubmit={onSubmit} ref={formRef}>
+                <form className="mt-4 rounded-[28px] border border-border bg-card px-4 py-3.5 shadow-[0_16px_34px_rgba(24,23,20,0.08)]" onSubmit={onSubmit} ref={formRef}>
                   <Textarea
                     value={taskPrompt}
                     onChange={(event) => onTaskPromptChange(event.target.value)}
@@ -225,7 +225,7 @@ export function CoworkPage({
                     aria-label="Task prompt"
                     className="min-h-[90px] resize-none border-0 bg-transparent px-0 py-1.5 font-sans text-[20px] leading-7 text-foreground shadow-none focus-visible:ring-0"
                   />
-                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-[rgba(31,31,28,0.08)] pt-3">
+                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3">
                     <div className="flex items-center gap-2">
                       <Button type="button" variant="ghost" className="h-9 rounded-xl px-3 font-sans text-xs text-muted-foreground" aria-label="Select context">
                         Task context
@@ -237,7 +237,7 @@ export function CoworkPage({
                         value={selectedModel}
                         onChange={(event) => onModelChange(event.target.value)}
                         disabled={modelsLoading || changingModel || models.length === 0}
-                        className="h-9 max-w-[240px] rounded-xl border border-[rgba(31,31,28,0.14)] bg-white px-3 font-sans text-xs text-foreground outline-none"
+                        className="h-9 max-w-[240px] rounded-xl border border-border bg-background px-3 font-sans text-xs text-foreground outline-none"
                       >
                         <option value="">Default model</option>
                         {models.map((model) => (
@@ -252,7 +252,7 @@ export function CoworkPage({
                         size="icon"
                         aria-label={sending ? 'Sending' : 'Send task'}
                         disabled={!canSend}
-                        className="h-9 w-9 rounded-xl border-0 bg-[linear-gradient(120deg,#e5a48a,#d98765)] text-[#fffefb]"
+                        className="h-9 w-9 rounded-xl border-0 bg-primary text-primary-foreground hover:bg-primary/90"
                       >
                         {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
                       </Button>
@@ -297,20 +297,20 @@ export function CoworkPage({
                         {inline.cards.map((card) => {
                           const toneClass =
                             card.tone === 'danger'
-                              ? 'border-[rgba(173,56,56,0.28)] bg-[rgba(173,56,56,0.06)]'
+                              ? 'border-destructive/30 bg-destructive/10'
                               : card.tone === 'success'
-                                ? 'border-[rgba(47,122,88,0.28)] bg-[rgba(47,122,88,0.08)]'
-                                : 'border-[rgba(31,31,28,0.14)] bg-[rgba(246,245,242,0.86)]';
+                                ? 'border-emerald-500/35 bg-emerald-500/10'
+                                : 'border-border bg-muted/60';
 
                           return (
-                            <div key={card.id} className="rounded-xl border border-[rgba(31,31,28,0.08)] bg-white">
+                            <div key={card.id} className="rounded-xl border border-border bg-card">
                               <button
                                 type="button"
-                                className={`group flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors hover:bg-[rgba(240,239,235,0.96)] ${toneClass}`}
+                                className={`group flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors hover:bg-muted ${toneClass}`}
                                 onClick={() => setExpandedInlineActivityId((current) => (current === card.id ? null : card.id))}
                                 title={card.details}
                               >
-                                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[rgba(31,31,28,0.16)] bg-white text-muted-foreground">
+                                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
                                   <FileText className="h-3 w-3" />
                                 </span>
                                 <span className="min-w-0 flex-1 truncate font-sans text-[12px] text-foreground/90">{card.label}</span>
@@ -322,7 +322,7 @@ export function CoworkPage({
                               </button>
 
                               {expandedInlineActivityId === card.id ? (
-                                <div className="border-t border-[rgba(31,31,28,0.08)] px-3 py-2">
+                                <div className="border-t border-border px-3 py-2">
                                   <div className="text-[11px] leading-5 text-muted-foreground">
                                     <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
                                       {card.details}
@@ -341,7 +341,7 @@ export function CoworkPage({
 
               {(sending || awaitingStream) && (
                 <article className="w-[min(95%,760px)] px-2 py-1 font-sans text-sm text-muted-foreground">
-                  <div className="inline-flex items-center gap-2 rounded-xl bg-[rgba(31,31,28,0.06)] px-3 py-2">
+                  <div className="inline-flex items-center gap-2 rounded-xl bg-muted px-3 py-2">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     Working...
                   </div>
@@ -354,7 +354,7 @@ export function CoworkPage({
         {!isInitialWorkspace ? (
           <div className="px-2 pb-3 pt-1">
             <div className="mx-auto grid w-full max-w-[860px] gap-2">
-              <form className="rounded-[26px] border border-[rgba(31,31,28,0.14)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(250,248,243,0.95))] px-4 py-3.5 shadow-[0_12px_28px_rgba(24,23,20,0.08)]" onSubmit={onSubmit} ref={formRef}>
+              <form className="rounded-[26px] border border-border bg-card px-4 py-3.5 shadow-[0_12px_28px_rgba(24,23,20,0.08)]" onSubmit={onSubmit} ref={formRef}>
                 <Textarea
                   value={taskPrompt}
                   onChange={(event) => onTaskPromptChange(event.target.value)}
@@ -364,7 +364,7 @@ export function CoworkPage({
                   aria-label="Task prompt"
                   className="min-h-[84px] resize-none border-0 bg-transparent px-0 py-1.5 font-sans text-[18px] leading-7 text-foreground shadow-none focus-visible:ring-0"
                 />
-                <div className="mt-3 flex items-center justify-between gap-2 border-t border-[rgba(31,31,28,0.08)] pt-3">
+                <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3">
                   <div className="flex items-center gap-2">
                     <Button type="button" variant="ghost" className="h-9 rounded-xl px-3 font-sans text-xs text-muted-foreground" aria-label="Select context">
                       Task context
@@ -376,7 +376,7 @@ export function CoworkPage({
                       value={selectedModel}
                       onChange={(event) => onModelChange(event.target.value)}
                       disabled={modelsLoading || changingModel || models.length === 0}
-                      className="h-9 max-w-[240px] rounded-xl border border-[rgba(31,31,28,0.14)] bg-white px-3 font-sans text-xs text-foreground outline-none"
+                      className="h-9 max-w-[240px] rounded-xl border border-border bg-background px-3 font-sans text-xs text-foreground outline-none"
                     >
                       <option value="">Default model</option>
                       {models.map((model) => (
@@ -391,7 +391,7 @@ export function CoworkPage({
                       size="icon"
                       aria-label={sending ? 'Sending' : 'Send task'}
                       disabled={!canSend}
-                      className="h-9 w-9 rounded-xl border-0 bg-[linear-gradient(120deg,#e5a48a,#d98765)] text-[#fffefb]"
+                      className="h-9 w-9 rounded-xl border-0 bg-primary text-primary-foreground hover:bg-primary/90"
                     >
                       {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
                     </Button>
@@ -410,7 +410,7 @@ export function CoworkPage({
         }`}
       >
         <div className="grid min-h-0 w-full gap-3">
-          <Card className="rounded-2xl border-[rgba(31,31,28,0.1)] bg-[rgba(255,255,255,0.82)]">
+          <Card className="rounded-2xl border-border bg-card/90">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Run status</CardTitle>
             </CardHeader>
@@ -424,7 +424,7 @@ export function CoworkPage({
             </CardContent>
           </Card>
 
-          <Card className="rounded-2xl border-[rgba(31,31,28,0.1)] bg-[rgba(255,255,255,0.82)]">
+          <Card className="rounded-2xl border-border bg-card/90">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Working folder</CardTitle>
             </CardHeader>
@@ -447,14 +447,14 @@ export function CoworkPage({
                 <Button
                   type="button"
                   size="sm"
-                  className="border-0 bg-[linear-gradient(120deg,#ea9f7d,#de825e)] text-[#fffefb]"
+                  className="border-0 bg-primary text-primary-foreground hover:bg-primary/90"
                   onClick={() => void onApplyLocalPlan()}
                   disabled={localApplyLoading || localPlanActions.length === 0}
                 >
                   {localApplyLoading ? 'Applying...' : `Apply ${localPlanActions.length}`}
                 </Button>
               </div>
-              <div className="grid gap-2 rounded-lg border border-[rgba(31,31,28,0.1)] bg-white p-2">
+              <div className="grid gap-2 rounded-lg border border-border bg-background p-2">
                 <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Create file</p>
                 <Input
                   value={fileDraftPath}
@@ -494,7 +494,7 @@ export function CoworkPage({
             </CardContent>
           </Card>
 
-          <Card className="min-h-0 rounded-2xl border-[rgba(31,31,28,0.1)] bg-[rgba(255,255,255,0.82)]">
+          <Card className="min-h-0 rounded-2xl border-border bg-card/90">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Context</CardTitle>
             </CardHeader>
@@ -509,11 +509,11 @@ export function CoworkPage({
                   ))}
                 </div>
               </div>
-              <div className="rounded-lg border border-[rgba(31,31,28,0.1)] bg-white p-2">
+              <div className="rounded-lg border border-border bg-background p-2">
                 <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Conversation</p>
                 <p className="font-sans text-xs text-foreground">{messageCounts.user} user message(s), {messageCounts.assistant} assistant message(s)</p>
               </div>
-              <div className="rounded-lg border border-[rgba(31,31,28,0.1)] bg-white p-2">
+              <div className="rounded-lg border border-border bg-background p-2">
                 <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">System activity</p>
                 {systemMessages.length === 0 ? (
                   <p className="font-sans text-xs text-muted-foreground">No system events yet.</p>
@@ -526,18 +526,18 @@ export function CoworkPage({
 
                       const statusToneClass =
                         /failed|error|unavailable/i.test(headline)
-                          ? 'border-[rgba(173,56,56,0.26)] bg-[rgba(173,56,56,0.06)]'
-                          : 'border-[rgba(31,31,28,0.12)] bg-[rgba(246,245,242,0.88)]';
+                          ? 'border-destructive/30 bg-destructive/10'
+                          : 'border-border bg-muted/60';
 
                       return (
-                        <div key={message.id} className="rounded-xl border border-[rgba(31,31,28,0.08)] bg-white">
+                        <div key={message.id} className="rounded-xl border border-border bg-card">
                           <button
                             type="button"
                             title={details ? `${headline}\n\n${details}` : headline}
-                            className={`group flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-colors hover:bg-[rgba(240,239,235,0.96)] ${statusToneClass}`}
+                            className={`group flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-colors hover:bg-muted ${statusToneClass}`}
                             onClick={() => setExpandedSystemMessageId((current) => (current === message.id ? null : message.id))}
                           >
-                            <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[rgba(31,31,28,0.16)] bg-white text-muted-foreground">
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
                               <Clock3 className="h-3 w-3" />
                             </span>
                             <span className="min-w-0 flex-1 truncate font-sans text-[12px] text-foreground/90">
@@ -551,7 +551,7 @@ export function CoworkPage({
                           </button>
 
                           {isExpanded && details ? (
-                            <div className="border-t border-[rgba(31,31,28,0.08)] px-2.5 py-2">
+                            <div className="border-t border-border px-2.5 py-2">
                               <div className="max-h-40 overflow-auto text-[11px] leading-5 text-muted-foreground">
                                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
                                   {details}
@@ -565,14 +565,14 @@ export function CoworkPage({
                   </div>
                 )}
               </div>
-              <div className="rounded-lg border border-[rgba(31,31,28,0.1)] bg-white p-2">
+              <div className="rounded-lg border border-border bg-background p-2">
                 <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Local actions</p>
                 {localActionReceipts.length === 0 ? (
                   <p className="font-sans text-xs text-muted-foreground">No local actions yet.</p>
                 ) : (
                   <div className="mt-1 grid gap-1">
                     {localActionReceipts.slice(0, 6).map((item) => (
-                      <div key={`${item.id}-${item.path}`} className="rounded border border-[rgba(31,31,28,0.08)] px-2 py-1">
+                      <div key={`${item.id}-${item.path}`} className="rounded border border-border px-2 py-1">
                         <p className="font-sans text-[11px] text-foreground">
                           {item.type} • {item.status}
                         </p>

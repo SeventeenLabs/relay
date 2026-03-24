@@ -377,7 +377,7 @@ export function AppSidebar({
         </div>
         <div className="relative" ref={profileMenuRef}>
           {profileMenuOpen && (
-            <div className={`absolute z-50 w-64 rounded-xl border border-border bg-white p-1 shadow-xl ${profilePopupPositionClass}`}>
+            <div className={`absolute z-50 w-64 rounded-xl border border-border bg-background p-1 shadow-xl ${profilePopupPositionClass}`}>
               <div className="flex items-center gap-3 px-2.5 py-2">
                 <div className="flex size-9 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground">
                   {userInitials}
@@ -417,7 +417,7 @@ export function AppSidebar({
               </div>
             </div>
           )}
-          <div className={`rounded-xl border border-border bg-white py-2 ${compact ? 'flex justify-center px-1' : 'flex items-center justify-between gap-3 px-2'}`}>
+          <div className={`rounded-xl border border-border bg-background py-2 ${compact ? 'flex justify-center px-1' : 'flex items-center justify-between gap-3 px-2'}`}>
             <div className={`flex items-center gap-3 ${compact ? '' : 'min-w-0'}`}>
               {compact ? (
                 <button

@@ -26,7 +26,7 @@ function MenuItem({ className, active = false, ...props }: React.ComponentProps<
       data-slot="menu-item"
       data-active={active ? 'true' : undefined}
       className={cn(
-        'inline-flex h-9 w-full items-center rounded-xl px-3 text-left text-sm text-foreground/80 transition-colors hover:bg-muted/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 data-[active=true]:bg-[#ece9e1] data-[active=true]:text-foreground data-[active=true]:shadow-[0_1px_0_rgba(0,0,0,0.05)]',
+        'inline-flex h-9 w-full items-center rounded-xl px-3 text-left text-sm text-foreground/80 transition-colors hover:bg-muted/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 data-[active=true]:bg-muted data-[active=true]:text-foreground data-[active=true]:shadow-[0_1px_0_rgba(0,0,0,0.05)]',
         className,
       )}
       {...props}

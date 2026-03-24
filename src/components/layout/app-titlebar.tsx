@@ -46,7 +46,7 @@ export function AppTitlebar({
   const windowControlBaseClass =
     'inline-flex h-[44px] w-[46px] items-center justify-center border-0 bg-transparent text-muted-foreground transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40';
   const neutralWindowControlClass =
-    'hover:bg-[#d8d4cb] hover:text-foreground active:bg-[#c9c3b7] focus-visible:ring-[#b8b0a3]/45';
+    'hover:bg-muted hover:text-foreground active:bg-muted/80';
 
   const preventTitlebarDragCapture = (event: MouseEvent<HTMLElement>) => {
     event.stopPropagation();
