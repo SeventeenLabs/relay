@@ -6,6 +6,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
 import type {
+  AppConfig,
+  HealthCheckResult,
   LocalFileApplyResult,
   LocalFileAppendResult,
   LocalFileCreateResult,
@@ -21,17 +23,6 @@ import type {
 } from '../src/app-types.js';
 
 const execFileAsync = promisify(execFile);
-
-type AppConfig = {
-  gatewayUrl: string;
-  gatewayToken: string;
-};
-
-type HealthCheckResult = {
-  ok: boolean;
-  status?: number;
-  message: string;
-};
 
 const defaultConfig: AppConfig = {
   gatewayUrl: 'ws://127.0.0.1:18789',
@@ -134,6 +125,32 @@ function registerDevContentSecurityPolicy() {
     "default-src 'self' http://localhost:5173",
     "script-src 'self' 'unsafe-inline' http://localhost:5173",
     "style-src 'self' 'unsafe-inline' http://localhost:5173",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self' http: https: ws: wss:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');
+
+  session.defaultSession.webRequest.onHeadersReceived(filter, (details, callback) => {
+    const responseHeaders = details.responseHeaders ?? {};
+    responseHeaders['Content-Security-Policy'] = [csp];
+    callback({ responseHeaders });
+  });
+}
+
+function registerProdContentSecurityPolicy() {
+  if (isDev) {
+    return;
+  }
+
+  const filter = { urls: ['file://*/*'] };
+
+  const csp = [
+    "default-src 'self' file:",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
     "connect-src 'self' http: https: ws: wss:",
@@ -285,46 +302,6 @@ async function applyFolderOrganizationPlan(rootPath: string, actions: LocalFileP
   }
 
   return result;
-}
-
-async function createFileInFolder(rootPath: string, relativePath: string, content: string): Promise<LocalFileCreateResult> {
-  const root = await ensurePathAllowed(rootPath);
-
-  const normalizedRelative = normalizeRelativePath(relativePath);
-  if (!normalizedRelative) {
-    throw new Error('A file path is required.');
-  }
-
-  if (path.isAbsolute(normalizedRelative)) {
-    throw new Error('Use a path relative to the working folder.');
-  }
-
-  const resolvedTargetPath = path.resolve(root, normalizedRelative);
-  if (!isPathInside(root, resolvedTargetPath)) {
-    throw new Error('Target file must remain inside the working folder.');
-  }
-
-  if (isHiddenOrBlockedPath(normalizedRelative)) {
-    throw new Error('Target path is blocked by local safety rules.');
-  }
-
-  await fs.mkdir(path.dirname(resolvedTargetPath), { recursive: true });
-
-  try {
-    await fs.access(resolvedTargetPath);
-    throw new Error('A file already exists at that path.');
-  } catch (error) {
-    if (error instanceof Error && error.message === 'A file already exists at that path.') {
-      throw error;
-    }
-    // target does not exist, continue
-  }
-
-  await fs.writeFile(resolvedTargetPath, content, 'utf8');
-  return {
-    filePath: resolvedTargetPath,
-    created: true,
-  };
 }
 
 async function writeFileInFolder(
@@ -781,6 +758,7 @@ async function createWindow() {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
@@ -812,6 +790,7 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   registerWebSocketOriginRewrite();
   registerDevContentSecurityPolicy();
+  registerProdContentSecurityPolicy();
 
   ipcMain.handle('config:get', async () => readConfig());
   ipcMain.handle('config:save', async (_event, config: AppConfig) => writeConfig(config));
