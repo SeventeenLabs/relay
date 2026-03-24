@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -6,6 +8,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Code,
   Copy,
   Edit3,
   Eye,
@@ -50,6 +53,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import type { LocalFileListItem } from '@/app-types';
+import { chatMarkdownComponents } from '@/lib/chat-markdown';
 import type { FileService } from '@/lib/file-service';
 import { WorkspaceRpcUnsupportedError } from '@/lib/file-service';
 
@@ -333,6 +337,9 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
 
   // File info
   const [fileInfo, setFileInfo] = useState<{ size: number; createdMs: number; modifiedMs: number; kind: string } | null>(null);
+
+  // Markdown rendered vs source toggle
+  const [mdRendered, setMdRendered] = useState(true);
 
   // Remote unsupported state
   const [remoteUnsupported, setRemoteUnsupported] = useState(false);
@@ -664,6 +671,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
   const selectedExt = selectedPath ? getFileExt(selectedPath) : '';
   const selectedLang = EXT_LANG[selectedExt] || 'text';
   const isImage = IMAGE_EXTS.has(selectedExt);
+  const isMarkdown = selectedExt === 'md';
 
   /* ── Keyboard nav ── */
   const handleKeyDown = useCallback(
@@ -707,8 +715,8 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
 
   /* ── Syntax highlight preview ── */
   const highlightedLines = useMemo(
-    () => (previewContent && !isImage ? syntaxHighlight(previewContent, selectedLang) : []),
-    [previewContent, isImage, selectedLang],
+    () => (previewContent && !isImage && !(isMarkdown && mdRendered) ? syntaxHighlight(previewContent, selectedLang) : []),
+    [previewContent, isImage, isMarkdown, mdRendered, selectedLang],
   );
 
   const switchRoot = useCallback((nextRoot: ExplorerRoot) => {
@@ -908,13 +916,16 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
 
   return (
     <section
-      className="grid h-full min-h-0"
-      style={{ gridTemplateColumns: selectedPath ? '1fr 1fr' : '1fr' }}
+      className="grid h-full min-h-0 overflow-hidden"
+      style={{
+        gridTemplateColumns: selectedPath ? '1fr 1fr' : '1fr',
+        gridTemplateRows: 'minmax(0, 1fr)',
+      }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => void handleDrop(e, currentRelPath)}
     >
       {/* ════════════════════════ Left: File Tree Panel ════════════════════════ */}
-      <div className="flex min-h-0 flex-col" onKeyDown={handleKeyDown} tabIndex={0}>
+      <div className="flex min-h-0 flex-col overflow-hidden" onKeyDown={handleKeyDown} tabIndex={0}>
         {/* Toolbar */}
         <div className="flex items-center gap-1 border-b border-border/60 px-3 py-1.5">
           {showRootSwitcher && (
@@ -1096,7 +1107,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
         </div>
 
         {/* Tree listing */}
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           {error ? (
             <div className="p-4 font-sans text-sm text-destructive">
               <AlertTriangle className="mb-1 inline size-4" /> {error}
@@ -1168,7 +1179,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
 
       {/* ════════════════════════ Right: Preview Panel ════════════════════════ */}
       {selectedPath && (
-        <div className="flex min-h-0 flex-col border-l border-border/60">
+        <div className="flex min-h-0 flex-col overflow-hidden border-l border-border/60">
           {/* Preview header with tabs */}
           <div className="flex items-center gap-1 border-b border-border/60 px-3 py-1.5">
             <button
@@ -1192,6 +1203,17 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
             >
               <Clock className="mr-1 inline size-3" />Info
             </button>
+            {isMarkdown && previewTab === 'preview' && (
+              <button
+                type="button"
+                className="rounded px-2 py-1 font-sans text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() => setMdRendered((v) => !v)}
+                title={mdRendered ? 'Show source' : 'Show rendered'}
+              >
+                {mdRendered ? <Code className="mr-1 inline size-3" /> : <Eye className="mr-1 inline size-3" />}
+                {mdRendered ? 'Source' : 'Rendered'}
+              </button>
+            )}
             <div className="ml-auto flex items-center gap-1">
               <span className="min-w-0 max-w-[180px] truncate font-sans text-[11px] text-muted-foreground">
                 {selectedNode?.name}
@@ -1205,7 +1227,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
             </div>
           </div>
 
-          <ScrollArea className="flex-1">
+          <ScrollArea className="min-h-0 flex-1">
             {previewTab === 'preview' && (
               previewLoading ? (
                 <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
@@ -1221,6 +1243,12 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
                       <FileImage className="size-16 text-muted-foreground/30" />
                     </div>
                   </div>
+                </div>
+              ) : isMarkdown && mdRendered ? (
+                <div className="p-5 font-sans text-sm leading-relaxed text-foreground">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
+                    {previewContent}
+                  </ReactMarkdown>
                 </div>
               ) : (
                 <div className="relative">
