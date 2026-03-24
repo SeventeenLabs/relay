@@ -60,7 +60,10 @@ type FilesPageProps = {
   desktopBridgeAvailable: boolean;
   onPickFolder: () => void;
   fileService: FileService;
+  localFileService?: FileService | null;
 };
+
+type ExplorerRoot = 'workspace' | 'working-folder';
 
 type TreeNode = {
   name: string;
@@ -269,7 +272,7 @@ const FILE_PERMISSIONS: PermissionRef[] = [
 
 /* ═══════════════════════════════════════════ Main Component ═══════════════════════════════════════════ */
 
-export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder, fileService }: FilesPageProps) {
+export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder, fileService, localFileService }: FilesPageProps) {
   /* ── State ── */
   const [currentRelPath, setCurrentRelPath] = useState('');
   const [items, setItems] = useState<LocalFileListItem[]>([]);
@@ -337,6 +340,24 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
   const [agentHasFileTools, setAgentHasFileTools] = useState(false);
 
   const isRemote = fileService.mode === 'remote';
+  const localWorkingFolderAvailable = Boolean(localFileService && desktopBridgeAvailable && workingFolder.trim());
+  const [activeRoot, setActiveRoot] = useState<ExplorerRoot>('workspace');
+
+  useEffect(() => {
+    if (!localWorkingFolderAvailable && activeRoot === 'working-folder') {
+      setActiveRoot('workspace');
+    }
+  }, [activeRoot, localWorkingFolderAvailable]);
+
+  const activeExplorerService = useMemo(() => {
+    if (activeRoot === 'working-folder' && localWorkingFolderAvailable && localFileService) {
+      return localFileService;
+    }
+    return fileService;
+  }, [activeRoot, localWorkingFolderAvailable, localFileService, fileService]);
+
+  const activeRootPath = activeRoot === 'working-folder' ? workingFolder : (isRemote ? '' : workingFolder);
+  const showRootSwitcher = isRemote && localWorkingFolderAvailable;
 
   /* ── Directory Loading ── */
   const loadDirectory = useCallback(
@@ -344,7 +365,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
       setLoading(true);
       setError('');
       try {
-        const result = await fileService.listDir(workingFolder, relPath || undefined);
+        const result = await activeExplorerService.listDir(activeRootPath, relPath || undefined);
         const sorted = [...result.items].sort((a, b) => {
           if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
           return a.path.localeCompare(b.path, undefined, { sensitivity: 'base' });
@@ -374,14 +395,14 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
         setLoading(false);
       }
     },
-    [fileService, workingFolder],
+    [activeExplorerService, activeRootPath, fileService],
   );
 
   const loadSubDir = useCallback(
     async (relPath: string) => {
       setLoadingDirs((prev) => new Set(prev).add(relPath));
       try {
-        const result = await fileService.listDir(workingFolder, relPath);
+        const result = await activeExplorerService.listDir(activeRootPath, relPath);
         setChildCache((prev) => new Map(prev).set(relPath, result.items));
       } finally {
         setLoadingDirs((prev) => {
@@ -391,14 +412,14 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
         });
       }
     },
-    [fileService, workingFolder],
+    [activeExplorerService, activeRootPath],
   );
 
   useEffect(() => {
-    if ((desktopBridgeAvailable || isRemote) && workingFolder) {
+    if ((desktopBridgeAvailable || isRemote) && (activeRootPath || isRemote)) {
       void loadDirectory('');
     }
-  }, [workingFolder, desktopBridgeAvailable, isRemote, loadDirectory]);
+  }, [activeRootPath, desktopBridgeAvailable, isRemote, loadDirectory]);
 
   /* ── Navigation ── */
   const navigateUp = useCallback(() => {
@@ -442,11 +463,11 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
       setDiffOldContent('');
       setDiffNewContent('');
       try {
-        const result = await fileService.readFile(workingFolder, node.relativePath);
+        const result = await activeExplorerService.readFile(activeRootPath, node.relativePath);
         setPreviewContent(result.content);
         // Also load file info
         try {
-          const stat = await fileService.stat(workingFolder, node.relativePath);
+          const stat = await activeExplorerService.stat(activeRootPath, node.relativePath);
           setFileInfo({ size: stat.size, createdMs: stat.createdMs, modifiedMs: stat.modifiedMs, kind: stat.kind });
         } catch {
           setFileInfo(null);
@@ -458,7 +479,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
         setPreviewLoading(false);
       }
     },
-    [fileService, workingFolder],
+    [activeExplorerService, activeRootPath],
   );
 
   /* ── File Operations ── */
@@ -474,11 +495,11 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
       let oldContent: string | undefined;
       if (renameTarget.kind === 'file') {
         try {
-          const r = await fileService.readFile(workingFolder, renameTarget.relativePath);
+          const r = await activeExplorerService.readFile(activeRootPath, renameTarget.relativePath);
           oldContent = r.content;
         } catch { /* ok */ }
       }
-      await fileService.rename(workingFolder, renameTarget.relativePath, newRelPath);
+      await activeExplorerService.rename(activeRootPath, renameTarget.relativePath, newRelPath);
       setUndoStack((prev) => [...prev, {
         id: crypto.randomUUID(),
         ts: Date.now(),
@@ -496,7 +517,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
     } finally {
       setRenameLoading(false);
     }
-  }, [fileService, renameTarget, renameValue, workingFolder, currentRelPath, loadDirectory]);
+  }, [activeExplorerService, activeRootPath, renameTarget, renameValue, currentRelPath, loadDirectory]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
@@ -506,11 +527,11 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
       let oldContent: string | undefined;
       if (deleteTarget.kind === 'file') {
         try {
-          const r = await fileService.readFile(workingFolder, deleteTarget.relativePath);
+          const r = await activeExplorerService.readFile(activeRootPath, deleteTarget.relativePath);
           oldContent = r.content;
         } catch { /* ok */ }
       }
-      await fileService.deleteFile(workingFolder, deleteTarget.relativePath);
+      await activeExplorerService.deleteFile(activeRootPath, deleteTarget.relativePath);
       setUndoStack((prev) => [...prev, {
         id: crypto.randomUUID(),
         ts: Date.now(),
@@ -531,7 +552,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
     } finally {
       setDeleteLoading(false);
     }
-  }, [fileService, deleteTarget, workingFolder, currentRelPath, selectedPath, loadDirectory]);
+  }, [activeExplorerService, activeRootPath, deleteTarget, currentRelPath, selectedPath, loadDirectory]);
 
   const handleCreate = useCallback(async () => {
     if (!createName.trim()) return;
@@ -539,10 +560,10 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
     try {
       const relPath = currentRelPath ? `${currentRelPath}/${createName.trim()}` : createName.trim();
       if (createKind === 'file') {
-        await fileService.createFile(workingFolder, relPath, '');
+        await activeExplorerService.createFile(activeRootPath, relPath, '');
       } else {
         // Create a directory by creating a placeholder file
-        await fileService.createFile(workingFolder, `${relPath}/.gitkeep`, '');
+        await activeExplorerService.createFile(activeRootPath, `${relPath}/.gitkeep`, '');
       }
       setUndoStack((prev) => [...prev, {
         id: crypto.randomUUID(),
@@ -560,16 +581,16 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
     } finally {
       setCreateLoading(false);
     }
-  }, [fileService, createName, createKind, workingFolder, currentRelPath, loadDirectory]);
+  }, [activeExplorerService, activeRootPath, createName, createKind, currentRelPath, loadDirectory]);
 
   const handleUndo = useCallback(async (entry: UndoEntry) => {
     try {
       if (entry.type === 'rename' && entry.newPath) {
-        await fileService.rename(workingFolder, entry.newPath, entry.oldPath);
+        await activeExplorerService.rename(activeRootPath, entry.newPath, entry.oldPath);
       } else if (entry.type === 'delete' && entry.content !== undefined) {
-        await fileService.createFile(workingFolder, entry.oldPath, entry.content);
+        await activeExplorerService.createFile(activeRootPath, entry.oldPath, entry.content);
       } else if (entry.type === 'create') {
-        await fileService.deleteFile(workingFolder, entry.oldPath);
+        await activeExplorerService.deleteFile(activeRootPath, entry.oldPath);
       }
       setUndoStack((prev) => prev.filter((e) => e.id !== entry.id));
       setChangeLog((prev) => {
@@ -582,7 +603,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Rückgängig fehlgeschlagen');
     }
-  }, [fileService, workingFolder, currentRelPath, loadDirectory]);
+  }, [activeExplorerService, activeRootPath, currentRelPath, loadDirectory]);
 
   /* ── Drop handler ── */
   const handleDrop = useCallback(
@@ -597,13 +618,13 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
         try {
           const text = await file.text();
           const relPath = targetDir ? `${targetDir}/${file.name}` : file.name;
-          await fileService.createFile(workingFolder, relPath, text);
+          await activeExplorerService.createFile(activeRootPath, relPath, text);
           setChangeLog((prev) => new Map(prev).set(relPath, 'created'));
         } catch { /* skip failed drops */ }
       }
       void loadDirectory(currentRelPath);
     },
-    [fileService, workingFolder, currentRelPath, loadDirectory],
+    [activeExplorerService, activeRootPath, currentRelPath, loadDirectory],
   );
 
   /* ── Context menu close on click outside ── */
@@ -626,7 +647,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
     return tree.filter((n) => n.name.toLowerCase().includes(q));
   }, [tree, filterQuery]);
 
-  const breadcrumbs = useMemo(() => buildBreadcrumbs(workingFolder, currentRelPath), [workingFolder, currentRelPath]);
+  const breadcrumbs = useMemo(() => buildBreadcrumbs(activeRootPath, currentRelPath), [activeRootPath, currentRelPath]);
 
   const stats = useMemo(() => {
     const dirs = items.filter((i) => i.kind === 'directory').length;
@@ -690,6 +711,22 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
     [previewContent, isImage, selectedLang],
   );
 
+  const switchRoot = useCallback((nextRoot: ExplorerRoot) => {
+    setActiveRoot(nextRoot);
+    setCurrentRelPath('');
+    setItems([]);
+    setExpandedDirs(new Set());
+    setChildCache(new Map());
+    setSelectedPath(null);
+    setPreviewContent('');
+    setDiffOldContent('');
+    setDiffNewContent('');
+    setFileInfo(null);
+    setFilterQuery('');
+    setError('');
+    setRemoteUnsupported(false);
+  }, []);
+
   /* ── Render: not available ── */
   if (!desktopBridgeAvailable && !isRemote) {
     return (
@@ -706,7 +743,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
   }
 
   /* ── Render: remote server doesn't support workspace RPCs ── */
-  if (remoteUnsupported) {
+  if (remoteUnsupported && activeRoot === 'workspace') {
     const fsTools = agentTools.filter((t) => ['read', 'write', 'edit', 'apply_patch'].includes(t.name));
     return (
       <section className="flex h-full items-center justify-center overflow-y-auto p-6">
@@ -752,6 +789,17 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
           </div>
 
           <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
+            {showRootSwitcher && (
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                onClick={() => switchRoot('working-folder')}
+              >
+                <HardDrive className="mr-1.5 size-3.5" />
+                Zum lokalen Arbeitsordner
+              </Button>
+            )}
             {desktopBridgeAvailable && (
               <Button type="button" variant="outline" size="sm" onClick={onPickFolder}>
                 <Folder className="mr-1.5 size-3.5" />
@@ -869,6 +917,25 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
       <div className="flex min-h-0 flex-col" onKeyDown={handleKeyDown} tabIndex={0}>
         {/* Toolbar */}
         <div className="flex items-center gap-1 border-b border-border/60 px-3 py-1.5">
+          {showRootSwitcher && (
+            <>
+              <button
+                type="button"
+                className={`rounded px-2 py-0.5 text-[11px] ${activeRoot === 'workspace' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+                onClick={() => switchRoot('workspace')}
+              >
+                OpenClaw Workspace
+              </button>
+              <button
+                type="button"
+                className={`rounded px-2 py-0.5 text-[11px] ${activeRoot === 'working-folder' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+                onClick={() => switchRoot('working-folder')}
+              >
+                Lokaler Arbeitsordner
+              </button>
+              <Separator orientation="vertical" className="mx-1 h-4" />
+            </>
+          )}
           <Button type="button" variant="ghost" size="icon-xs" className="size-6" onClick={navigateUp} title="Übergeordnet">
             <FolderUp className="size-3.5" />
           </Button>
@@ -880,7 +947,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
               type="button"
               className="shrink-0 rounded px-1 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={() => void loadDirectory('')}
-              title={workingFolder}
+              title={activeRootPath || 'OpenClaw Workspace'}
             >
               <HardDrive className="inline size-3" />
             </button>
@@ -905,7 +972,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
           {/* Remote mode indicator */}
           {isRemote && (
             <Badge variant="outline" className="ml-1 shrink-0 border-blue-500/40 bg-blue-50 text-[10px] text-blue-700 dark:bg-blue-950/30 dark:text-blue-400">
-              Remote
+              {activeRoot === 'workspace' ? 'Remote Workspace' : 'Local Folder'}
             </Badge>
           )}
 

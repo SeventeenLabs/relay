@@ -26,7 +26,7 @@ import {
 import { SidebarProvider } from './components/ui/sidebar';
 import { ScrollArea } from './components/ui/scroll-area';
 import { GatewayRequestError, OpenClawGatewayClient } from './lib/openclaw-gateway-client';
-import { createFileService } from './lib/file-service';
+import { createFileService, LocalFileService } from './lib/file-service';
 import { ActivityPage } from './pages/activity-page';
 import { ChatPage } from './pages/chat-page';
 import { CoworkPage } from './pages/cowork-page';
@@ -782,6 +782,11 @@ export default function App() {
     // Re-create when connection state or URL changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [draftGatewayUrl, gatewayConnected, bridge],
+  );
+
+  const localFileService = useMemo(
+    () => (bridge ? new LocalFileService() : null),
+    [bridge],
   );
 
   const updatePreferences = useCallback((patch: Partial<UserPreferences>) => {
@@ -2970,7 +2975,7 @@ export default function App() {
             onLogout={handleLogout}
           />
 
-          <main className="relative min-h-0 overflow-hidden p-5">
+          <main className={`relative min-h-0 overflow-hidden ${activePage === 'files' ? 'p-0' : 'p-5'}`}>
             <CommandDialog
               open={searchOpen}
               onOpenChange={handleSearchOpenChange}
@@ -3059,6 +3064,7 @@ export default function App() {
                 desktopBridgeAvailable={Boolean(bridge)}
                 onPickFolder={handlePickWorkingFolder}
                 fileService={fileService}
+                localFileService={localFileService}
               />
             ) : (
               <ScrollArea className="h-full">
