@@ -7,6 +7,7 @@ import remarkGfm from 'remark-gfm';
 
 import type { ChatMessage, ChatModelOption } from '@/app-types';
 import { Button } from '@/components/ui/button';
+import { TokenBadge } from '@/components/ui/token-badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { chatMarkdownComponents } from '@/lib/chat-markdown';
@@ -72,6 +73,7 @@ export function ChatPage({
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [composerDockHeight, setComposerDockHeight] = useState(170);
   const canSend = (taskPrompt.trim().length > 0 || attachedFiles.length > 0) && !sending;
+  const composerBottomInset = composerDockHeight + 72;
 
   const scrollMessagesToBottom = (behavior: ScrollBehavior = 'auto') => {
     if (messageEndRef.current) {
@@ -504,7 +506,7 @@ export function ChatPage({
           onScroll={handleMessageViewportScroll}
           className="h-full overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-1"
         >
-        <div className="mx-auto grid w-full max-w-[760px] gap-4 pb-4" style={{ paddingBottom: `${composerDockHeight + 24}px` }}>
+        <div className="mx-auto grid w-full max-w-[760px] gap-4 pb-4" style={{ paddingBottom: `${composerBottomInset}px` }}>
           {messages.map((message) => (
             <article key={message.id} className={message.role === 'user' ? 'ml-auto min-w-0 w-[min(92%,620px)]' : 'min-w-0 w-full'}>
               {message.role === 'user' ? (
@@ -512,10 +514,15 @@ export function ChatPage({
                   {message.text}
                 </p>
               ) : (
-                <div className="min-w-0 font-sans text-[15px] leading-7 text-foreground [overflow-wrap:anywhere]">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
-                    {message.text}
-                  </ReactMarkdown>
+                <div className="min-w-0">
+                  <div className="font-sans text-[15px] leading-7 text-foreground [overflow-wrap:anywhere]">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
+                      {message.text}
+                    </ReactMarkdown>
+                  </div>
+                  {message.role === 'assistant' && (
+                    <TokenBadge usage={message.usage} text={message.usage ? undefined : message.text} />
+                  )}
                 </div>
               )}
             </article>
@@ -538,7 +545,7 @@ export function ChatPage({
             size="icon"
             variant="outline"
             className="absolute right-5 z-20 h-9 w-9 rounded-full border-border bg-card/95 text-muted-foreground shadow-md hover:bg-muted"
-            style={{ bottom: `${composerDockHeight + 12}px` }}
+            style={{ bottom: `${composerBottomInset - 12}px` }}
             onClick={() => {
               autoScrollEnabledRef.current = true;
               setShowJumpToLatest(false);

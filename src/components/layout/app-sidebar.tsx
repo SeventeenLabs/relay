@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { MessageUsage } from '@/app-types';
+import { formatCostUsd, formatTokenCount } from '@/lib/token-usage';
 import {
   Brain,
   CalendarClock,
@@ -74,6 +76,7 @@ type AppSidebarProps = {
   recentItems: RecentSidebarItem[];
   scheduledItems: ScheduledSidebarItem[];
   scheduledLoading: boolean;
+  sessionUsage?: MessageUsage;
   onSelectRecentItem: (item: RecentSidebarItem) => void;
   onRenameRecentItem: (item: RecentSidebarItem) => void;
   onDeleteRecentItem: (item: RecentSidebarItem) => void;
@@ -138,6 +141,7 @@ export function AppSidebar({
   recentItems,
   scheduledItems,
   scheduledLoading,
+  sessionUsage,
   onSelectRecentItem,
   onRenameRecentItem,
   onDeleteRecentItem,
@@ -441,6 +445,17 @@ export function AppSidebar({
       </SidebarContent>
 
       <SidebarFooter>
+        {sessionUsage && (sessionUsage.inputTokens + sessionUsage.outputTokens) > 0 && (
+          <div className={`flex items-center gap-1.5 px-3 pt-1 ${compact ? 'justify-center' : ''}`}>
+            <span className="font-sans text-[11px] text-muted-foreground/70" title={`Input: ${sessionUsage.inputTokens.toLocaleString()} · Output: ${sessionUsage.outputTokens.toLocaleString()}`}>
+              {!compact && <span className="mr-1 text-muted-foreground/50">Today</span>}
+              {formatTokenCount(sessionUsage.inputTokens + sessionUsage.outputTokens)}
+              {sessionUsage.costUsd !== undefined && sessionUsage.costUsd > 0 && (
+                <span className="ml-1">·&nbsp;{formatCostUsd(sessionUsage.costUsd)}</span>
+              )}
+            </span>
+          </div>
+        )}
         <div className={`flex items-center gap-2 px-3 py-1 ${compact ? 'justify-center' : ''}`}>
           <span className={`inline-block h-2 w-2 rounded-full ${gatewayConnected ? 'bg-[#2f7a58]' : 'bg-[#b42318]'}`} />
           {!compact && (

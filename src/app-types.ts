@@ -9,11 +9,19 @@ export type HealthCheckResult = {
   message: string;
 };
 
+export type MessageUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  model?: string;
+  costUsd?: number;
+};
+
 export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant' | 'system';
   text: string;
   meta?: ChatMessageMeta;
+  usage?: MessageUsage;
 };
 
 export type ChatActivityTone = 'neutral' | 'success' | 'danger';

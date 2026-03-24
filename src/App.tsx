@@ -40,6 +40,8 @@ import { ScrollArea } from './components/ui/scroll-area';
 import { OpenClawGatewayClient } from './lib/openclaw-gateway-client';
 import { createFileService, LocalFileService } from './lib/file-service';
 import { buildMemoryContext, loadMemoryEntries } from './lib/memory-context';
+import { accumulateTodayUsage, addUsage, calcCostUsd, loadTodayUsage, parseUsageFromPayload } from './lib/token-usage';
+import { estimateTokens } from './components/ui/token-badge';
 
 import { OnboardingPage } from './features/auth/onboarding-page';
 import { useAuth } from './hooks/use-auth';
@@ -192,6 +194,44 @@ export default function App() {
   const [localActionReceipts, setLocalActionReceipts] = useState<LocalActionReceipt[]>([]);
   const [localActionSmokeRunning, setLocalActionSmokeRunning] = useState(false);
   const [gatewayConnected, setGatewayConnected] = useState(false);
+  const [sessionUsage, setSessionUsage] = useState(() => loadTodayUsage());
+
+  // Derive an estimated session total from committed assistant messages that have no real usage.
+  // Real usage (from gateway) is preferred; estimation fills in the gap.
+  const displaySessionUsage = useMemo<{ inputTokens: number; outputTokens: number; costUsd?: number; estimated: boolean }>(() => {
+    const allMessages = [...chatMessages, ...coworkMessages];
+    let estimatedTokens = 0;
+    let hasRealUsage = sessionUsage.inputTokens + sessionUsage.outputTokens > 0;
+
+    for (const msg of allMessages) {
+      if (msg.role === 'assistant') {
+        if (!msg.usage) {
+          estimatedTokens += estimateTokens(msg.text);
+        }
+      }
+    }
+
+    if (hasRealUsage) {
+      return {
+        inputTokens: sessionUsage.inputTokens,
+        outputTokens: sessionUsage.outputTokens,
+        costUsd: sessionUsage.costUsd,
+        estimated: false,
+      };
+    }
+
+    if (estimatedTokens === 0) {
+      return { inputTokens: 0, outputTokens: 0, estimated: true };
+    }
+
+    return {
+      inputTokens: 0,
+      outputTokens: estimatedTokens,
+      costUsd: calcCostUsd(0, estimatedTokens),
+      estimated: true,
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatMessages, coworkMessages, sessionUsage]);
 
   const fileService = useMemo(
     () => createFileService(gatewayClientRef.current, draftGatewayUrl, Boolean(bridge)),
@@ -949,6 +989,12 @@ export default function App() {
             setCoworkStreamingText(visibleText);
             const streamId = `cowork-stream-${runId}`;
             const finalId = `cowork-final-${runId}`;
+            const activeModel = typeof payload.model === 'string' ? payload.model : undefined;
+            const coworkUsage = parseUsageFromPayload(payload, activeModel);
+            if (coworkUsage) {
+              accumulateTodayUsage(coworkUsage);
+              setSessionUsage((prev) => addUsage(prev, coworkUsage));
+            }
             const relayActions = parseRelayFileActions({
               text,
               message,
@@ -980,7 +1026,7 @@ export default function App() {
               // canonical UI output and we suppress duplicate assistant confirmation text.
               const next =
                 !hasStructuredActions && !hasStructuredActivity && visibleText
-                  ? [...withoutStream, { id: finalId, role, text: visibleText }]
+                  ? [...withoutStream, { id: finalId, role, text: visibleText, ...(coworkUsage ? { usage: coworkUsage } : {}) }]
                   : withoutStream;
               if (eventSessionKey) {
                 coworkMessageCache.current.set(eventSessionKey, next);
@@ -1380,12 +1426,19 @@ export default function App() {
           setAwaitingChatStream(false);
           const streamId = `stream-${runId}`;
           const finalId = `final-${runId}`;
+          const activeModel = typeof payload.model === 'string' ? payload.model : undefined;
+          const usage = parseUsageFromPayload(payload, activeModel);
+          if (usage) {
+            accumulateTodayUsage(usage);
+            setSessionUsage((prev) => addUsage(prev, usage));
+          }
           setChatMessages((current) => {
             const withoutStream = current.filter((entry) => entry.id !== streamId);
             if (withoutStream.some((entry) => entry.id === finalId)) {
               return withoutStream;
             }
-            const next = [...withoutStream, { id: finalId, role, text }];
+            const finalMsg = { id: finalId, role, text, ...(usage ? { usage } : {}) };
+            const next = [...withoutStream, finalMsg];
             const cacheKey = activeSessionKeyRef.current;
             if (cacheKey) {
               threadMessageCache.current.set(cacheKey, next);
@@ -2442,6 +2495,7 @@ export default function App() {
             recentItems={recentItems}
             scheduledItems={scheduledJobs}
             scheduledLoading={scheduledLoading}
+            sessionUsage={sessionUsage}
             onSelectRecentItem={(item) => {
               if (item.kind === 'cowork') {
                 handleOpenRecentCowork(item.sessionKey);
