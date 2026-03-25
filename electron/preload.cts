@@ -85,6 +85,10 @@ const api = {
       rootPath,
       relativePath,
     }) as Promise<LocalFileStatResult>,
+  openPath: (targetPath: string) =>
+    ipcRenderer.invoke('local:open-path', {
+      targetPath,
+    }) as Promise<{ ok: boolean; error?: string }>,
 };
 
 contextBridge.exposeInMainWorld('relay', api);

@@ -1,13 +1,15 @@
 import { useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 
-import { ArrowUp, ChevronRight, Clock3, FileText, Loader2 } from 'lucide-react';
+import { AlertTriangle, ArrowUp, CheckCircle2, ChevronRight, Circle, FileText, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type {
   ChatActivityItem,
   ChatMessage,
   ChatModelOption,
+  CoworkArtifact,
+  CoworkProgressStep,
   CoworkProjectTask,
   CoworkProjectTaskStatus,
   CoworkRunPhase,
@@ -32,17 +34,23 @@ type InlineActivityCard = {
 };
 
 type CoworkPageProps = {
+  projectTitle: string;
+  projectInstructions: string;
+  scheduledCount: number;
+  memoryItems: string[];
   taskPrompt: string;
   workingFolder: string;
   taskState: TaskState;
-  status: string;
   messages: ChatMessage[];
   rightPanelOpen: boolean;
   awaitingStream: boolean;
   streamingAssistantText: string;
-  runPhase: CoworkRunPhase;
-  runStatus: string;
-  sessionKey: string;
+  artifacts: CoworkArtifact[];
+  contextFolders: string[];
+  contextDocuments: string[];
+  contextConnectors: string[];
+  onOpenArtifact: (artifact: CoworkArtifact) => void;
+  onScheduleRun: () => void;
   selectedModel: string;
   models: ChatModelOption[];
   modelsLoading: boolean;
@@ -74,7 +82,6 @@ type CoworkPageProps = {
   onRejectPendingAction: (approvalId: string, reason: string) => void;
 };
 
-const connectors = ['Web search', 'Desktop files', 'Gateway tools'];
 const COWORK_CHAT_COLUMN_MAX_WIDTH = 860;
 const COWORK_COMPOSER_COLUMN_MAX_WIDTH = 920;
 const COWORK_DEFAULT_MODEL_LABEL = 'Default model';
@@ -157,17 +164,23 @@ function extractInlineActivityCards(message: ChatMessage): { body: string; cards
 }
 
 export function CoworkPage({
+  projectTitle,
+  projectInstructions,
+  scheduledCount,
+  memoryItems,
   taskPrompt,
   workingFolder,
   taskState,
-  status,
   messages,
   rightPanelOpen,
   awaitingStream,
   streamingAssistantText: _streamingAssistantText,
-  runPhase,
-  runStatus,
-  sessionKey,
+  artifacts,
+  contextFolders,
+  contextDocuments,
+  contextConnectors,
+  onOpenArtifact,
+  onScheduleRun,
   selectedModel,
   models,
   modelsLoading,
@@ -215,6 +228,8 @@ export function CoworkPage({
     const assistant = messages.filter((message) => message.role === 'assistant').length;
     return { user, assistant };
   }, [messages]);
+
+  const projectRecents = useMemo(() => projectTasks.slice(0, 8), [projectTasks]);
 
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey) {
@@ -285,14 +300,30 @@ export function CoworkPage({
     >
       <div
         className={`grid h-full min-h-0 overflow-hidden bg-transparent ${
-          isInitialWorkspace ? 'grid-rows-[minmax(0,1fr)]' : 'grid-rows-[minmax(0,1fr)_auto]'
+          isInitialWorkspace ? 'grid-rows-[auto_minmax(0,1fr)]' : 'grid-rows-[auto_minmax(0,1fr)_auto]'
         }`}
       >
+        <div className="px-2 pt-2">
+          <div className="w-full rounded-xl border border-border bg-card/85 px-3 py-2">
+            <p className="truncate text-sm font-semibold tracking-tight text-foreground">{projectTitle || 'Cowork'}</p>
+            <p className="mt-0.5 truncate font-sans text-[11px] text-muted-foreground">
+              {(projectInstructions || 'No project instructions yet.').trim()}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <Badge variant="outline" className="rounded-full font-sans text-[10px]">{projectRecents.length} recents</Badge>
+              <Badge variant="outline" className="rounded-full font-sans text-[10px]">{artifacts.length} artifacts</Badge>
+              <Badge variant="outline" className="rounded-full font-sans text-[10px]">{pendingApprovals.length} approvals</Badge>
+              <Badge variant="outline" className="rounded-full font-sans text-[10px]">{scheduledCount} scheduled</Badge>
+            </div>
+          </div>
+        </div>
+
         <ScrollArea className="h-full px-2">
           {isInitialWorkspace ? (
             <div className="mx-auto grid h-full w-full place-items-center" style={{ maxWidth: `${COWORK_COMPOSER_COLUMN_MAX_WIDTH}px` }}>
               <div className="w-full">
-                <p className="mb-3 text-[clamp(1.8rem,2.8vw,2.5rem)] tracking-tight text-foreground">Let's knock something off your list</p>
+                <p className="mb-1 text-[clamp(1.8rem,2.8vw,2.5rem)] tracking-tight text-foreground">{projectTitle || "Let's knock something off your list"}</p>
+                <p className="mb-3 font-sans text-sm text-muted-foreground">Project home for scoped cowork runs and context.</p>
                 <div className="rounded-2xl border border-border bg-card p-4">
                   <p className="font-sans text-sm text-muted-foreground">
                     Cowork runs against your configured gateway and supports file-aware task context.
@@ -405,36 +436,67 @@ export function CoworkPage({
           rightPanelOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
       >
-        <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto pr-1">
-          <Card className="overflow-visible rounded-2xl border-border bg-card/90" data-testid="project-tasks-card">
+        <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto py-2 pr-1">
+          <Card className="overflow-visible rounded-2xl border-border bg-card/90" data-testid="cowork-instructions-card">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Project tasks ({projectTasks.length})</CardTitle>
+              <CardTitle className="text-sm">Instructions</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <p className="font-sans text-[12px] text-foreground/90">
+                {projectInstructions.trim() || 'Add project instructions in the Projects panel to define role, tone, and operating constraints.'}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="overflow-visible rounded-2xl border-border bg-card/90" data-testid="cowork-scheduled-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center justify-between gap-2 text-sm">
+                Scheduled
+                <Badge variant="outline" className="font-sans text-[10px]">{scheduledCount}</Badge>
+              </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-2 pt-0">
-              {projectTasks.length === 0 ? (
-                <p className="font-sans text-xs text-muted-foreground">No tasks yet for this project.</p>
+              <p className="font-sans text-[12px] text-muted-foreground">Set recurring tasks for this project workflow.</p>
+              <Button type="button" size="sm" variant="outline" onClick={onScheduleRun}>Open schedule</Button>
+            </CardContent>
+          </Card>
+
+          <Card className="overflow-visible rounded-2xl border-border bg-card/90" data-testid="cowork-artifacts-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Artifacts ({artifacts.length})</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-2 pt-0">
+              {artifacts.length === 0 ? (
+                <p className="font-sans text-xs text-muted-foreground">No artifacts yet for this run.</p>
               ) : (
-                <div className="grid gap-2">
-                  {projectTasks.map((task) => (
-                    <div key={task.id} className="rounded-xl border border-border bg-background p-2" data-testid={`project-task-${task.id}`}>
-                      <div className="mb-1.5 flex items-center gap-2">
-                        <Badge
-                          variant="outline"
-                          className={`rounded-full font-sans text-[10px] capitalize ${taskStatusClasses(task.status)}`}
-                          data-testid={`project-task-status-${task.id}`}
-                        >
-                          {taskStatusLabel(task.status)}
-                        </Badge>
-                        {task.runId ? <span className="font-mono text-[10px] text-muted-foreground">{task.runId}</span> : null}
+                <div className="grid gap-1.5">
+                  {artifacts.slice(0, 12).map((artifact) => (
+                    <button
+                      key={artifact.id}
+                      type="button"
+                      onClick={() => onOpenArtifact(artifact)}
+                      className="rounded-lg border border-border bg-background p-2 text-left transition-colors hover:bg-muted/60"
+                      data-testid={`cowork-artifact-${artifact.id}`}
+                    >
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <p className="truncate font-sans text-[12px] text-foreground">{artifact.label}</p>
+                        <div className="flex items-center gap-1">
+                          {artifact.source ? (
+                            <Badge variant="outline" className="rounded-full font-sans text-[10px] capitalize">
+                              {artifact.source.replace('_', ' ')}
+                            </Badge>
+                          ) : null}
+                          <Badge
+                            variant="outline"
+                            className={`rounded-full font-sans text-[10px] ${artifact.status === 'ok' ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-destructive/35 bg-destructive/10 text-destructive'}`}
+                          >
+                            {artifact.status}
+                          </Badge>
+                        </div>
                       </div>
-                      <p className="whitespace-pre-wrap break-words font-sans text-[12px] text-foreground">{task.prompt}</p>
-                      {task.summary ? (
-                        <p className="mt-1 whitespace-pre-wrap break-words font-sans text-[11px] text-muted-foreground">{task.summary}</p>
-                      ) : null}
-                      <p className="mt-1 font-sans text-[10px] text-muted-foreground">
-                        Updated {new Date(task.updatedAt).toLocaleTimeString()}
-                      </p>
-                    </div>
+                      <p className="break-all font-sans text-[10px] text-muted-foreground">{artifact.path}</p>
+                      <p className="mt-1 font-sans text-[10px] text-muted-foreground">Updated {new Date(artifact.updatedAt).toLocaleTimeString()}</p>
+                    </button>
                   ))}
                 </div>
               )}
@@ -511,183 +573,34 @@ export function CoworkPage({
             </Card>
           ) : null}
 
-          <Card className="overflow-visible rounded-2xl border-border bg-card/90">
+          <Card className="overflow-hidden rounded-2xl border-border bg-card/90" data-testid="cowork-project-recents">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Run status</CardTitle>
+              <CardTitle className="flex items-center justify-between gap-2 text-sm">
+                Recents in this project
+                <Badge variant="outline" className="font-sans text-[10px]">{projectRecents.length}</Badge>
+              </CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-2 pt-0">
-              <Badge variant="outline" className={`w-fit rounded-full font-sans text-[11px] ${runPhaseClasses(runPhase)}`}>
-                {runPhaseLabel(runPhase)}
-              </Badge>
-              <p className="font-sans text-xs text-muted-foreground">{runStatus}</p>
-              <p className="font-sans text-xs text-muted-foreground">{status}</p>
-              {sessionKey ? <p className="font-sans text-[11px] text-muted-foreground">Session: {sessionKey}</p> : null}
-            </CardContent>
-          </Card>
-
-          <Card className="overflow-visible rounded-2xl border-border bg-card/90">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Working folder</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-2 pt-0">
-              <div className="flex items-center gap-2">
-                <Input
-                  value={workingFolder}
-                  onChange={(event) => onWorkingFolderChange(event.target.value)}
-                  placeholder="/Downloads"
-                  className="font-sans"
-                />
-                <Button type="button" size="sm" variant="outline" onClick={() => void onPickWorkingFolder()}>
-                  Browse
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" size="sm" variant="outline" onClick={() => void onCreateLocalPlan()} disabled={localPlanLoading}>
-                  {localPlanLoading ? 'Planning...' : 'Generate plan'}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="border-0 bg-primary text-primary-foreground hover:bg-primary/90"
-                  onClick={() => void onApplyLocalPlan()}
-                  disabled={localApplyLoading || localPlanActions.length === 0}
-                >
-                  {localApplyLoading ? 'Applying...' : `Apply ${localPlanActions.length}`}
-                </Button>
-              </div>
-              <div className="grid gap-2 rounded-lg border border-border bg-background p-2">
-                <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Create file</p>
-                <Input
-                  value={fileDraftPath}
-                  onChange={(event) => onFileDraftPathChange(event.target.value)}
-                  placeholder="notes/todo.md"
-                  className="font-sans text-xs"
-                />
-                <Textarea
-                  value={fileDraftContent}
-                  onChange={(event) => onFileDraftContentChange(event.target.value)}
-                  rows={5}
-                  placeholder="Write file contents..."
-                  className="font-sans text-xs"
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void onCreateFileInWorkingFolder()}
-                  disabled={fileCreateLoading}
-                >
-                  {fileCreateLoading ? 'Creating...' : 'Create file in folder'}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void onRunLocalActionSmokeTest()}
-                  disabled={localActionSmokeRunning}
-                >
-                  {localActionSmokeRunning ? 'Running smoke test...' : 'Run local action smoke test'}
-                </Button>
-              </div>
-              {!desktopBridgeAvailable && (
-                <p className="font-sans text-[11px] text-muted-foreground">Desktop app required for native folder access.</p>
+            <CardContent className="pt-0 max-h-44 overflow-y-auto pr-1">
+              {projectRecents.length === 0 ? (
+                <p className="font-sans text-xs text-muted-foreground">No project recents yet.</p>
+              ) : (
+                <div className="grid gap-1.5">
+                  {projectRecents.map((task) => (
+                    <div key={`recent-${task.id}`} className="rounded-lg border border-border bg-background px-2.5 py-2">
+                      <div className="mb-1 flex items-center gap-2">
+                        <Badge variant="outline" className={`rounded-full font-sans text-[10px] capitalize ${taskStatusClasses(task.status)}`}>
+                          {taskStatusLabel(task.status)}
+                        </Badge>
+                      </div>
+                      <p className="truncate font-sans text-[12px] text-foreground">{task.prompt}</p>
+                      <p className="mt-1 font-sans text-[10px] text-muted-foreground">Updated {new Date(task.updatedAt).toLocaleTimeString()}</p>
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>
 
-          <Card className="overflow-visible rounded-2xl border-border bg-card/90">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Context</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-2 pt-0">
-              <div>
-                <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Connectors</p>
-                <div className="mt-1 flex flex-wrap gap-1.5">
-                  {connectors.map((connector) => (
-                    <Badge key={connector} variant="outline" className="font-sans text-[11px]">
-                      {connector}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-lg border border-border bg-background p-2">
-                <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Conversation</p>
-                <p className="font-sans text-xs text-foreground">{messageCounts.user} user message(s), {messageCounts.assistant} assistant message(s)</p>
-              </div>
-              <div className="rounded-lg border border-border bg-background p-2">
-                <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">System activity</p>
-                {systemMessages.length === 0 ? (
-                  <p className="font-sans text-xs text-muted-foreground">No system events yet.</p>
-                ) : (
-                  <div className="mt-1 grid gap-1.5">
-                    {systemMessages.map((message) => {
-                      const [headline, ...rest] = message.text.split('\n');
-                      const details = rest.join('\n').trim();
-                      const isExpanded = expandedSystemMessageId === message.id;
-
-                      const statusToneClass =
-                        /failed|error|unavailable/i.test(headline)
-                          ? 'border-destructive/30 bg-destructive/10'
-                          : 'border-border bg-muted/60';
-
-                      return (
-                        <div key={message.id} className="rounded-xl border border-border bg-card">
-                          <button
-                            type="button"
-                            title={details ? `${headline}\n\n${details}` : headline}
-                            className={`group flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-colors hover:bg-muted ${statusToneClass}`}
-                            onClick={() => setExpandedSystemMessageId((current) => (current === message.id ? null : message.id))}
-                          >
-                            <span className="flex h-5 w-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
-                              <Clock3 className="h-3 w-3" />
-                            </span>
-                            <span className="min-w-0 flex-1 truncate font-sans text-[12px] text-foreground/90">
-                              {headline || 'System event'}
-                            </span>
-                            <ChevronRight
-                              className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${
-                                isExpanded ? 'rotate-90' : 'group-hover:translate-x-0.5'
-                              }`}
-                            />
-                          </button>
-
-                          {isExpanded && details ? (
-                            <div className="border-t border-border px-2.5 py-2">
-                              <div className="max-h-40 overflow-auto text-[11px] leading-5 text-muted-foreground">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
-                                  {details}
-                                </ReactMarkdown>
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              <div className="rounded-lg border border-border bg-background p-2">
-                <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Local actions</p>
-                {localActionReceipts.length === 0 ? (
-                  <p className="font-sans text-xs text-muted-foreground">No local actions yet.</p>
-                ) : (
-                  <div className="mt-1 grid gap-1">
-                    {localActionReceipts.slice(0, 6).map((item) => (
-                      <div key={`${item.id}-${item.path}`} className="rounded border border-border px-2 py-1">
-                        <p className="font-sans text-[11px] text-foreground">
-                          {item.type} • {item.status}
-                        </p>
-                        <p className="truncate font-sans text-[10px] text-muted-foreground">{item.path}</p>
-                        {item.status === 'error' && item.errorCode ? (
-                          <p className="font-mono text-[10px] text-destructive">{item.errorCode}</p>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </aside>
     </section>

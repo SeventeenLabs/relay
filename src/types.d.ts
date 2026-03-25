@@ -39,6 +39,7 @@ type RelayApi = {
   renameInFolder: (rootPath: string, oldRelative: string, newRelative: string) => Promise<LocalFileRenameResult>;
   deleteInFolder: (rootPath: string, relativePath: string) => Promise<LocalFileDeleteResult>;
   statInFolder: (rootPath: string, relativePath: string) => Promise<LocalFileStatResult>;
+  openPath: (targetPath: string) => Promise<{ ok: boolean; error?: string }>;
 };
 
 declare global {

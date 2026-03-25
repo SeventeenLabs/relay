@@ -54,6 +54,17 @@ export type RelayFileAction =
       id: string | undefined;
       type: 'exists';
       path: string;
+    }
+  | {
+      id: string | undefined;
+      type: 'rename';
+      path: string;
+      newPath: string;
+    }
+  | {
+      id: string | undefined;
+      type: 'delete';
+      path: string;
     };
 
 /* ── Constants ───────────────────────────────────────────────────────────── */
@@ -378,14 +389,22 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
 
         const record = action as Record<string, unknown>;
         const type = record.type;
-        if (type !== 'create_file' && type !== 'append_file' && type !== 'read_file' && type !== 'list_dir' && type !== 'exists') {
+        if (
+          type !== 'create_file' &&
+          type !== 'append_file' &&
+          type !== 'read_file' &&
+          type !== 'list_dir' &&
+          type !== 'exists' &&
+          type !== 'rename' &&
+          type !== 'delete'
+        ) {
           return acc;
         }
 
         const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : undefined;
 
         const filePath = typeof record.path === 'string' ? record.path.trim() : '';
-        if ((type === 'create_file' || type === 'append_file' || type === 'read_file' || type === 'exists') && !filePath) {
+        if ((type === 'create_file' || type === 'append_file' || type === 'read_file' || type === 'exists' || type === 'delete') && !filePath) {
           return acc;
         }
 
@@ -401,6 +420,29 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
 
         if (type === 'exists') {
           acc.push({ id, type: 'exists' as const, path: filePath });
+          return acc;
+        }
+
+        if (type === 'rename') {
+          const newPath =
+            typeof record.newPath === 'string'
+              ? record.newPath.trim()
+              : typeof record.new_path === 'string'
+                ? record.new_path.trim()
+                : typeof record.toPath === 'string'
+                  ? record.toPath.trim()
+                  : typeof record.to === 'string'
+                    ? record.to.trim()
+                    : '';
+          if (!filePath || !newPath) {
+            return acc;
+          }
+          acc.push({ id, type: 'rename' as const, path: filePath, newPath });
+          return acc;
+        }
+
+        if (type === 'delete') {
+          acc.push({ id, type: 'delete' as const, path: filePath });
           return acc;
         }
 

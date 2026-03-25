@@ -1,6 +1,9 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
-import { ArrowLeft, Copy, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Square, X } from 'lucide-react';
+import { ArrowLeft, Circle, Copy, Loader2, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Square, TriangleAlert, X } from 'lucide-react';
 
+import type { CoworkProgressStep, CoworkRunPhase } from '@/app-types';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -12,6 +15,13 @@ type AppTitlebarProps = {
   coworkRightPanelOpen?: boolean;
   isMaximized: boolean;
   usageModeLabel: string;
+  coworkRunPhase?: CoworkRunPhase;
+  coworkRunStatus?: string;
+  coworkProgressSteps?: CoworkProgressStep[];
+  coworkFilesTouchedCount?: number;
+  coworkSessionKey?: string;
+  onSaveRunAsSkill?: () => void;
+  onScheduleRun?: () => void;
   minimal?: boolean;
   onToggleSidebar: () => void;
   onToggleCoworkRightPanel?: () => void;
@@ -30,6 +40,13 @@ export function AppTitlebar({
   coworkRightPanelOpen = true,
   isMaximized,
   usageModeLabel,
+  coworkRunPhase = 'idle',
+  coworkRunStatus = 'Ready for a new task.',
+  coworkProgressSteps = [],
+  coworkFilesTouchedCount = 0,
+  coworkSessionKey = '',
+  onSaveRunAsSkill,
+  onScheduleRun,
   minimal,
   onToggleSidebar,
   onToggleCoworkRightPanel,
@@ -39,6 +56,8 @@ export function AppTitlebar({
   onClose,
   onShowSystemMenu,
 }: AppTitlebarProps) {
+  const [progressPopupOpen, setProgressPopupOpen] = useState(false);
+  const progressPopupRef = useRef<HTMLDivElement | null>(null);
   const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties;
   const noDragStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties;
   const showModeTabs = !minimal && activePage !== 'settings';
@@ -50,6 +69,65 @@ export function AppTitlebar({
     'inline-flex h-[44px] w-[46px] items-center justify-center border-0 bg-transparent text-muted-foreground transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40';
   const neutralWindowControlClass =
     'hover:bg-muted hover:text-foreground active:bg-muted/80';
+  const coworkProgressSummary = useMemo(() => {
+    const total = coworkProgressSteps.length;
+    const completed = coworkProgressSteps.filter((step) => step.status === 'completed').length;
+    const blocked = coworkProgressSteps.filter((step) => step.status === 'blocked').length;
+    const active = coworkProgressSteps.find((step) => step.status === 'active') ?? null;
+    const percent = total === 0 ? 0 : Math.min(100, Math.round((completed / total) * 100));
+    return { total, completed, blocked, active, percent };
+  }, [coworkProgressSteps]);
+
+  const runPhaseToneClass =
+    coworkRunPhase === 'completed'
+      ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+      : coworkRunPhase === 'streaming' || coworkRunPhase === 'sending'
+        ? 'border-amber-500/40 bg-amber-500/12 text-amber-800 dark:text-amber-300'
+        : coworkRunPhase === 'error'
+          ? 'border-destructive/35 bg-destructive/10 text-destructive'
+          : 'border-border bg-muted text-muted-foreground';
+
+  const runPhaseLabel =
+    coworkRunPhase === 'sending'
+      ? 'Sending'
+      : coworkRunPhase === 'streaming'
+        ? 'Streaming'
+        : coworkRunPhase === 'completed'
+          ? 'Completed'
+          : coworkRunPhase === 'error'
+            ? 'Error'
+            : 'Idle';
+
+  useEffect(() => {
+    if (!progressPopupOpen) {
+      return;
+    }
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+      if (progressPopupRef.current?.contains(target)) {
+        return;
+      }
+      setProgressPopupOpen(false);
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setProgressPopupOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onEscape);
+
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onEscape);
+    };
+  }, [progressPopupOpen]);
 
   const preventTitlebarDragCapture = (event: MouseEvent<HTMLElement>) => {
     event.stopPropagation();
@@ -152,6 +230,125 @@ export function AppTitlebar({
         onMouseDown={preventTitlebarDragCapture}
         onDoubleClick={preventTitlebarDragCapture}
       >
+        {!minimal && activePage === 'cowork' ? (
+          <div className="relative" ref={progressPopupRef}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mr-2 h-7 gap-1.5 rounded-lg px-2 text-[11px]"
+              style={noDragStyle}
+              onClick={() => setProgressPopupOpen((current) => !current)}
+              title="Open progress details"
+              aria-label="Open progress details"
+              aria-expanded={progressPopupOpen}
+              data-testid="titlebar-progress-trigger"
+            >
+              {coworkRunPhase === 'sending' || coworkRunPhase === 'streaming' ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : null}
+              <span>{coworkProgressSummary.completed}/{coworkProgressSummary.total || 0}</span>
+              <Badge variant="outline" className={`h-5 rounded-full px-1.5 text-[10px] ${runPhaseToneClass}`}>
+                {runPhaseLabel}
+              </Badge>
+            </Button>
+
+            {progressPopupOpen ? (
+              <div
+                className="absolute right-0 top-[calc(100%+6px)] z-50 w-[min(560px,92vw)] rounded-xl border border-border bg-background p-3 shadow-xl"
+                style={noDragStyle}
+                role="dialog"
+                aria-label="Cowork progress details"
+              >
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Cowork Progress</p>
+                    <p className="text-xs text-muted-foreground">{coworkRunStatus}</p>
+                  </div>
+                  <Button type="button" variant="ghost" size="icon-xs" onClick={() => setProgressPopupOpen(false)} aria-label="Close progress popup">
+                    <X className="size-3.5" />
+                  </Button>
+                </div>
+
+                <div className="grid gap-3 max-h-[70vh] overflow-y-auto pr-1">
+                  <div className="rounded-xl border border-border bg-muted/30 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="font-sans text-xs text-muted-foreground">{coworkProgressSummary.completed}/{coworkProgressSummary.total} completed</p>
+                      <p className="font-sans text-xs font-semibold text-foreground">{coworkProgressSummary.percent}%</p>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${coworkProgressSummary.percent}%` }} />
+                    </div>
+                    {coworkProgressSummary.active ? (
+                      <p className="mt-2 font-sans text-xs text-muted-foreground">
+                        Active: <span className="text-foreground">{coworkProgressSummary.active.label}</span>
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="grid gap-2">
+                    {coworkProgressSteps.map((step) => {
+                      const stepToneClass =
+                        step.status === 'completed'
+                          ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                          : step.status === 'active'
+                            ? 'border-blue-500/40 bg-blue-500/12 text-blue-700 dark:text-blue-300'
+                            : step.status === 'blocked'
+                              ? 'border-destructive/35 bg-destructive/10 text-destructive'
+                              : 'border-border bg-muted text-muted-foreground';
+
+                      return (
+                        <div key={step.stage} className="rounded-lg border border-border bg-background p-2.5">
+                          <div className="mb-1 flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full border ${stepToneClass}`}>
+                                {step.status === 'active' ? (
+                                  <Loader2 className="size-3 animate-spin" />
+                                ) : step.status === 'blocked' ? (
+                                  <TriangleAlert className="size-3" />
+                                ) : (
+                                  <Circle className="size-3" />
+                                )}
+                              </span>
+                              <p className="truncate font-sans text-xs text-foreground">{step.label}</p>
+                            </div>
+                            <Badge variant="outline" className={`rounded-full text-[10px] capitalize ${stepToneClass}`}>
+                              {step.status}
+                            </Badge>
+                          </div>
+                          {step.details ? <p className="font-sans text-[11px] text-muted-foreground">{step.details}</p> : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="rounded-lg border border-border bg-muted/20 p-2.5 text-xs text-muted-foreground">
+                    <p>Files touched: <span className="text-foreground">{coworkFilesTouchedCount}</span></p>
+                    {coworkProgressSummary.blocked > 0 ? (
+                      <p className="mt-1 text-destructive">{coworkProgressSummary.blocked} blocked step(s)</p>
+                    ) : null}
+                    {coworkSessionKey ? <p className="mt-1">Session: {coworkSessionKey}</p> : null}
+                    <p className="mt-1">Mode: {usageModeLabel}</p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {onSaveRunAsSkill ? (
+                      <Button type="button" size="sm" variant="outline" onClick={onSaveRunAsSkill}>
+                        Save as skill
+                      </Button>
+                    ) : null}
+                    {onScheduleRun ? (
+                      <Button type="button" size="sm" variant="outline" onClick={onScheduleRun}>
+                        Schedule run
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {!minimal && activePage === 'cowork' && onToggleCoworkRightPanel ? (
           <Button
             type="button"

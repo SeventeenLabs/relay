@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -179,7 +179,11 @@ function isHiddenOrBlockedPath(targetPath: string): boolean {
 }
 
 function normalizeRelativePath(relativePath: string): string {
-  return relativePath.replaceAll('\\', '/').trim();
+  const normalized = relativePath.replaceAll('\\', '/').trim();
+  if (!normalized || normalized === '.' || normalized === './') {
+    return '';
+  }
+  return normalized;
 }
 
 function slugifyName(value: string): string {
@@ -421,7 +425,16 @@ async function readFileInFolder(rootPath: string, relativePath: string): Promise
     throw new Error('Target path is blocked by local safety rules.');
   }
 
-  const stats = await fs.stat(resolvedTargetPath);
+  let stats;
+  try {
+    stats = await fs.stat(resolvedTargetPath);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT') {
+      throw new Error(`File not found: ${resolvedTargetPath}`);
+    }
+    throw error;
+  }
   if (!stats.isFile()) {
     throw new Error('Target path is not a file.');
   }
@@ -469,6 +482,47 @@ async function appendFileInFolder(rootPath: string, relativePath: string, conten
   };
 }
 
+async function resolveExistingPathWithOptionalExtension(requestedPath: string): Promise<string | null> {
+  try {
+    await fs.access(requestedPath);
+    return requestedPath;
+  } catch {
+    // continue with extension-based lookup
+  }
+
+  if (path.extname(requestedPath)) {
+    return null;
+  }
+
+  const parentDir = path.dirname(requestedPath);
+  const requestedBase = path.basename(requestedPath);
+
+  let entries;
+  try {
+    entries = await fs.readdir(parentDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  const candidates = entries
+    .filter((entry) => entry.isFile() && path.parse(entry.name).name === requestedBase)
+    .map((entry) => path.join(parentDir, entry.name));
+
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  if (candidates.length > 1) {
+    throw new Error(
+      `Ambiguous path "${requestedPath}". Multiple files match this base name: ${candidates
+        .map((candidate) => path.basename(candidate))
+        .join(', ')}`,
+    );
+  }
+
+  return null;
+}
+
 async function listDirInFolder(rootPath: string, relativePath?: string): Promise<LocalFileListResult> {
   const root = await ensurePathAllowed(rootPath);
   const rootRealPath = await fs.realpath(root);
@@ -478,7 +532,11 @@ async function listDirInFolder(rootPath: string, relativePath?: string): Promise
   }
 
   if (normalizedRelative && isHiddenOrBlockedPath(normalizedRelative)) {
-    throw new Error('Target path is blocked by local safety rules.');
+    return {
+      rootPath: root,
+      items: [],
+      truncated: false,
+    };
   }
 
   const targetPath = normalizedRelative ? path.resolve(root, normalizedRelative) : root;
@@ -628,6 +686,23 @@ async function statInFolder(rootPath: string, relativePath: string): Promise<Loc
     createdMs: stat.birthtimeMs,
     modifiedMs: stat.mtimeMs,
   };
+}
+
+async function openLocalPath(targetPath: string): Promise<{ ok: boolean; error?: string }> {
+  const normalized = typeof targetPath === 'string' ? targetPath.trim() : '';
+  if (!normalized) {
+    throw new Error('A path is required.');
+  }
+
+  const resolved = path.resolve(normalized);
+  await fs.access(resolved);
+
+  const openError = await shell.openPath(resolved);
+  if (openError) {
+    return { ok: false, error: openError };
+  }
+
+  return { ok: true };
 }
 
 async function readConfig(): Promise<AppConfig> {
@@ -1080,6 +1155,14 @@ app.whenReady().then(async () => {
     const relativePath = typeof payload.relativePath === 'string' ? payload.relativePath : '';
     if (!rootPath.trim()) throw new Error('A folder path is required.');
     return statInFolder(rootPath, relativePath);
+  });
+  ipcMain.handle('local:open-path', async (_event, payload: { targetPath: string }) => {
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('Invalid open-path payload.');
+    }
+
+    const targetPath = typeof payload.targetPath === 'string' ? payload.targetPath : '';
+    return openLocalPath(targetPath);
   });
 
   await createWindow();

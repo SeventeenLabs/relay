@@ -6,6 +6,9 @@ import type {
   ChatActivityItem,
   ChatMessage,
   ChatModelOption,
+  CoworkArtifact,
+  CoworkProgressStage,
+  CoworkProgressStep,
   CoworkProjectTask,
   CoworkProjectTaskStatus,
   CoworkProject,
@@ -106,6 +109,27 @@ type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Gateway' | 
 const COWORK_SEND_SPINNER_MS = 300;
 const MAX_LOCAL_ACTIONS_PER_RUN = 20;
 const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000;
+const COWORK_CONTEXT_CONNECTORS = ['Web search', 'Desktop files', 'Gateway tools'];
+
+const COWORK_PROGRESS_SEQUENCE: Array<{ stage: CoworkProgressStage; label: string }> = [
+  { stage: 'planning', label: 'Planning' },
+  { stage: 'decomposition', label: 'Decomposition' },
+  { stage: 'executing_workstreams', label: 'Executing workstreams' },
+  { stage: 'synthesizing_outputs', label: 'Synthesizing outputs' },
+  { stage: 'deliverables', label: 'Deliverables' },
+];
+
+function createInitialCoworkProgressSteps(): CoworkProgressStep[] {
+  return COWORK_PROGRESS_SEQUENCE.map((item) => ({
+    stage: item.stage,
+    label: item.label,
+    status: 'pending',
+  }));
+}
+
+function isDestructiveLocalAction(actionType: PendingApprovalAction['actionType']): boolean {
+  return actionType === 'delete' || actionType === 'rename';
+}
 
 type ApprovalResolverEntry = {
   resolve: (value: { approved: boolean; reason?: string; expired?: boolean }) => void;
@@ -370,6 +394,8 @@ export default function App() {
   const [coworkRunStatus, setCoworkRunStatus] = useState('Ready for a new task.');
   const [localActionReceipts, setLocalActionReceipts] = useState<LocalActionReceipt[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalAction[]>([]);
+  const [coworkProgressSteps, setCoworkProgressSteps] = useState<CoworkProgressStep[]>(() => createInitialCoworkProgressSteps());
+  const [coworkArtifacts, setCoworkArtifacts] = useState<CoworkArtifact[]>([]);
   const [localActionSmokeRunning, setLocalActionSmokeRunning] = useState(false);
   const [gatewayConnected, setGatewayConnected] = useState(false);
   const [sessionUsage, setSessionUsage] = useState(() => loadTodayUsage());
@@ -402,6 +428,133 @@ export default function App() {
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, 25);
   }, [activeCoworkProjectId, coworkTasks]);
+
+  const contextFolders = useMemo(() => {
+    const folders = [activeCoworkProject?.workspaceFolder?.trim() || '', workingFolder.trim()].filter(Boolean);
+    return Array.from(new Set(folders));
+  }, [activeCoworkProject?.workspaceFolder, workingFolder]);
+
+  const contextDocuments = useMemo(() => {
+    const docs = localActionReceipts
+      .filter((entry) => entry.status === 'ok' && (entry.type === 'read_file' || entry.type === 'create_file' || entry.type === 'append_file'))
+      .map((entry) => entry.path)
+      .filter(Boolean);
+    return Array.from(new Set(docs)).slice(0, 8);
+  }, [localActionReceipts]);
+
+  const projectMemoryItems = useMemo(() => {
+    const items = [
+      ...contextDocuments,
+      ...(activeCoworkProject?.description ? [activeCoworkProject.description] : []),
+    ].map((item) => item.trim()).filter(Boolean);
+    return Array.from(new Set(items)).slice(0, 8);
+  }, [activeCoworkProject?.description, contextDocuments]);
+
+  const filesTouched = useMemo(
+    () =>
+      coworkArtifacts
+        .filter((artifact) => artifact.kind === 'file')
+        .slice(0, 8),
+    [coworkArtifacts],
+  );
+
+  const setCoworkProgressStage = (
+    stage: CoworkProgressStage,
+    options?: { details?: string; blocked?: boolean; completeThrough?: boolean },
+  ) => {
+    const targetIndex = COWORK_PROGRESS_SEQUENCE.findIndex((item) => item.stage === stage);
+    if (targetIndex < 0) {
+      return;
+    }
+
+    setCoworkProgressSteps((current) =>
+      current.map((step, index) => {
+        const isTarget = index === targetIndex;
+        const shouldCompleteEarlier = options?.completeThrough ? index <= targetIndex : index < targetIndex;
+
+        if (options?.blocked && isTarget) {
+          return {
+            ...step,
+            status: 'blocked',
+            details: options?.details ?? step.details,
+          };
+        }
+
+        if (shouldCompleteEarlier) {
+          return {
+            ...step,
+            status: 'completed',
+            details: isTarget && options?.details ? options.details : step.details,
+          };
+        }
+
+        if (isTarget) {
+          return {
+            ...step,
+            status: options?.completeThrough ? 'completed' : 'active',
+            details: options?.details ?? step.details,
+          };
+        }
+
+        return {
+          ...step,
+          status: step.status === 'blocked' ? 'pending' : 'pending',
+          details: index > targetIndex ? undefined : step.details,
+        };
+      }),
+    );
+  };
+
+  const resetCoworkProgress = (details?: string) => {
+    setCoworkProgressSteps(
+      COWORK_PROGRESS_SEQUENCE.map((item, index) => ({
+        stage: item.stage,
+        label: item.label,
+        status: index === 0 ? 'active' : 'pending',
+        details: index === 0 ? details : undefined,
+      })),
+    );
+  };
+
+  const recordCoworkArtifactsFromReceipts = (receipts: LocalActionReceipt[], runId: string) => {
+    const artifactReceipts = receipts.filter((receipt) =>
+      receipt.type === 'create_file' || receipt.type === 'append_file' || receipt.type === 'read_file',
+    );
+
+    if (artifactReceipts.length === 0) {
+      return;
+    }
+
+    const now = Date.now();
+    setCoworkArtifacts((current) => {
+      const next = [...current];
+      for (const receipt of artifactReceipts) {
+        const key = `${runId}:${receipt.path}:${receipt.type}`;
+        const existingIndex = next.findIndex((artifact) => artifact.id === key);
+        const artifact: CoworkArtifact = {
+          id: key,
+          runId,
+          label: receipt.path.split('/').pop() || receipt.path,
+          path: receipt.path,
+          kind: 'file',
+          status: receipt.status,
+          source:
+            receipt.type === 'create_file' || receipt.type === 'append_file' || receipt.type === 'read_file'
+              ? receipt.type
+              : undefined,
+          updatedAt: now,
+        };
+
+        if (existingIndex >= 0) {
+          next[existingIndex] = artifact;
+        } else {
+          next.unshift(artifact);
+        }
+      }
+
+      return next.slice(0, 40);
+    });
+  };
 
   const setCoworkTaskStatus = (
     taskId: string,
@@ -1375,6 +1528,10 @@ export default function App() {
                 ? payload.errorMessage
                 : 'Cowork stream failed.';
             setCoworkRunStatus(errorMessage);
+            setCoworkProgressStage('executing_workstreams', {
+              blocked: true,
+              details: errorMessage,
+            });
             setStatus(errorMessage);
             const taskEntry = resolveCoworkTaskForRun(eventSessionKey || coworkSessionKeyRef.current, runId);
             if (taskEntry) {
@@ -1392,6 +1549,9 @@ export default function App() {
             setCoworkAwaitingStream(false);
             setCoworkRunPhase('streaming');
             setCoworkRunStatus('Cowork is streaming a response.');
+            setCoworkProgressStage('executing_workstreams', {
+              details: 'Running workstreams and producing intermediate results.',
+            });
             setCoworkStreamingText(visibleText);
             const taskEntry = resolveCoworkTaskForRun(eventSessionKey || coworkSessionKeyRef.current, runId);
             if (taskEntry) {
@@ -1427,6 +1587,9 @@ export default function App() {
             setCoworkAwaitingStream(false);
             setCoworkRunPhase('completed');
             setCoworkRunStatus(state === 'aborted' ? 'Cowork run ended early.' : 'Cowork run completed.');
+            setCoworkProgressStage('synthesizing_outputs', {
+              details: 'Synthesizing output from completed workstreams.',
+            });
             setCoworkStreamingText(visibleText);
             const streamId = `cowork-stream-${runId}`;
             const finalId = `cowork-final-${runId}`;
@@ -1463,10 +1626,8 @@ export default function App() {
               if (withoutStream.some((entry) => entry.id === finalId)) {
                 return withoutStream;
               }
-              // When the final event includes structured relay_actions, activity receipts are the
-              // canonical UI output and we suppress duplicate assistant confirmation text.
               const next =
-                !hasStructuredActions && !hasStructuredActivity && visibleText
+                visibleText
                   ? [...withoutStream, { id: finalId, role, text: visibleText, ...(coworkUsage ? { usage: coworkUsage } : {}) }]
                   : withoutStream;
               if (eventSessionKey) {
@@ -1526,8 +1687,13 @@ export default function App() {
                   errors: string[],
                 ) => {
                   setCoworkRunStatus(summary);
+                  setCoworkProgressStage('deliverables', {
+                    completeThrough: true,
+                    details: errors.length > 0 ? 'Deliverables generated with action errors.' : 'Deliverables generated successfully.',
+                  });
                   setStatus(summary);
                   pushLocalActionReceipts(actionReceipts);
+                  recordCoworkArtifactsFromReceipts(actionReceipts, runId);
 
                   if (taskEntry) {
                     const nextStatus: CoworkProjectTaskStatus =
@@ -1611,6 +1777,9 @@ export default function App() {
                 }
 
                 setCoworkRunStatus('Applying AI file actions...');
+                setCoworkProgressStage('executing_workstreams', {
+                  details: 'Applying local actions in scoped workspace.',
+                });
 
                 const boundedActions = relayActions.slice(0, MAX_LOCAL_ACTIONS_PER_RUN);
                 const safetyScopes = loadSafetyScopes();
@@ -1649,7 +1818,33 @@ export default function App() {
                   if (action.type === 'list_dir') {
                     return `List directory ${action.path || '.'}`;
                   }
+                  if (action.type === 'rename') {
+                    return `Rename ${action.path} -> ${action.newPath}`;
+                  }
+                  if (action.type === 'delete') {
+                    return `Delete ${action.path}`;
+                  }
                   return `Check exists ${action.path}`;
+                };
+
+                const isLowRiskCreateFileAction = (action: (typeof boundedActions)[number]) => {
+                  if (action.type !== 'create_file' || action.overwrite) {
+                    return false;
+                  }
+
+                  const normalizedPath = action.path.replace(/\\/g, '/').trim();
+                  if (!normalizedPath || normalizedPath.includes('/')) {
+                    return false;
+                  }
+
+                  const lowered = normalizedPath.toLowerCase();
+                  const isTextFile = lowered.endsWith('.md') || lowered.endsWith('.txt');
+                  if (!isTextFile) {
+                    return false;
+                  }
+
+                  // Keep auto-approval conservative: only small single-file drafts.
+                  return action.content.length <= 20_000;
                 };
 
                 for (let index = 0; index < boundedActions.length; index += 1) {
@@ -1675,7 +1870,24 @@ export default function App() {
                     continue;
                   }
 
-                  if ((action.type === 'create_file' || action.type === 'append_file') && !runContext.projectId) {
+                  if (action.type === 'rename') {
+                    const targetValidation = validateProjectRelativePath(action.newPath);
+                    if (!targetValidation.ok) {
+                      const message = `Blocked by project boundary: ${targetValidation.reason}`;
+                      errors.push(`${action.newPath}: ${message}`);
+                      actionReceipts.push({
+                        id: actionId,
+                        type: action.type,
+                        path: action.newPath,
+                        status: 'error',
+                        errorCode: 'PROJECT_BOUNDARY_BLOCK',
+                        message,
+                      });
+                      continue;
+                    }
+                  }
+
+                  if ((action.type === 'create_file' || action.type === 'append_file' || action.type === 'rename' || action.type === 'delete') && !runContext.projectId) {
                     const message = 'Blocked: write actions require an active project context.';
                     errors.push(`${actionPath}: ${message}`);
                     actionReceipts.push({
@@ -1703,7 +1915,11 @@ export default function App() {
                     continue;
                   }
 
-                  if (policy.requiresApproval) {
+                  const autoApproved = policy.requiresApproval && isLowRiskCreateFileAction(action);
+
+                  const requiresHardApproval = isDestructiveLocalAction(action.type) || policy.riskLevel === 'critical';
+
+                  if ((policy.requiresApproval || requiresHardApproval) && !autoApproved) {
                     const approvalId = `${runId}-${actionId}-${index + 1}`;
                     const previewBody =
                       action.type === 'create_file' || action.type === 'append_file'
@@ -1711,6 +1927,9 @@ export default function App() {
                         : summarizeActionPreview(action);
 
                     setCoworkRunStatus(`Awaiting approval for ${action.type} (${actionPath})...`);
+                    setCoworkProgressStage('executing_workstreams', {
+                      details: `Awaiting operator approval for ${action.type} on ${actionPath}.`,
+                    });
                     if (taskEntry) {
                       setCoworkTaskStatus(taskEntry.taskId, 'needs_approval', {
                         runId,
@@ -1761,6 +1980,14 @@ export default function App() {
                       setCoworkTaskStatus(taskEntry.taskId, 'approved', {
                         runId,
                         summary: `Approved: ${action.type} ${actionPath}`,
+                      });
+                    }
+                  } else if (autoApproved) {
+                    previews.push(`Auto-approved ${action.type} -> ${actionPath}`);
+                    if (taskEntry) {
+                      setCoworkTaskStatus(taskEntry.taskId, 'approved', {
+                        runId,
+                        summary: `Auto-approved: ${action.type} ${actionPath}`,
                       });
                     }
                   }
@@ -1904,6 +2131,60 @@ export default function App() {
                       });
                       previews.push(`? ${result.path} => ${result.exists ? result.kind : 'none'}`);
                     }
+
+                    if (action.type === 'rename') {
+                      if (!bridge.renameInFolder) {
+                        const message = `${actionPath}: rename is unavailable in this app context.`;
+                        errors.push(message);
+                        actionReceipts.push({
+                          id: actionId,
+                          type: 'rename',
+                          path: actionPath,
+                          status: 'error',
+                          errorCode: 'UNAVAILABLE',
+                          message,
+                        });
+                        continue;
+                      }
+
+                      const result = await bridge.renameInFolder(rootPath, action.path, action.newPath);
+                      actionReceipts.push({
+                        id: actionId,
+                        type: 'rename',
+                        path: result.newPath,
+                        status: 'ok',
+                        message: `Renamed ${result.oldPath} -> ${result.newPath}`,
+                      });
+                      previews.push(`~ ${result.oldPath} -> ${result.newPath}`);
+                      continue;
+                    }
+
+                    if (action.type === 'delete') {
+                      if (!bridge.deleteInFolder) {
+                        const message = `${actionPath}: delete is unavailable in this app context.`;
+                        errors.push(message);
+                        actionReceipts.push({
+                          id: actionId,
+                          type: 'delete',
+                          path: actionPath,
+                          status: 'error',
+                          errorCode: 'UNAVAILABLE',
+                          message,
+                        });
+                        continue;
+                      }
+
+                      const result = await bridge.deleteInFolder(rootPath, action.path);
+                      actionReceipts.push({
+                        id: actionId,
+                        type: 'delete',
+                        path: result.path,
+                        status: 'ok',
+                        message: 'Deleted',
+                      });
+                      previews.push(`- deleted ${result.path}`);
+                      continue;
+                    }
                   } catch (error) {
                     const message = error instanceof Error ? error.message : 'Unknown local file action error.';
                     const fullMessage = `${actionPath}: ${message}`;
@@ -1937,6 +2218,10 @@ export default function App() {
                 postActionReceipt(summary, actionReceipts, previews, errors);
               })();
             } else if (relayActions.length === 0) {
+              setCoworkProgressStage('deliverables', {
+                completeThrough: true,
+                details: 'Delivered conversational result without local file actions.',
+              });
               if (taskEntry) {
                 setCoworkTaskStatus(taskEntry.taskId, 'completed', {
                   runId,
@@ -2271,6 +2556,7 @@ export default function App() {
     setCoworkStreamingText('');
     setCoworkRunPhase('sending');
     setCoworkRunStatus('Sending cowork task...');
+    resetCoworkProgress('Interpreting goal and building a task plan.');
 
     const text = taskPrompt.trim();
     if (!text) {
@@ -2352,11 +2638,12 @@ export default function App() {
         startedAt: Date.now(),
       });
       const relayFileInstruction = [
-        'If local file actions are required, include ONE JSON code block in your response with this schema only:',
+        'If the user request involves local files/folders in any way, your response MUST be ONE JSON code block with relay_actions and no prose.',
         '```json',
-        '{"relay_actions":[{"id":"a1","type":"create_file","path":"relative/path.ext","content":"file contents","overwrite":false},{"id":"a2","type":"append_file","path":"relative/path.ext","content":"more text"},{"id":"a3","type":"read_file","path":"relative/path.ext"},{"id":"a4","type":"list_dir","path":"relative/folder"},{"id":"a5","type":"exists","path":"relative/path.ext"}]}',
+        '{"relay_actions":[{"id":"a1","type":"list_dir","path":"."},{"id":"a2","type":"create_file","path":"relative/path.ext","content":"file contents","overwrite":false},{"id":"a3","type":"append_file","path":"relative/path.ext","content":"more text"},{"id":"a4","type":"read_file","path":"relative/path.ext"},{"id":"a5","type":"exists","path":"relative/path.ext"},{"id":"a6","type":"rename","path":"old.ext","newPath":"new.ext"},{"id":"a7","type":"delete","path":"obsolete.ext"}]}',
         '```',
-        'Only include relay_actions when local file actions are required.',
+        'If filenames are unknown, first emit a list_dir action and do not ask follow-up questions.',
+        'Never respond with natural language explanations for file-operation requests.',
       ].join('\n');
       const coworkMemoryContext = preferences.injectMemory
         ? buildMemoryContext(loadMemoryEntries(), preferences.systemPrompt)
@@ -2374,6 +2661,9 @@ export default function App() {
 
       setCoworkRunPhase('streaming');
       setCoworkRunStatus('Waiting for cowork stream...');
+      setCoworkProgressStage('decomposition', {
+        details: 'Splitting work into substeps and selecting tools.',
+      });
       setStatus('Cowork message sent. Waiting for stream...');
       await client.sendChat(sessionKey, outboundMessage);
       await new Promise((resolve) => setTimeout(resolve, COWORK_SEND_SPINNER_MS));
@@ -2382,6 +2672,10 @@ export default function App() {
       setCoworkRunPhase('error');
       const message = error instanceof Error ? error.message : 'Failed to send cowork task.';
       setCoworkRunStatus(message);
+      setCoworkProgressStage('planning', {
+        blocked: true,
+        details: message,
+      });
       setStatus(message);
     } finally {
       setCoworkSending(false);
@@ -2455,6 +2749,96 @@ export default function App() {
       setStatus(message);
       return undefined;
     }
+  };
+
+  const handleOpenCoworkArtifact = async (artifact: CoworkArtifact) => {
+    if (!bridge?.openPath) {
+      setStatus('Opening artifacts requires the Electron desktop bridge.');
+      return;
+    }
+
+    try {
+      const result = await bridge.openPath(artifact.path);
+      if (!result.ok) {
+        throw new Error(result.error || 'Unable to open artifact path.');
+      }
+
+      setStatus(`Opened artifact: ${artifact.path}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to open artifact.';
+      setStatus(message);
+    }
+  };
+
+  const handleSaveCoworkRunAsSkill = async () => {
+    if (!bridge?.createFileInFolder) {
+      setStatus('Saving a skill requires the Electron desktop bridge.');
+      return;
+    }
+
+    const rootPath = workingFolder.trim();
+    if (!rootPath) {
+      setStatus('Select a working folder first.');
+      return;
+    }
+
+    const latestUserPrompt = [...coworkMessages].reverse().find((message) => message.role === 'user')?.text?.trim() || taskPrompt.trim();
+    if (!latestUserPrompt) {
+      setStatus('No cowork prompt found to save as a skill.');
+      return;
+    }
+
+    const latestAssistantOutput = [...coworkMessages].reverse().find((message) => message.role === 'assistant')?.text?.trim() || '';
+    const timestamp = new Date();
+    const safeStamp = `${timestamp.getFullYear()}${String(timestamp.getMonth() + 1).padStart(2, '0')}${String(timestamp.getDate()).padStart(2, '0')}-${String(timestamp.getHours()).padStart(2, '0')}${String(timestamp.getMinutes()).padStart(2, '0')}${String(timestamp.getSeconds()).padStart(2, '0')}`;
+    const relativePath = `.relay/skills/cowork-skill-${safeStamp}.md`;
+    const touched = filesTouched.map((item) => `- ${item.path}`).join('\n');
+
+    const skillDoc = [
+      '# Cowork Skill Draft',
+      '',
+      `- Created: ${timestamp.toISOString()}`,
+      `- Session: ${coworkSessionKey || '(none)'}`,
+      '',
+      '## Intent',
+      latestUserPrompt,
+      '',
+      '## Files Touched',
+      touched || '- (none)',
+      '',
+      '## Latest Assistant Output',
+      latestAssistantOutput || '(none)',
+    ].join('\n');
+
+    try {
+      const result = await bridge.createFileInFolder(rootPath, relativePath, skillDoc, false);
+      setCoworkArtifacts((current) => [
+        {
+          id: `skill-${Date.now()}`,
+          label: result.filePath.split(/[\\/]/).pop() || result.filePath,
+          path: result.filePath,
+          kind: 'summary' as const,
+          status: 'ok' as const,
+          updatedAt: Date.now(),
+        },
+        ...current,
+      ].slice(0, 40));
+      setStatus(`Saved skill draft: ${result.filePath}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to save skill draft.';
+      setStatus(message);
+    }
+  };
+
+  const handleScheduleCoworkRun = () => {
+    const latestUserPrompt = [...coworkMessages].reverse().find((message) => message.role === 'user')?.text?.trim() || taskPrompt.trim();
+    if (!latestUserPrompt) {
+      setStatus('No cowork prompt available to schedule.');
+      return;
+    }
+
+    setActivePage('scheduled');
+    setStatus('Opened Schedule. Create a cron job for this task prompt from your gateway scheduler.');
   };
 
   const handlePickWorkingFolderForProject = async (): Promise<string | undefined> => {
@@ -3231,6 +3615,11 @@ export default function App() {
         coworkRightPanelOpen={coworkRightPanelOpen}
         isMaximized={isMaximized}
         usageModeLabel={usageModeLabel}
+        coworkRunPhase={coworkRunPhase}
+        coworkRunStatus={coworkRunStatus}
+        coworkProgressSteps={coworkProgressSteps}
+        coworkFilesTouchedCount={filesTouched.length}
+        coworkSessionKey={coworkSessionKey}
         minimal={needsOnboarding || !canUseAppShell}
         onToggleSidebar={() => setSidebarOpen((current) => !current)}
         onToggleCoworkRightPanel={() => setCoworkRightPanelOpen((current) => !current)}
@@ -3418,17 +3807,23 @@ export default function App() {
               {activePage === 'cowork' ? (
                 <CoworkPage
                   key={`cowork-${coworkResetKey}`}
+                  projectTitle={activeCoworkProject?.name || 'Cowork'}
+                  projectInstructions={activeCoworkProject?.description || ''}
+                  scheduledCount={scheduledJobs.length}
+                  memoryItems={projectMemoryItems}
                   taskPrompt={taskPrompt}
                   workingFolder={workingFolder}
                   taskState={taskState}
-                  status={status}
                   messages={coworkMessages}
                   rightPanelOpen={coworkRightPanelOpen}
                   awaitingStream={coworkAwaitingStream}
                   streamingAssistantText={coworkStreamingText}
-                  runPhase={coworkRunPhase}
-                  runStatus={coworkRunStatus}
-                  sessionKey={coworkSessionKey}
+                  artifacts={coworkArtifacts}
+                  contextFolders={contextFolders}
+                  contextDocuments={contextDocuments}
+                  contextConnectors={COWORK_CONTEXT_CONNECTORS}
+                  onOpenArtifact={handleOpenCoworkArtifact}
+                  onScheduleRun={handleScheduleCoworkRun}
                   selectedModel={coworkModel}
                   models={coworkModels}
                   modelsLoading={modelsLoading}

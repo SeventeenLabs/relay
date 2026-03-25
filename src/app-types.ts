@@ -178,6 +178,33 @@ export type CoworkProjectTask = {
 
 export type CoworkRunPhase = 'idle' | 'sending' | 'streaming' | 'completed' | 'error';
 
+export type CoworkProgressStage =
+  | 'planning'
+  | 'decomposition'
+  | 'executing_workstreams'
+  | 'synthesizing_outputs'
+  | 'deliverables';
+
+export type CoworkProgressStepStatus = 'pending' | 'active' | 'completed' | 'blocked';
+
+export type CoworkProgressStep = {
+  stage: CoworkProgressStage;
+  label: string;
+  status: CoworkProgressStepStatus;
+  details?: string;
+};
+
+export type CoworkArtifact = {
+  id: string;
+  runId?: string;
+  label: string;
+  path: string;
+  kind: 'file' | 'summary';
+  status: 'ok' | 'error';
+  source?: 'create_file' | 'append_file' | 'read_file';
+  updatedAt: number;
+};
+
 export type SafetyRiskLevel = 'low' | 'medium' | 'high' | 'critical';
 
 export type SafetyPermissionScope = {

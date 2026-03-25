@@ -42,6 +42,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Sidebar,
   SidebarContent,
@@ -192,9 +193,12 @@ export function AppSidebar({
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [createProjectStep, setCreateProjectStep] = useState<'chooser' | 'form'>('chooser');
+  const [createProjectMode, setCreateProjectMode] = useState<'scratch' | 'import' | 'existing'>('scratch');
   const [projectTitleDraft, setProjectTitleDraft] = useState('');
   const [projectFolderDraft, setProjectFolderDraft] = useState('');
   const [projectDescriptionDraft, setProjectDescriptionDraft] = useState('');
+  const [projectMemoryEnabledDraft, setProjectMemoryEnabledDraft] = useState(true);
   const [projectFolderBrowsing, setProjectFolderBrowsing] = useState(false);
   const [renameProjectOpen, setRenameProjectOpen] = useState(false);
   const [renameProjectId, setRenameProjectId] = useState('');
@@ -282,9 +286,25 @@ export function AppSidebar({
   };
 
   const handleOpenCreateProject = () => {
+    setCreateProjectStep('chooser');
+    setCreateProjectMode('scratch');
     setProjectTitleDraft('');
     setProjectFolderDraft(workingFolder || '');
+    setProjectDescriptionDraft('');
+    setProjectMemoryEnabledDraft(true);
     setCreateProjectOpen(true);
+  };
+
+  const handleChooseCreateProjectMode = (mode: 'scratch' | 'import' | 'existing') => {
+    setCreateProjectMode(mode);
+    setCreateProjectStep('form');
+    if (mode === 'scratch') {
+      setProjectFolderDraft(workingFolder || '');
+    }
+    if (mode === 'import') {
+      setProjectFolderDraft(workingFolder || '');
+      setProjectDescriptionDraft((current) => current || 'Imported from existing chat project context.');
+    }
   };
 
   const handleConfirmCreateProject = () => {
@@ -631,64 +651,129 @@ export function AppSidebar({
           onOpenChange={(nextOpen) => {
             setCreateProjectOpen(nextOpen);
             if (!nextOpen) {
+              setCreateProjectStep('chooser');
+              setCreateProjectMode('scratch');
               setProjectTitleDraft('');
               setProjectFolderDraft('');
               setProjectDescriptionDraft('');
+              setProjectMemoryEnabledDraft(true);
             }
           }}
         >
           <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create project</DialogTitle>
-              <DialogDescription>
-                Define a clear operator project: title = workstream, folder = local root path, description = optional intent/context.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-2">
-              <Input
-                value={projectTitleDraft}
-                onChange={(event) => setProjectTitleDraft(event.target.value)}
-                placeholder="Project title (example: Client Alpha Website)"
-                autoFocus
-              />
-              <Input
-                value={projectDescriptionDraft}
-                onChange={(event) => setProjectDescriptionDraft(event.target.value)}
-                placeholder="Description (optional: goals, owner, constraints)"
-              />
-              <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
-                <Input
-                  value={projectFolderDraft}
-                  onChange={(event) => setProjectFolderDraft(event.target.value)}
-                  placeholder="Workspace folder path (example: C:/Projects/client-alpha)"
-                />
-                <Button type="button" size="sm" variant="outline" onClick={() => setProjectFolderDraft(workingFolder || '')}>
-                  Use current
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void handleBrowseProjectFolder()}
-                  disabled={projectFolderBrowsing}
-                >
-                  {projectFolderBrowsing ? 'Browsing...' : 'Browse'}
-                </Button>
-              </div>
-              <p className="font-sans text-[11px] text-muted-foreground">
-                Tip: One project should map to one root folder so approvals, file actions, and context stay consistent.
-              </p>
-            </div>
-            <DialogFooter>
-              <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-              <Button
-                type="button"
-                onClick={handleConfirmCreateProject}
-                disabled={!projectTitleDraft.trim() || !projectFolderDraft.trim()}
-              >
-                Create project
-              </Button>
-            </DialogFooter>
+            {createProjectStep === 'chooser' ? (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Create a new project</DialogTitle>
+                  <DialogDescription>
+                    A dedicated place for ongoing work, where context builds over time.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-2">
+                  <button
+                    type="button"
+                    className="rounded-xl border border-border bg-card px-3 py-3 text-left transition-colors hover:bg-muted/60"
+                    onClick={() => handleChooseCreateProjectMode('scratch')}
+                    data-testid="create-project-mode-scratch"
+                  >
+                    <p className="font-sans text-sm font-medium text-foreground">Start from scratch</p>
+                    <p className="font-sans text-xs text-muted-foreground">Set up a new folder with instructions and files.</p>
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl border border-border bg-card px-3 py-3 text-left transition-colors hover:bg-muted/60"
+                    onClick={() => handleChooseCreateProjectMode('import')}
+                    data-testid="create-project-mode-import"
+                  >
+                    <p className="font-sans text-sm font-medium text-foreground">Import a project</p>
+                    <p className="font-sans text-xs text-muted-foreground">Bring a chat project into cowork (best effort).</p>
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl border border-border bg-card px-3 py-3 text-left transition-colors hover:bg-muted/60"
+                    onClick={() => handleChooseCreateProjectMode('existing')}
+                    data-testid="create-project-mode-existing"
+                  >
+                    <p className="font-sans text-sm font-medium text-foreground">Use an existing folder</p>
+                    <p className="font-sans text-xs text-muted-foreground">Bind an existing local folder as your project root.</p>
+                  </button>
+                </div>
+                <DialogFooter>
+                  <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+                </DialogFooter>
+              </>
+            ) : (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Start a new project</DialogTitle>
+                  <DialogDescription>
+                    Configure name, instructions, and location for this project workspace.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-3">
+                  <Input
+                    value={projectTitleDraft}
+                    onChange={(event) => setProjectTitleDraft(event.target.value)}
+                    placeholder="Project name"
+                    autoFocus
+                  />
+                  <Textarea
+                    value={projectDescriptionDraft}
+                    onChange={(event) => setProjectDescriptionDraft(event.target.value)}
+                    placeholder="Tell Relay how to work in this project (optional)"
+                    rows={4}
+                    className="font-sans text-sm"
+                  />
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
+                    <Input
+                      value={projectFolderDraft}
+                      onChange={(event) => setProjectFolderDraft(event.target.value)}
+                      placeholder="Choose project location"
+                    />
+                    <Button type="button" size="sm" variant="outline" onClick={() => setProjectFolderDraft(workingFolder || '')}>
+                      Use current
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void handleBrowseProjectFolder()}
+                      disabled={projectFolderBrowsing}
+                    >
+                      {projectFolderBrowsing ? 'Browsing...' : 'Browse'}
+                    </Button>
+                  </div>
+                  <label className="flex items-center gap-2 font-sans text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={projectMemoryEnabledDraft}
+                      onChange={(event) => setProjectMemoryEnabledDraft(event.target.checked)}
+                    />
+                    Memory is on
+                  </label>
+                  {createProjectMode === 'import' ? (
+                    <p className="font-sans text-[11px] text-muted-foreground">Import mode selected: review project context after creation.</p>
+                  ) : null}
+                </div>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setCreateProjectStep('chooser')}
+                  >
+                    Back
+                  </Button>
+                  <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+                  <Button
+                    type="button"
+                    onClick={handleConfirmCreateProject}
+                    disabled={!projectTitleDraft.trim() || !projectFolderDraft.trim()}
+                  >
+                    Create
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
           </DialogContent>
         </Dialog>
 
