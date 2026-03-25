@@ -16,7 +16,7 @@
     "build": "npm run build:renderer && npm run build:electron",
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "test:local-actions": "node scripts/local-actions-smoke.mjs",
+    "test:local-actions": "npm run build:electron && node scripts/local-actions-smoke.mjs",
     "test:e2e": "kill-port 5173 18789 && concurrently -k -s first \"wait-on http-get://localhost:5173/ && npm run test:e2e:runner\" \"npm run test:e2e:mock-gateway\" \"npm run dev:e2e\"",
     "test:e2e:runner": "playwright test -c playwright.electron.config.ts --workers=1",
     "test:e2e:headed": "kill-port 5173 18789 && concurrently -k -s first \"wait-on http-get://localhost:5173/ && npm run test:e2e:runner:headed\" \"npm run test:e2e:mock-gateway\" \"npm run dev:e2e\"",
