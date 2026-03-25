@@ -1,0 +1,57 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="trace" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#D8F89D"/>
+      <stop offset="1" stop-color="#B4E660"/>
+    </linearGradient>
+    <filter id="shadow7" x="0" y="0" width="1800" height="1100" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#9CB0C2" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+
+  <g filter="url(#shadow7)">
+    <rect x="110" y="100" width="1380" height="700" rx="28" fill="#FFFFFF"/>
+  </g>
+
+  <rect x="146" y="148" width="134" height="604" rx="18" fill="#F4F8FB"/>
+  <rect x="304" y="148" width="720" height="604" rx="18" fill="#FFFFFF" stroke="#DDE6EE"/>
+  <rect x="1048" y="148" width="406" height="604" rx="18" fill="#FFFFFF" stroke="#DDE6EE"/>
+
+  <rect x="334" y="186" width="260" height="16" rx="8" fill="#E2EAF2"/>
+  <rect x="334" y="214" width="520" height="10" rx="5" fill="#EDF3F8"/>
+
+  <rect x="334" y="254" width="660" height="120" rx="16" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="334" y="394" width="660" height="120" rx="16" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="334" y="534" width="660" height="178" rx="16" fill="#F8FCFF" stroke="#E7EEF5"/>
+
+  <path d="M378 314H950" stroke="#C7D5E1" stroke-width="3" stroke-linecap="round" stroke-dasharray="8 10"/>
+  <path d="M378 454H950" stroke="#C7D5E1" stroke-width="3" stroke-linecap="round" stroke-dasharray="8 10"/>
+  <path d="M378 596H950" stroke="#C7D5E1" stroke-width="3" stroke-linecap="round" stroke-dasharray="8 10"/>
+
+  <circle cx="378" cy="314" r="10" fill="url(#trace)"/>
+  <circle cx="664" cy="314" r="10" fill="#FFFFFF" stroke="#D2DFEA" stroke-width="3"/>
+  <circle cx="950" cy="314" r="10" fill="#FFFFFF" stroke="#D2DFEA" stroke-width="3"/>
+
+  <circle cx="378" cy="454" r="10" fill="url(#trace)"/>
+  <circle cx="664" cy="454" r="10" fill="url(#trace)"/>
+  <circle cx="950" cy="454" r="10" fill="#FFFFFF" stroke="#D2DFEA" stroke-width="3"/>
+
+  <circle cx="378" cy="596" r="10" fill="url(#trace)"/>
+  <circle cx="664" cy="596" r="10" fill="url(#trace)"/>
+  <circle cx="950" cy="596" r="10" fill="url(#trace)"/>
+
+  <rect x="1080" y="188" width="340" height="100" rx="14" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="1080" y="304" width="340" height="100" rx="14" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="1080" y="420" width="340" height="100" rx="14" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="1080" y="536" width="340" height="100" rx="14" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="1080" y="652" width="340" height="68" rx="14" fill="#F8FCFF" stroke="#E7EEF5"/>
+
+  <rect x="170" y="188" width="84" height="10" rx="5" fill="#DDE7EF"/>
+  <rect x="170" y="220" width="70" height="10" rx="5" fill="#E7EEF5"/>
+  <rect x="170" y="252" width="76" height="10" rx="5" fill="#E7EEF5"/>
+  <rect x="170" y="284" width="66" height="10" rx="5" fill="#E7EEF5"/>
+
+  <text x="334" y="132" fill="#5E7587" font-size="20" font-family="Manrope, Segoe UI, Arial, sans-serif" font-weight="600">Approve, run, and review artifacts</text>
+  <text x="334" y="834" fill="#7C90A1" font-size="15" font-family="Manrope, Segoe UI, Arial, sans-serif">Decision traces and file outcomes remain visible across the full run.</text>
+</svg>

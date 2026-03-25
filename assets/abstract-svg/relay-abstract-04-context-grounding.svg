@@ -1,0 +1,62 @@
+<svg width="1600" height="1000" viewBox="0 0 1600 1000" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="accent4" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#D7F89A"/>
+      <stop offset="1" stop-color="#B7E864"/>
+    </linearGradient>
+    <filter id="shadow4" x="40" y="40" width="1520" height="920" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="20" stdDeviation="20" flood-color="#99ADBF" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+
+
+  <g filter="url(#shadow4)">
+    <rect x="90" y="80" width="1420" height="840" rx="28" fill="#FFFFFF"/>
+  </g>
+
+  <rect x="90" y="80" width="280" height="840" rx="28" fill="#F5F8FB"/>
+  <rect x="404" y="126" width="760" height="86" rx="16" fill="#FFFFFF" stroke="#DFE7EE"/>
+  <rect x="1188" y="126" width="276" height="86" rx="16" fill="#FFFFFF" stroke="#DFE7EE"/>
+
+  <rect x="404" y="242" width="760" height="566" rx="22" fill="#FFFFFF" stroke="#DFE7EE"/>
+  <rect x="1188" y="242" width="276" height="566" rx="22" fill="#FFFFFF" stroke="#DFE7EE"/>
+
+  <rect x="440" y="284" width="320" height="16" rx="8" fill="#E4EBF2"/>
+  <rect x="440" y="312" width="542" height="10" rx="5" fill="#EEF3F8"/>
+
+  <rect x="440" y="356" width="690" height="190" rx="18" fill="#F8FCFF" stroke="#E9F0F6"/>
+  <rect x="466" y="386" width="208" height="12" rx="6" fill="#E3EBF3"/>
+  <rect x="466" y="410" width="370" height="10" rx="5" fill="#ECF2F7"/>
+  <rect x="466" y="430" width="328" height="10" rx="5" fill="#ECF2F7"/>
+
+  <rect x="718" y="460" width="384" height="62" rx="14" fill="#FFFFFF" stroke="#DDE6EE"/>
+  <rect x="742" y="482" width="220" height="10" rx="5" fill="#E5ECF3"/>
+
+  <rect x="440" y="576" width="690" height="198" rx="18" fill="#FAFCFF" stroke="#E9F0F6"/>
+  <rect x="466" y="608" width="292" height="12" rx="6" fill="#E3EBF3"/>
+  <rect x="466" y="632" width="420" height="10" rx="5" fill="#ECF2F7"/>
+  <rect x="466" y="652" width="360" height="10" rx="5" fill="#ECF2F7"/>
+
+  <rect x="1028" y="708" width="72" height="42" rx="12" fill="url(#accent4)"/>
+
+  <rect x="1220" y="282" width="210" height="14" rx="7" fill="#E4EBF2"/>
+  <rect x="1220" y="310" width="230" height="10" rx="5" fill="#EEF3F8"/>
+  <rect x="1220" y="350" width="212" height="108" rx="14" fill="#F8FCFF" stroke="#E8F0F6"/>
+  <rect x="1220" y="480" width="212" height="108" rx="14" fill="#F8FCFF" stroke="#E8F0F6"/>
+  <rect x="1220" y="610" width="212" height="108" rx="14" fill="#F8FCFF" stroke="#E8F0F6"/>
+
+  <rect x="120" y="136" width="200" height="16" rx="8" fill="#DFE8EF"/>
+  <rect x="120" y="182" width="126" height="12" rx="6" fill="#E7EEF5"/>
+  <rect x="120" y="212" width="140" height="12" rx="6" fill="#E7EEF5"/>
+  <rect x="120" y="242" width="150" height="12" rx="6" fill="#E7EEF5"/>
+
+  <rect x="120" y="320" width="90" height="10" rx="5" fill="#DDE7EF"/>
+  <rect x="120" y="350" width="138" height="12" rx="6" fill="#E7EEF5"/>
+  <rect x="120" y="380" width="150" height="12" rx="6" fill="#E7EEF5"/>
+  <rect x="120" y="410" width="142" height="12" rx="6" fill="#E7EEF5"/>
+
+  <rect x="120" y="820" width="220" height="74" rx="16" fill="#FFFFFF" stroke="#DFE7EE"/>
+
+  <text x="440" y="172" fill="#5F7588" font-size="20" font-family="Manrope, Segoe UI, Arial, sans-serif" font-weight="600">Define the outcome and context</text>
+  <text x="440" y="202" fill="#7F92A2" font-size="14" font-family="Manrope, Segoe UI, Arial, sans-serif">Project-bound execution keeps planning and actions grounded in the right folder.</text>
+</svg>

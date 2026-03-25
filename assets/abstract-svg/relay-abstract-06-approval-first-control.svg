@@ -1,0 +1,57 @@
+<svg width="1600" height="1000" viewBox="0 0 1600 1000" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ok" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#D7F89A"/>
+      <stop offset="1" stop-color="#B7E864"/>
+    </linearGradient>
+    <linearGradient id="warn" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFDCAA"/>
+      <stop offset="1" stop-color="#F6B96D"/>
+    </linearGradient>
+    <filter id="shadow6" x="0" y="0" width="1800" height="1200" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#9CB0C1" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+
+  <g filter="url(#shadow6)">
+    <rect x="146" y="110" width="1308" height="780" rx="30" fill="#FFFFFF"/>
+  </g>
+
+  <rect x="188" y="166" width="1218" height="120" rx="18" fill="#FFFFFF" stroke="#DDE6EE"/>
+  <rect x="228" y="206" width="344" height="16" rx="8" fill="#E2EAF2"/>
+  <rect x="228" y="234" width="612" height="10" rx="5" fill="#EDF3F8"/>
+
+  <rect x="188" y="320" width="740" height="520" rx="22" fill="#FFFFFF" stroke="#DDE6EE"/>
+  <rect x="954" y="320" width="452" height="520" rx="22" fill="#FFFFFF" stroke="#DDE6EE"/>
+
+  <rect x="222" y="364" width="670" height="96" rx="16" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="250" y="394" width="218" height="12" rx="6" fill="#E3EBF3"/>
+
+
+  <rect x="222" y="482" width="670" height="156" rx="16" fill="#FFF9F0" stroke="#F2DEBE"/>
+  <rect x="250" y="514" width="184" height="12" rx="6" fill="#E8CC9F"/>
+  <rect x="250" y="538" width="492" height="10" rx="5" fill="#F0DEBF"/>
+  <rect x="250" y="560" width="442" height="10" rx="5" fill="#F0DEBF"/>
+
+  <rect x="250" y="596" width="164" height="42" rx="12" fill="#FFFFFF" stroke="#DDE6EE"/>
+  <rect x="426" y="596" width="164" height="42" rx="12" fill="url(#warn)" opacity="0.6"/>
+  <rect x="602" y="596" width="164" height="42" rx="12" fill="url(#ok)"/>
+
+  <rect x="222" y="662" width="670" height="136" rx="16" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="250" y="694" width="206" height="12" rx="6" fill="#E3EBF3"/>
+  <rect x="250" y="718" width="376" height="10" rx="5" fill="#EDF2F7"/>
+
+  <rect x="988" y="364" width="384" height="94" rx="16" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="988" y="478" width="384" height="94" rx="16" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="988" y="592" width="384" height="94" rx="16" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="988" y="706" width="384" height="94" rx="16" fill="#F8FCFF" stroke="#E7EEF5"/>
+
+  <circle cx="1018" cy="410" r="8" fill="url(#ok)"/>
+  <circle cx="1018" cy="524" r="8" fill="url(#warn)"/>
+  <circle cx="1018" cy="638" r="8" fill="url(#ok)"/>
+  <circle cx="1018" cy="752" r="8" fill="#D5E2ED"/>
+
+  <text x="228" y="152" fill="#5E7587" font-size="20" font-family="Manrope, Segoe UI, Arial, sans-serif" font-weight="600">Approval-first risk control</text>
+  <text x="228" y="908" fill="#7D91A2" font-size="15" font-family="Manrope, Segoe UI, Arial, sans-serif">High-risk actions pause for operator approval before execution continues.</text>
+</svg>

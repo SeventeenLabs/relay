@@ -1,0 +1,53 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="route" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#D8F89C"/>
+      <stop offset="1" stop-color="#B6E861"/>
+    </linearGradient>
+    <filter id="shadow5" x="0" y="0" width="1800" height="1100" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#9FB2C4" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+
+
+  <g filter="url(#shadow5)">
+    <rect x="88" y="112" width="456" height="680" rx="26" fill="#FFFFFF"/>
+    <rect x="572" y="112" width="456" height="680" rx="26" fill="#FFFFFF"/>
+    <rect x="1056" y="112" width="456" height="680" rx="26" fill="#FFFFFF"/>
+  </g>
+
+  <rect x="130" y="172" width="262" height="18" rx="9" fill="#E1EAF2"/>
+  <rect x="130" y="204" width="338" height="10" rx="5" fill="#EDF3F8"/>
+  <rect x="130" y="250" width="372" height="186" rx="16" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="130" y="466" width="372" height="282" rx="18" fill="#FAFCFF" stroke="#E7EEF5"/>
+
+  <rect x="614" y="172" width="262" height="18" rx="9" fill="#E1EAF2"/>
+  <rect x="614" y="204" width="338" height="10" rx="5" fill="#EDF3F8"/>
+  <rect x="614" y="250" width="372" height="498" rx="18" fill="#F8FCFF" stroke="#E7EEF5"/>
+
+  <rect x="1100" y="172" width="262" height="18" rx="9" fill="#E1EAF2"/>
+  <rect x="1100" y="204" width="338" height="10" rx="5" fill="#EDF3F8"/>
+  <rect x="1100" y="250" width="372" height="148" rx="16" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="1100" y="424" width="372" height="148" rx="16" fill="#F8FCFF" stroke="#E7EEF5"/>
+  <rect x="1100" y="598" width="372" height="148" rx="16" fill="#F8FCFF" stroke="#E7EEF5"/>
+
+  <path d="M544 450H572" stroke="#C5D4E2" stroke-width="6" stroke-linecap="round"/>
+  <path d="M1028 450H1056" stroke="#C5D4E2" stroke-width="6" stroke-linecap="round"/>
+
+  <circle cx="558" cy="450" r="20" fill="#FFFFFF" stroke="#D7E2EC" stroke-width="3"/>
+  <circle cx="1042" cy="450" r="20" fill="#FFFFFF" stroke="#D7E2EC" stroke-width="3"/>
+  <circle cx="558" cy="450" r="8" fill="url(#route)"/>
+  <circle cx="1042" cy="450" r="8" fill="url(#route)"/>
+
+  <rect x="640" y="280" width="320" height="56" rx="14" fill="#FFFFFF" stroke="#DDE6EE"/>
+  <rect x="640" y="352" width="320" height="56" rx="14" fill="#FFFFFF" stroke="#DDE6EE"/>
+  <rect x="640" y="424" width="320" height="56" rx="14" fill="url(#route)" opacity="0.35"/>
+  <rect x="640" y="496" width="320" height="56" rx="14" fill="#FFFFFF" stroke="#DDE6EE"/>
+  <rect x="640" y="568" width="320" height="56" rx="14" fill="#FFFFFF" stroke="#DDE6EE"/>
+
+  <text x="130" y="154" fill="#5E7587" font-size="18" font-family="Manrope, Segoe UI, Arial, sans-serif" font-weight="600">Operator intent</text>
+  <text x="614" y="154" fill="#5E7587" font-size="18" font-family="Manrope, Segoe UI, Arial, sans-serif" font-weight="600">OpenClaw routing</text>
+  <text x="1100" y="154" fill="#5E7587" font-size="18" font-family="Manrope, Segoe UI, Arial, sans-serif" font-weight="600">Execution targets</text>
+
+  <text x="614" y="780" fill="#7B90A1" font-size="15" font-family="Manrope, Segoe UI, Arial, sans-serif">Model-agnostic through OpenClaw routing</text>
+</svg>
