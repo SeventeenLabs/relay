@@ -194,11 +194,10 @@ export function AppSidebar({
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [createProjectStep, setCreateProjectStep] = useState<'chooser' | 'form'>('chooser');
-  const [createProjectMode, setCreateProjectMode] = useState<'scratch' | 'import' | 'existing'>('scratch');
+  const [createProjectMode, setCreateProjectMode] = useState<'scratch' | 'existing'>('scratch');
   const [projectTitleDraft, setProjectTitleDraft] = useState('');
   const [projectFolderDraft, setProjectFolderDraft] = useState('');
   const [projectDescriptionDraft, setProjectDescriptionDraft] = useState('');
-  const [projectMemoryEnabledDraft, setProjectMemoryEnabledDraft] = useState(true);
   const [projectFolderBrowsing, setProjectFolderBrowsing] = useState(false);
   const [renameProjectOpen, setRenameProjectOpen] = useState(false);
   const [renameProjectId, setRenameProjectId] = useState('');
@@ -291,19 +290,14 @@ export function AppSidebar({
     setProjectTitleDraft('');
     setProjectFolderDraft(workingFolder || '');
     setProjectDescriptionDraft('');
-    setProjectMemoryEnabledDraft(true);
     setCreateProjectOpen(true);
   };
 
-  const handleChooseCreateProjectMode = (mode: 'scratch' | 'import' | 'existing') => {
+  const handleChooseCreateProjectMode = (mode: 'scratch' | 'existing') => {
     setCreateProjectMode(mode);
     setCreateProjectStep('form');
     if (mode === 'scratch') {
       setProjectFolderDraft(workingFolder || '');
-    }
-    if (mode === 'import') {
-      setProjectFolderDraft(workingFolder || '');
-      setProjectDescriptionDraft((current) => current || 'Imported from existing chat project context.');
     }
   };
 
@@ -656,7 +650,6 @@ export function AppSidebar({
               setProjectTitleDraft('');
               setProjectFolderDraft('');
               setProjectDescriptionDraft('');
-              setProjectMemoryEnabledDraft(true);
             }
           }}
         >
@@ -678,15 +671,6 @@ export function AppSidebar({
                   >
                     <p className="font-sans text-sm font-medium text-foreground">Start from scratch</p>
                     <p className="font-sans text-xs text-muted-foreground">Set up a new folder with instructions and files.</p>
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-xl border border-border bg-card px-3 py-3 text-left transition-colors hover:bg-muted/60"
-                    onClick={() => handleChooseCreateProjectMode('import')}
-                    data-testid="create-project-mode-import"
-                  >
-                    <p className="font-sans text-sm font-medium text-foreground">Import a project</p>
-                    <p className="font-sans text-xs text-muted-foreground">Bring a chat project into cowork (best effort).</p>
                   </button>
                   <button
                     type="button"
@@ -743,17 +727,6 @@ export function AppSidebar({
                       {projectFolderBrowsing ? 'Browsing...' : 'Browse'}
                     </Button>
                   </div>
-                  <label className="flex items-center gap-2 font-sans text-xs text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={projectMemoryEnabledDraft}
-                      onChange={(event) => setProjectMemoryEnabledDraft(event.target.checked)}
-                    />
-                    Memory is on
-                  </label>
-                  {createProjectMode === 'import' ? (
-                    <p className="font-sans text-[11px] text-muted-foreground">Import mode selected: review project context after creation.</p>
-                  ) : null}
                 </div>
                 <DialogFooter>
                   <Button

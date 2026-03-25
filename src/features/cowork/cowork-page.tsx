@@ -229,7 +229,7 @@ export function CoworkPage({
     return { user, assistant };
   }, [messages]);
 
-  const projectRecents = useMemo(() => projectTasks.slice(0, 8), [projectTasks]);
+  const projectRecents = useMemo(() => projectTasks, [projectTasks]);
 
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey) {
@@ -306,10 +306,7 @@ export function CoworkPage({
         <div className="px-2 pt-2">
           <div className="w-full rounded-xl border border-border bg-card/85 px-3 py-2">
             <p className="truncate text-sm font-semibold tracking-tight text-foreground">{projectTitle || 'Cowork'}</p>
-            <p className="mt-0.5 truncate font-sans text-[11px] text-muted-foreground">
-              {(projectInstructions || 'No project instructions yet.').trim()}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
               <Badge variant="outline" className="rounded-full font-sans text-[10px]">{projectRecents.length} recents</Badge>
               <Badge variant="outline" className="rounded-full font-sans text-[10px]">{artifacts.length} artifacts</Badge>
               <Badge variant="outline" className="rounded-full font-sans text-[10px]">{pendingApprovals.length} approvals</Badge>
@@ -322,8 +319,7 @@ export function CoworkPage({
           {isInitialWorkspace ? (
             <div className="mx-auto grid h-full w-full place-items-center" style={{ maxWidth: `${COWORK_COMPOSER_COLUMN_MAX_WIDTH}px` }}>
               <div className="w-full">
-                <p className="mb-1 text-[clamp(1.8rem,2.8vw,2.5rem)] tracking-tight text-foreground">{projectTitle || "Let's knock something off your list"}</p>
-                <p className="mb-3 font-sans text-sm text-muted-foreground">Project home for scoped cowork runs and context.</p>
+                <p className="mb-3 text-[clamp(1.6rem,2.4vw,2.2rem)] tracking-tight text-foreground">Let's knock something off your list</p>
                 <div className="rounded-2xl border border-border bg-card p-4">
                   <p className="font-sans text-sm text-muted-foreground">
                     Cowork runs against your configured gateway and supports file-aware task context.
@@ -465,12 +461,12 @@ export function CoworkPage({
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Artifacts ({artifacts.length})</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-2 pt-0">
+            <CardContent className="pt-0 max-h-56 overflow-y-auto pr-1">
               {artifacts.length === 0 ? (
                 <p className="font-sans text-xs text-muted-foreground">No artifacts yet for this run.</p>
               ) : (
                 <div className="grid gap-1.5">
-                  {artifacts.slice(0, 12).map((artifact) => (
+                  {artifacts.map((artifact) => (
                     <button
                       key={artifact.id}
                       type="button"

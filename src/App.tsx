@@ -3620,6 +3620,8 @@ export default function App() {
         coworkProgressSteps={coworkProgressSteps}
         coworkFilesTouchedCount={filesTouched.length}
         coworkSessionKey={coworkSessionKey}
+        onSaveRunAsSkill={handleSaveCoworkRunAsSkill}
+        onScheduleRun={handleScheduleCoworkRun}
         minimal={needsOnboarding || !canUseAppShell}
         onToggleSidebar={() => setSidebarOpen((current) => !current)}
         onToggleCoworkRightPanel={() => setCoworkRightPanelOpen((current) => !current)}
