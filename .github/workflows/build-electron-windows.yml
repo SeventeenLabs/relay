@@ -44,7 +44,7 @@ jobs:
         run: npm ci
 
       - name: Build and package app
-        run: npm run package
+        run: npm run package -- --publish never
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
