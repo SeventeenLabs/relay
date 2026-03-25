@@ -116,10 +116,13 @@ const coworkNavItems = [
   { label: 'Search', icon: Search },
 ] as const;
 
-const workspaceNavItems: { label: string; icon: typeof FolderOpen; page: AppPage }[] = [
-  { label: 'Workspace', icon: FolderOpen, page: 'files' },
-  { label: 'Activity', icon: Zap, page: 'activity' },
-  { label: 'Memory', icon: Brain, page: 'memory' },
+const projectNavItems: { label: string; icon: typeof FolderOpen; page: AppPage }[] = [
+  { label: 'Project Files', icon: FolderOpen, page: 'files' },
+  { label: 'Project Activity', icon: Zap, page: 'activity' },
+  { label: 'Project Memory', icon: Brain, page: 'memory' },
+];
+
+const globalNavItems: { label: string; icon: typeof FolderOpen; page: AppPage }[] = [
   { label: 'Schedule', icon: CalendarClock, page: 'scheduled' },
   { label: 'Safety', icon: Shield, page: 'safety' },
 ];
@@ -440,14 +443,14 @@ export function AppSidebar({
               </SidebarGroupContent>
             </SidebarGroup>
 
-            {/* Workspace pages */}
+            {/* Project and global pages */}
             {!isChatView && (
               <>
                 <SidebarGroup className="mt-3">
-                  {!compact && <SidebarGroupLabel>Workspace</SidebarGroupLabel>}
+                  {!compact && <SidebarGroupLabel>Project</SidebarGroupLabel>}
                   <SidebarGroupContent>
                     <SidebarMenu>
-                      {workspaceNavItems.map((item) => (
+                      {projectNavItems.map((item) => (
                         <SidebarMenuItem key={item.label}>
                           <SidebarMenuButton
                             type="button"
@@ -466,9 +469,8 @@ export function AppSidebar({
                   </SidebarGroupContent>
                 </SidebarGroup>
 
-                {/* Local device files */}
                 <SidebarGroup className="mt-1">
-                  {!compact && <SidebarGroupLabel>Local</SidebarGroupLabel>}
+                  {!compact && <SidebarGroupLabel>Global</SidebarGroupLabel>}
                   <SidebarGroupContent>
                     <SidebarMenu>
                       <SidebarMenuItem>
@@ -484,6 +486,21 @@ export function AppSidebar({
                           {!compact && <span className="min-w-0 flex-1 truncate">Local Files</span>}
                         </SidebarMenuButton>
                       </SidebarMenuItem>
+                      {globalNavItems.map((item) => (
+                        <SidebarMenuItem key={item.label}>
+                          <SidebarMenuButton
+                            type="button"
+                            active={activePage === item.page}
+                            aria-current={activePage === item.page ? 'page' : undefined}
+                            onClick={() => onSelectPage(item.page)}
+                            className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
+                            title={item.label}
+                          >
+                            <item.icon data-icon="inline-start" />
+                            {!compact && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
                     </SidebarMenu>
                   </SidebarGroupContent>
                 </SidebarGroup>
