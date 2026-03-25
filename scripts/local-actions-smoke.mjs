@@ -54,7 +54,7 @@ async function run() {
   ]);
 
   await assertIncludes(coworkPagePath, [
-    'Pending approvals',
+    'pending-approvals-card',
     'onApprovePendingAction',
     'onRejectPendingAction',
   ]);

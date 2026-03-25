@@ -74,7 +74,7 @@ Everything below serves that loop. Nothing outside it ships in MVP.
 - [ ] User can dispatch a task and close the main window
 - [ ] Task status updates in real-time when window is reopened
 - [ ] Completed results are viewable with full trace
-- [ ] System notification fires on task completion
+- [x] System notification fires on task completion
 - [ ] Dispatched tasks persist across app restart
 
 ---
@@ -250,11 +250,11 @@ Everything below serves that loop. Nothing outside it ships in MVP.
 - Agent-facing: connector actions described in system prompt so agent knows what tools are available
 
 **Acceptance criteria:**
-- [ ] Connector interface defined and documented
-- [ ] File system connector formalized
-- [ ] Web fetch connector works with domain allowlist
-- [ ] Shell connector works with approval gate enforcement
-- [ ] Settings page shows connector status and configuration
+- [x] Connector interface defined and documented
+- [x] File system connector formalized
+- [x] Web fetch connector works with domain allowlist
+- [x] Shell connector works with approval gate enforcement
+- [x] Settings page shows connector status and configuration
 - [ ] Agent can discover and invoke connector actions
 
 ---

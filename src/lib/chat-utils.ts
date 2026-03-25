@@ -65,6 +65,22 @@ export type RelayFileAction =
       id: string | undefined;
       type: 'delete';
       path: string;
+    }
+  | {
+      id: string | undefined;
+      type: 'shell_exec';
+      path: string;
+      command: string;
+      timeoutMs?: number;
+    }
+  | {
+      id: string | undefined;
+      type: 'web_fetch';
+      path: string;
+      url: string;
+      method?: string;
+      body?: string;
+      contentType?: string;
     };
 
 /* ── Constants ───────────────────────────────────────────────────────────── */

@@ -40,6 +40,9 @@ type RelayApi = {
   deleteInFolder: (rootPath: string, relativePath: string) => Promise<LocalFileDeleteResult>;
   statInFolder: (rootPath: string, relativePath: string) => Promise<LocalFileStatResult>;
   openPath: (targetPath: string) => Promise<{ ok: boolean; error?: string }>;
+  shellExec: (rootPath: string, command: string, timeoutMs?: number) => Promise<{ stdout: string; stderr: string; exitCode: number | null; timedOut: boolean }>;
+  webFetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<{ status: number; statusText: string; headers: Record<string, string>; body: string; truncated: boolean }>;
+  notify: (title: string, body?: string) => Promise<{ ok: boolean; message?: string }>;
 };
 
 declare global {

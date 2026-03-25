@@ -79,7 +79,7 @@ async function ensureE2ESafetyPolicy(page: Page) {
 
 test.describe('Cowork project runtime rules', () => {
   let app: ElectronApplication;
-  let window: Page;
+  let page: Page;
 
   test.beforeEach(async () => {
     test.skip(USE_REAL_GATEWAY, 'Project context suite runs against mock gateway only.');
@@ -88,10 +88,10 @@ test.describe('Cowork project runtime rules', () => {
       args: ['.'],
     });
 
-    window = await app.firstWindow();
-    await window.waitForLoadState('domcontentloaded');
+    page = await app.firstWindow();
+    await page.waitForLoadState('domcontentloaded');
 
-    await window.evaluate(([onboardingKey, usageModeKey, recentsKey, projectsKey, activeProjectKey]) => {
+    await page.evaluate(([onboardingKey, usageModeKey, recentsKey, projectsKey, activeProjectKey]) => {
       localStorage.setItem(onboardingKey, 'true');
       localStorage.setItem(usageModeKey, 'guest');
       localStorage.removeItem(recentsKey);
@@ -100,7 +100,7 @@ test.describe('Cowork project runtime rules', () => {
       sessionStorage.clear();
     }, [ONBOARDING_COMPLETE_KEY, USAGE_MODE_KEY, RELAY_RECENTS_KEY, COWORK_PROJECTS_KEY, COWORK_ACTIVE_PROJECT_KEY]);
 
-    await window.evaluate(async () => {
+    await page.evaluate(async () => {
       if (!window.relay?.saveConfig) {
         return;
       }
@@ -111,9 +111,9 @@ test.describe('Cowork project runtime rules', () => {
       });
     });
 
-    await window.reload();
-    await window.waitForLoadState('domcontentloaded');
-    await ensureE2ESafetyPolicy(window);
+    await page.reload();
+    await page.waitForLoadState('domcontentloaded');
+    await ensureE2ESafetyPolicy(page);
   });
 
   test.afterEach(async () => {
@@ -121,17 +121,17 @@ test.describe('Cowork project runtime rules', () => {
   });
 
   test('write action is blocked when no active project context exists', async () => {
-    await window.getByPlaceholder('How can I help you today?').fill(
+    await page.getByPlaceholder('How can I help you today?').fill(
       'Return one relay_actions append_file action for relay-e2e/mock-approval.txt with content "no project".',
     );
-    await window.getByLabel('Send task').click();
+    await page.getByLabel('Send task').click();
 
-    await expect(window.locator('[data-testid^="pending-approval-"]')).toHaveCount(0, { timeout: 12000 });
-    await expect(window.getByText('append_file • error')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('[data-testid^="pending-approval-"]')).toHaveCount(0, { timeout: 12000 });
+    await expect(page.getByText('append_file â€¢ error')).toBeVisible({ timeout: 20000 });
   });
 
   test('run keeps its original project root when active project changes mid-run', async () => {
-    const roots = await window.evaluate(async () => {
+    const roots = await page.evaluate(async () => {
       const bridge = window.relay;
       if (!bridge?.getDownloadsPath || !bridge.createFileInFolder) {
         throw new Error('Desktop bridge is unavailable for project test setup.');
@@ -151,7 +151,7 @@ test.describe('Cowork project runtime rules', () => {
     });
 
     const now = Date.now();
-    await window.evaluate(([projectsKey, activeProjectKey, projectARoot, projectBRoot, nowValue]) => {
+    await page.evaluate(([projectsKey, activeProjectKey, projectARoot, projectBRoot, nowValue]) => {
       const projects = [
         {
           id: 'e2e-project-a',
@@ -171,28 +171,28 @@ test.describe('Cowork project runtime rules', () => {
 
       localStorage.setItem(projectsKey, JSON.stringify(projects));
       localStorage.setItem(activeProjectKey, 'e2e-project-a');
-    }, [COWORK_PROJECTS_KEY, COWORK_ACTIVE_PROJECT_KEY, roots.projectARoot, roots.projectBRoot, now]);
+    }, [COWORK_PROJECTS_KEY, COWORK_ACTIVE_PROJECT_KEY, roots.projectARoot, roots.projectBRoot, now] as [string, string, string, string, number]);
 
-    await window.reload();
-    await window.waitForLoadState('domcontentloaded');
+    await page.reload();
+    await page.waitForLoadState('domcontentloaded');
 
-    await window.getByPlaceholder('How can I help you today?').fill(
+    await page.getByPlaceholder('How can I help you today?').fill(
       'DELAY_LONG Return one relay_actions append_file action for relay-e2e/mock-approval.txt with content "run uses project A snapshot".',
     );
-    await window.getByLabel('Send task').click();
+    await page.getByLabel('Send task').click();
 
-    await window.getByTestId('project-select-e2e-project-b').click();
+    await page.getByTestId('project-select-e2e-project-b').click();
 
-    const approvalCard = window.locator('[data-testid^="pending-approval-"]').first();
+    const approvalCard = page.locator('[data-testid^="pending-approval-"]').first();
     await expect(approvalCard).toBeVisible({ timeout: 25000 });
 
     const approvalTestIdAttr = (await approvalCard.getAttribute('data-testid')) || '';
     const approvalId = approvalTestIdAttr.replace('pending-approval-', '');
-    await window.getByTestId(`pending-approval-approve-${approvalId}`).click();
+    await page.getByTestId(`pending-approval-approve-${approvalId}`).click();
 
-    await expect(window.getByText('append_file • ok')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText('append_file â€¢ ok')).toBeVisible({ timeout: 30000 });
 
-    const fileLocations = await window.evaluate(async ({ projectARoot, projectBRoot }) => {
+    const fileLocations = await page.evaluate(async ({ projectARoot, projectBRoot }) => {
       const bridge = window.relay;
       if (!bridge?.existsInFolder) {
         throw new Error('Desktop bridge is unavailable for verification.');
@@ -213,7 +213,7 @@ test.describe('Cowork project runtime rules', () => {
   });
 
   test('traversal path is blocked with PROJECT_BOUNDARY_BLOCK and no approval card', async () => {
-    const root = await window.evaluate(async () => {
+    const root = await page.evaluate(async () => {
       const bridge = window.relay;
       if (!bridge?.getDownloadsPath || !bridge.createFileInFolder) {
         throw new Error('Desktop bridge is unavailable for project setup.');
@@ -229,7 +229,7 @@ test.describe('Cowork project runtime rules', () => {
     });
 
     const now = Date.now();
-    await window.evaluate(([projectsKey, activeProjectKey, workspaceRoot, nowValue]) => {
+    await page.evaluate(([projectsKey, activeProjectKey, workspaceRoot, nowValue]) => {
       const projects = [
         {
           id: 'e2e-project-traversal',
@@ -242,21 +242,21 @@ test.describe('Cowork project runtime rules', () => {
 
       localStorage.setItem(projectsKey, JSON.stringify(projects));
       localStorage.setItem(activeProjectKey, 'e2e-project-traversal');
-    }, [COWORK_PROJECTS_KEY, COWORK_ACTIVE_PROJECT_KEY, root.workspaceRoot, now]);
+    }, [COWORK_PROJECTS_KEY, COWORK_ACTIVE_PROJECT_KEY, root.workspaceRoot, now] as [string, string, string, number]);
 
-    await window.reload();
-    await window.waitForLoadState('domcontentloaded');
+    await page.reload();
+    await page.waitForLoadState('domcontentloaded');
 
     await sendCoworkPrompt(
-      window,
+      page,
       'Return one relay_actions append_file action for ../relay-e2e-traversal-leak.txt with content "must be blocked".',
     );
 
-    await expect(window.locator('[data-testid^="pending-approval-"]')).toHaveCount(0, { timeout: 12000 });
-    await expect(window.getByText('append_file • error')).toBeVisible({ timeout: 20000 });
-    await expect(window.getByText('PROJECT_BOUNDARY_BLOCK')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('[data-testid^="pending-approval-"]')).toHaveCount(0, { timeout: 12000 });
+    await expect(page.getByText('append_file â€¢ error')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('PROJECT_BOUNDARY_BLOCK')).toBeVisible({ timeout: 20000 });
 
-    const escapedExists = await window.evaluate(async (downloadsRoot) => {
+    const escapedExists = await page.evaluate(async (downloadsRoot) => {
       const bridge = window.relay;
       if (!bridge?.existsInFolder) {
         throw new Error('Desktop bridge is unavailable for verification.');
@@ -270,7 +270,7 @@ test.describe('Cowork project runtime rules', () => {
   });
 
   test('realistic flow: create a docs-maintenance project from sidebar and execute an approved write', async () => {
-    const workspaceRoot = await window.evaluate(async () => {
+    const workspaceRoot = await page.evaluate(async () => {
       const bridge = window.relay;
       if (!bridge?.getDownloadsPath || !bridge.createFileInFolder) {
         throw new Error('Desktop bridge is unavailable for realistic project setup.');
@@ -282,25 +282,25 @@ test.describe('Cowork project runtime rules', () => {
       return root;
     });
 
-    await createProjectFromSidebar(window, {
+    await createProjectFromSidebar(page, {
       title: 'Relay Docs Maintenance',
       description: 'Maintain release notes and operational docs for Relay.',
       rootFolder: workspaceRoot,
     });
 
     await sendCoworkPrompt(
-      window,
+      page,
       'Return one relay_actions append_file action for relay-e2e/mock-approval.txt with content "docs maintenance run".',
     );
 
-    const { approvalCard } = await waitForFirstApproval(window);
+    const { approvalCard } = await waitForFirstApproval(page);
     await expect(approvalCard.getByText('Project: Relay Docs Maintenance')).toBeVisible();
 
-    await approveFirstPendingAction(window);
+    await approveFirstPendingAction(page);
 
-    await expect(window.getByText('append_file • ok')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText('append_file â€¢ ok')).toBeVisible({ timeout: 30000 });
 
-    const result = await window.evaluate(async (root) => {
+    const result = await page.evaluate(async (root) => {
       const bridge = window.relay;
       if (!bridge?.existsInFolder || !bridge.readFileInFolder) {
         throw new Error('Desktop bridge is unavailable for verification.');
@@ -321,7 +321,7 @@ test.describe('Cowork project runtime rules', () => {
   });
 
   test('realistic flow: two projects stay isolated across approved writes', async () => {
-    const roots = await window.evaluate(async () => {
+    const roots = await page.evaluate(async () => {
       const bridge = window.relay;
       if (!bridge?.getDownloadsPath || !bridge.createFileInFolder) {
         throw new Error('Desktop bridge is unavailable for realistic isolation setup.');
@@ -343,27 +343,27 @@ test.describe('Cowork project runtime rules', () => {
       };
     });
 
-    await createProjectFromSidebar(window, {
+    await createProjectFromSidebar(page, {
       title: 'Client Docs Ops',
       description: 'Maintain deliverables and release documentation.',
       rootFolder: roots.docsRoot,
     });
 
-    await createProjectFromSidebar(window, {
+    await createProjectFromSidebar(page, {
       title: 'Client Support Ops',
       description: 'Maintain support playbooks and escalation docs.',
       rootFolder: roots.supportRoot,
     });
 
-    await window.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Client Docs Ops' }).click();
+    await page.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Client Docs Ops' }).click();
     await sendCoworkPrompt(
-      window,
+      page,
       'Return one relay_actions append_file action for relay-e2e/mock-approval.txt with content "docs project write".',
     );
-    await approveFirstPendingAction(window);
-    await expect(window.getByText('append_file • ok')).toBeVisible({ timeout: 30000 });
+    await approveFirstPendingAction(page);
+    await expect(page.getByText('append_file â€¢ ok')).toBeVisible({ timeout: 30000 });
 
-    const afterFirstWrite = await window.evaluate(async ({ docsRoot, supportRoot }) => {
+    const afterFirstWrite = await page.evaluate(async ({ docsRoot, supportRoot }) => {
       const bridge = window.relay;
       if (!bridge?.existsInFolder) {
         throw new Error('Desktop bridge is unavailable for verification.');
@@ -381,15 +381,15 @@ test.describe('Cowork project runtime rules', () => {
     expect(afterFirstWrite.docs).toBeTruthy();
     expect(afterFirstWrite.support).toBeFalsy();
 
-    await window.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Client Support Ops' }).click();
+    await page.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Client Support Ops' }).click();
     await sendCoworkPrompt(
-      window,
+      page,
       'Return one relay_actions append_file action for relay-e2e/mock-approval.txt with content "support project write".',
     );
-    await approveFirstPendingAction(window);
-    await expect(window.locator('p', { hasText: 'append_file • ok' }).first()).toBeVisible({ timeout: 30000 });
+    await approveFirstPendingAction(page);
+    await expect(page.locator('p', { hasText: 'append_file â€¢ ok' }).first()).toBeVisible({ timeout: 30000 });
 
-    const afterSecondWrite = await window.evaluate(async ({ docsRoot, supportRoot }) => {
+    const afterSecondWrite = await page.evaluate(async ({ docsRoot, supportRoot }) => {
       const bridge = window.relay;
       if (!bridge?.existsInFolder) {
         throw new Error('Desktop bridge is unavailable for verification.');
@@ -409,7 +409,7 @@ test.describe('Cowork project runtime rules', () => {
   });
 
   test('realistic flow: one project executes a multi-task sprint with approvals', async () => {
-    const project = await window.evaluate(async () => {
+    const project = await page.evaluate(async () => {
       const bridge = window.relay;
       if (!bridge?.getDownloadsPath || !bridge.createFileInFolder) {
         throw new Error('Desktop bridge is unavailable for multi-task sprint setup.');
@@ -429,7 +429,7 @@ test.describe('Cowork project runtime rules', () => {
     });
 
     const projectTitle = 'Product Launch Sprint';
-    await createProjectFromSidebar(window, {
+    await createProjectFromSidebar(page, {
       title: projectTitle,
       description: 'Coordinate launch planning, QA checks, and status updates.',
       rootFolder: project.root,
@@ -452,18 +452,18 @@ test.describe('Cowork project runtime rules', () => {
 
     for (const [index, task] of tasks.entries()) {
       await sendCoworkPrompt(
-        window,
+        page,
         `Sprint task ${index + 1}: Return one relay_actions append_file action for ${task.relPath} with content "${task.content}".`,
       );
 
-      const { approvalCard } = await waitForFirstApproval(window);
+      const { approvalCard } = await waitForFirstApproval(page);
       await expect(approvalCard.getByText(`Project: ${projectTitle}`)).toBeVisible();
 
-      await approveFirstPendingAction(window);
-      await expect(window.locator('p', { hasText: 'append_file • ok' }).first()).toBeVisible({ timeout: 30000 });
+      await approveFirstPendingAction(page);
+      await expect(page.locator('p', { hasText: 'append_file â€¢ ok' }).first()).toBeVisible({ timeout: 30000 });
     }
 
-    const verification = await window.evaluate(async ({ root, tasks }) => {
+    const verification = await page.evaluate(async ({ root, tasks }) => {
       const bridge = window.relay;
       if (!bridge?.existsInFolder || !bridge.readFileInFolder) {
         throw new Error('Desktop bridge is unavailable for multi-task sprint verification.');
@@ -494,7 +494,7 @@ test.describe('Cowork project runtime rules', () => {
   });
 
   test('realistic flow: one rejected task does not write while approved tasks persist', async () => {
-    const project = await window.evaluate(async () => {
+    const project = await page.evaluate(async () => {
       const bridge = window.relay;
       if (!bridge?.getDownloadsPath || !bridge.createFileInFolder) {
         throw new Error('Desktop bridge is unavailable for mixed approval sprint setup.');
@@ -513,7 +513,7 @@ test.describe('Cowork project runtime rules', () => {
     });
 
     const projectTitle = 'Release Ops Sprint';
-    await createProjectFromSidebar(window, {
+    await createProjectFromSidebar(page, {
       title: projectTitle,
       description: 'Test mixed approval outcomes in a realistic project sprint.',
       rootFolder: project.root,
@@ -539,31 +539,31 @@ test.describe('Cowork project runtime rules', () => {
 
     for (const [index, task] of tasks.entries()) {
       await sendCoworkPrompt(
-        window,
+        page,
         `Sprint task ${index + 1}: Return one relay_actions append_file action for ${task.relPath} with content "${task.content}".`,
       );
 
-      const { approvalCard, approvalId } = await waitForFirstApproval(window);
+      const { approvalCard, approvalId } = await waitForFirstApproval(page);
       await expect(approvalCard.getByText(`Project: ${projectTitle}`)).toBeVisible();
 
       if (task.shouldApprove) {
-        await window.getByTestId(`pending-approval-approve-${approvalId}`).click();
+        await page.getByTestId(`pending-approval-approve-${approvalId}`).click();
         await expect(approvalCard).toHaveCount(0);
-        await expect(window.locator('p', { hasText: 'append_file • ok' }).first()).toBeVisible({ timeout: 30000 });
+        await expect(page.locator('p', { hasText: 'append_file â€¢ ok' }).first()).toBeVisible({ timeout: 30000 });
       } else {
-        const rejectReason = window.getByTestId(`pending-approval-reason-${approvalId}`);
-        const rejectButton = window.getByTestId(`pending-approval-reject-${approvalId}`);
+        const rejectReason = page.getByTestId(`pending-approval-reason-${approvalId}`);
+        const rejectButton = page.getByTestId(`pending-approval-reject-${approvalId}`);
 
         await expect(rejectButton).toBeDisabled();
         await rejectReason.fill('Rejected by operator during mixed sprint E2E.');
         await expect(rejectButton).toBeEnabled();
         await rejectButton.click();
         await expect(approvalCard).toHaveCount(0);
-        await expect(window.locator('p', { hasText: 'append_file • error' }).first()).toBeVisible({ timeout: 30000 });
+        await expect(page.locator('p', { hasText: 'append_file â€¢ error' }).first()).toBeVisible({ timeout: 30000 });
       }
     }
 
-    const verification = await window.evaluate(async ({ root, tasks }) => {
+    const verification = await page.evaluate(async ({ root, tasks }) => {
       const bridge = window.relay;
       if (!bridge?.existsInFolder || !bridge.readFileInFolder) {
         throw new Error('Desktop bridge is unavailable for mixed sprint verification.');
@@ -601,7 +601,7 @@ test.describe('Cowork project runtime rules', () => {
   });
 
   test('task queue statuses reflect approval and rejection outcomes', async () => {
-    const project = await window.evaluate(async () => {
+    const project = await page.evaluate(async () => {
       const bridge = window.relay;
       if (!bridge?.getDownloadsPath || !bridge.createFileInFolder) {
         throw new Error('Desktop bridge is unavailable for task queue status setup.');
@@ -619,47 +619,47 @@ test.describe('Cowork project runtime rules', () => {
       };
     });
 
-    await createProjectFromSidebar(window, {
+    await createProjectFromSidebar(page, {
       title: 'Task Queue Status Project',
       description: 'Verify task queue status transitions for approvals and rejections.',
       rootFolder: project.root,
     });
 
-    await expect(window.getByTestId('project-tasks-card')).toBeVisible();
+    await expect(page.getByTestId('project-tasks-card')).toBeVisible();
 
     const approvedPrompt = 'QUEUE-STATUS-APPROVED: Return one relay_actions append_file action for queue/approved.md with content "approved task".';
-    await sendCoworkPrompt(window, approvedPrompt);
+    await sendCoworkPrompt(page, approvedPrompt);
 
-    const approvedTaskItem = window.locator('[data-testid^="project-task-"]', {
+    const approvedTaskItem = page.locator('[data-testid^="project-task-"]', {
       hasText: 'QUEUE-STATUS-APPROVED',
     }).first();
     await expect(approvedTaskItem).toBeVisible({ timeout: 20000 });
     await expect(approvedTaskItem).toContainText(/needs approval|running/i);
 
-    const { approvalCard: approvedCard, approvalId: approvedApprovalId } = await waitForFirstApproval(window);
-    await window.getByTestId(`pending-approval-approve-${approvedApprovalId}`).click();
+    const { approvalCard: approvedCard, approvalId: approvedApprovalId } = await waitForFirstApproval(page);
+    await page.getByTestId(`pending-approval-approve-${approvedApprovalId}`).click();
     await expect(approvedCard).toHaveCount(0);
-    await expect(window.locator('p', { hasText: 'append_file • ok' }).first()).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('p', { hasText: 'append_file â€¢ ok' }).first()).toBeVisible({ timeout: 30000 });
     await expect(approvedTaskItem).toContainText(/completed/i);
 
     const rejectedPrompt = 'QUEUE-STATUS-REJECTED: Return one relay_actions append_file action for queue/rejected.md with content "rejected task".';
-    await sendCoworkPrompt(window, rejectedPrompt);
+    await sendCoworkPrompt(page, rejectedPrompt);
 
-    const rejectedTaskItem = window.locator('[data-testid^="project-task-"]', {
+    const rejectedTaskItem = page.locator('[data-testid^="project-task-"]', {
       hasText: 'QUEUE-STATUS-REJECTED',
     }).first();
     await expect(rejectedTaskItem).toBeVisible({ timeout: 20000 });
     await expect(rejectedTaskItem).toContainText(/needs approval|running/i);
 
-    const { approvalCard: rejectedCard, approvalId: rejectedApprovalId } = await waitForFirstApproval(window);
-    const rejectReason = window.getByTestId(`pending-approval-reason-${rejectedApprovalId}`);
+    const { approvalCard: rejectedCard, approvalId: rejectedApprovalId } = await waitForFirstApproval(page);
+    const rejectReason = page.getByTestId(`pending-approval-reason-${rejectedApprovalId}`);
     await rejectReason.fill('Reject queue status task in E2E.');
-    await window.getByTestId(`pending-approval-reject-${rejectedApprovalId}`).click();
+    await page.getByTestId(`pending-approval-reject-${rejectedApprovalId}`).click();
     await expect(rejectedCard).toHaveCount(0);
-    await expect(window.locator('p', { hasText: 'append_file • error' }).first()).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('p', { hasText: 'append_file â€¢ error' }).first()).toBeVisible({ timeout: 30000 });
     await expect(rejectedTaskItem).toContainText(/failed|rejected/i);
 
-    const fileCheck = await window.evaluate(async (root) => {
+    const fileCheck = await page.evaluate(async (root) => {
       const bridge = window.relay;
       if (!bridge?.existsInFolder) {
         throw new Error('Desktop bridge is unavailable for queue status verification.');
@@ -681,7 +681,7 @@ test.describe('Cowork project runtime rules', () => {
   test('long realistic flow: multi-project operations week with mixed outcomes and persistence', async () => {
     test.setTimeout(240000);
 
-    const roots = await window.evaluate(async () => {
+    const roots = await page.evaluate(async () => {
       const bridge = window.relay;
       if (!bridge?.getDownloadsPath || !bridge.createFileInFolder) {
         throw new Error('Desktop bridge is unavailable for long realistic setup.');
@@ -703,19 +703,19 @@ test.describe('Cowork project runtime rules', () => {
       };
     });
 
-    await createProjectFromSidebar(window, {
+    await createProjectFromSidebar(page, {
       title: 'Ops Week Project',
       description: 'Daily operations planning and reporting.',
       rootFolder: roots.opsRoot,
     });
 
-    await createProjectFromSidebar(window, {
+    await createProjectFromSidebar(page, {
       title: 'Support Week Project',
       description: 'Support escalations and customer follow-up.',
       rootFolder: roots.supportRoot,
     });
 
-    await window.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Ops Week Project' }).click();
+    await page.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Ops Week Project' }).click();
 
     const runCoworkTask = async (args: {
       tag: string;
@@ -725,30 +725,30 @@ test.describe('Cowork project runtime rules', () => {
       rejectReason?: string;
       expectedStatusPattern: RegExp;
     }) => {
-      await sendCoworkPrompt(window, args.prompt);
+      await sendCoworkPrompt(page, args.prompt);
 
-      const taskItem = window.locator('[data-testid^="project-task-"]', { hasText: args.tag }).first();
+      const taskItem = page.locator('[data-testid^="project-task-"]', { hasText: args.tag }).first();
       await expect(taskItem).toBeVisible({ timeout: 25000 });
 
       if (args.expectsApproval) {
-        const { approvalCard, approvalId } = await waitForFirstApproval(window, 30000);
+        const { approvalCard, approvalId } = await waitForFirstApproval(page, 30000);
 
         if (args.approve === false) {
           const reason = args.rejectReason || 'Rejected by long realistic E2E flow.';
-          const rejectReasonInput = window.getByTestId(`pending-approval-reason-${approvalId}`);
-          const rejectButton = window.getByTestId(`pending-approval-reject-${approvalId}`);
+          const rejectReasonInput = page.getByTestId(`pending-approval-reason-${approvalId}`);
+          const rejectButton = page.getByTestId(`pending-approval-reject-${approvalId}`);
           await rejectReasonInput.fill(reason);
           await expect(rejectButton).toBeEnabled();
           await rejectButton.click();
           await expect(approvalCard).toHaveCount(0);
-          await expect(window.locator('p', { hasText: 'append_file • error' }).first()).toBeVisible({ timeout: 30000 });
+          await expect(page.locator('p', { hasText: 'append_file â€¢ error' }).first()).toBeVisible({ timeout: 30000 });
         } else {
-          await window.getByTestId(`pending-approval-approve-${approvalId}`).click();
+          await page.getByTestId(`pending-approval-approve-${approvalId}`).click();
           await expect(approvalCard).toHaveCount(0);
-          await expect(window.locator('p', { hasText: 'append_file • ok' }).first()).toBeVisible({ timeout: 30000 });
+          await expect(page.locator('p', { hasText: 'append_file â€¢ ok' }).first()).toBeVisible({ timeout: 30000 });
         }
       } else {
-        await expect(window.locator('[data-testid^="pending-approval-"]')).toHaveCount(0, { timeout: 15000 });
+        await expect(page.locator('[data-testid^="pending-approval-"]')).toHaveCount(0, { timeout: 15000 });
       }
 
       await expect(taskItem).toContainText(args.expectedStatusPattern, { timeout: 30000 });
@@ -795,7 +795,7 @@ test.describe('Cowork project runtime rules', () => {
       expectedStatusPattern: /completed/i,
     });
 
-    await window.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Support Week Project' }).click();
+    await page.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Support Week Project' }).click();
 
     await runCoworkTask({
       tag: 'LONG-OPS-B1',
@@ -805,7 +805,7 @@ test.describe('Cowork project runtime rules', () => {
       expectedStatusPattern: /completed/i,
     });
 
-    const fileCheck = await window.evaluate(async ({ opsRoot, supportRoot }) => {
+    const fileCheck = await page.evaluate(async ({ opsRoot, supportRoot }) => {
       const bridge = window.relay;
       if (!bridge?.existsInFolder) {
         throw new Error('Desktop bridge is unavailable for long realistic verification.');
@@ -834,19 +834,19 @@ test.describe('Cowork project runtime rules', () => {
     expect(fileCheck.opsCloseout).toBeTruthy();
     expect(fileCheck.supportEscalation).toBeTruthy();
 
-    await window.reload();
-    await window.waitForLoadState('domcontentloaded');
+    await page.reload();
+    await page.waitForLoadState('domcontentloaded');
 
-    await window.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Ops Week Project' }).click();
-    await expect(window.getByTestId('project-tasks-card')).toContainText('LONG-OPS-A1');
-    await expect(window.getByTestId('project-tasks-card')).toContainText('LONG-OPS-A3');
+    await page.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Ops Week Project' }).click();
+    await expect(page.getByTestId('project-tasks-card')).toContainText('LONG-OPS-A1');
+    await expect(page.getByTestId('project-tasks-card')).toContainText('LONG-OPS-A3');
 
-    await window.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Support Week Project' }).click();
-    await expect(window.getByTestId('project-tasks-card')).toContainText('LONG-OPS-B1');
+    await page.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Support Week Project' }).click();
+    await expect(page.getByTestId('project-tasks-card')).toContainText('LONG-OPS-B1');
   });
 
   test('projects can be renamed and deleted from sidebar with persistence', async () => {
-    const workspaceRoot = await window.evaluate(async () => {
+    const workspaceRoot = await page.evaluate(async () => {
       const bridge = window.relay;
       if (!bridge?.getDownloadsPath || !bridge.createFileInFolder) {
         throw new Error('Desktop bridge is unavailable for rename/delete setup.');
@@ -858,33 +858,33 @@ test.describe('Cowork project runtime rules', () => {
       return root;
     });
 
-    await createProjectFromSidebar(window, {
+    await createProjectFromSidebar(page, {
       title: 'Ops Inbox',
       description: 'Initial queue workspace.',
       rootFolder: workspaceRoot,
     });
 
-    await window.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Ops Inbox' }).hover();
-    await window.getByTitle('Rename project Ops Inbox').click();
-    await window.getByPlaceholder('Project title').fill('Ops Inbox Renamed');
-    await window.getByPlaceholder('Description (optional)').fill('Renamed for operations triage.');
-    await window.getByTestId('rename-project-confirm').click();
+    await page.locator('button[data-slot="sidebar-menu-button"]', { hasText: 'Ops Inbox' }).hover();
+    await page.getByTitle('Rename project Ops Inbox').click();
+    await page.getByPlaceholder('Project title').fill('Ops Inbox Renamed');
+    await page.getByPlaceholder('Description (optional)').fill('Renamed for operations triage.');
+    await page.getByTestId('rename-project-confirm').click();
 
-    await expect(window.getByRole('button', { name: /^Ops Inbox Renamed$/, exact: false })).toBeVisible();
-    await expect(window.getByRole('button', { name: /^Ops Inbox$/, exact: false })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Ops Inbox Renamed$/, exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Ops Inbox$/, exact: false })).toHaveCount(0);
 
-    await window.getByRole('button', { name: /^Ops Inbox Renamed$/, exact: false }).hover();
-    await window.getByTitle('Delete project Ops Inbox Renamed').click();
-    await window.getByTestId('delete-project-confirm').click();
+    await page.getByRole('button', { name: /^Ops Inbox Renamed$/, exact: false }).hover();
+    await page.getByTitle('Delete project Ops Inbox Renamed').click();
+    await page.getByTestId('delete-project-confirm').click();
 
-    await expect(window.getByRole('button', { name: /^Ops Inbox Renamed$/, exact: false })).toHaveCount(0);
-    await expect(window.getByText('No projects yet')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Ops Inbox Renamed$/, exact: false })).toHaveCount(0);
+    await expect(page.getByText('No projects yet')).toBeVisible();
 
-    await window.reload();
-    await window.waitForLoadState('domcontentloaded');
-    await expect(window.getByText('No projects yet')).toBeVisible();
+    await page.reload();
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByText('No projects yet')).toBeVisible();
 
-    const persistedProjects = await window.evaluate((projectsKey) => {
+    const persistedProjects = await page.evaluate((projectsKey) => {
       const raw = localStorage.getItem(projectsKey);
       if (!raw) {
         return [] as Array<{ id: string; name: string }>;

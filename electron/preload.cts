@@ -89,6 +89,19 @@ const api = {
     ipcRenderer.invoke('local:open-path', {
       targetPath,
     }) as Promise<{ ok: boolean; error?: string }>,
+  shellExec: (rootPath: string, command: string, timeoutMs?: number) =>
+    ipcRenderer.invoke('local:shell-exec', {
+      rootPath,
+      command,
+      timeoutMs,
+    }) as Promise<{ stdout: string; stderr: string; exitCode: number | null; timedOut: boolean }>,
+  webFetch: (url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) =>
+    ipcRenderer.invoke('local:web-fetch', {
+      url,
+      options,
+    }) as Promise<{ status: number; statusText: string; headers: Record<string, string>; body: string; truncated: boolean }>,
+  notify: (title: string, body?: string) =>
+    ipcRenderer.invoke('notify', { title, body }) as Promise<{ ok: boolean; message?: string }>,
 };
 
 contextBridge.exposeInMainWorld('relay', api);

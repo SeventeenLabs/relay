@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { Code2, KeyRound, Link2, Shield } from 'lucide-react';
+import { Code2, Folder, Globe, KeyRound, Link2, Shield, Terminal } from 'lucide-react';
 
 import type { HealthCheckResult, UserPreferences } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
+import { listConnectors, persistConnectorConfig } from '@/lib/connectors';
+import { loadAllowedDomains, saveAllowedDomains } from '@/lib/connectors/web-fetch';
+import type { ConnectorDefinition } from '@/lib/connectors/connector-types';
 
 type AppLanguage = 'en' | 'de';
 
@@ -687,10 +690,156 @@ export function SettingsPage({
         </div>
       )}
 
-      {activeSection === 'Connectors' && renderPlaceholder(<Link2 className="size-5" />, t('Connect CRM, calendar, knowledge bases, and more.', 'Verbinde CRM, Kalender, Wissensdatenbanken und mehr.'))}
+      {activeSection === 'Connectors' && <ConnectorsSection language={preferences.language ?? 'en'} />}
       {activeSection === 'Account' && renderPlaceholder(<KeyRound className="size-5" />, t('Email, password, and two-factor authentication.', 'E-Mail, Passwort und Zwei-Faktor-Authentifizierung.'))}
       {activeSection === 'Privacy' && renderPlaceholder(<Shield className="size-5" />, t('Data sharing, retention, and deletion policies.', 'Datenfreigaben, Aufbewahrung und Loeschrichtlinien.'))}
       {activeSection === 'Developer' && renderPlaceholder(<Code2 className="size-5" />, t('API keys, logs, and debugging tools.', 'API-Schluessel, Logs und Debugging-Werkzeuge.'))}
     </section>
+  );
+}
+
+/* ── Connectors settings section ─────────────────────────────────────────── */
+
+const connectorIcons: Record<string, ReactNode> = {
+  folder: <Folder className="size-4" />,
+  terminal: <Terminal className="size-4" />,
+  globe: <Globe className="size-4" />,
+};
+
+function ConnectorsSection({ language }: { language: 'en' | 'de' }) {
+  const t = (en: string, de: string) => (language === 'de' ? de : en);
+  const [connectors, setConnectors] = useState<ConnectorDefinition[]>([]);
+  const [domainDraft, setDomainDraft] = useState('');
+  const [allowedDomains, setAllowedDomains] = useState<string[]>([]);
+
+  useEffect(() => {
+    setConnectors(listConnectors());
+    setAllowedDomains(loadAllowedDomains());
+  }, []);
+
+  const toggleConnector = (id: string) => {
+    setConnectors((prev) =>
+      prev.map((c) => {
+        if (c.id !== id) return c;
+        const next = { ...c, status: c.status === 'active' ? 'inactive' as const : 'active' as const };
+        // Mutate the actual registry object
+        const original = listConnectors().find((o) => o.id === id);
+        if (original) {
+          original.status = next.status;
+          persistConnectorConfig(id);
+        }
+        return next;
+      }),
+    );
+  };
+
+  const addDomain = () => {
+    const d = domainDraft.trim().toLowerCase();
+    if (!d || allowedDomains.includes(d)) return;
+    const next = [...allowedDomains, d];
+    setAllowedDomains(next);
+    saveAllowedDomains(next);
+    setDomainDraft('');
+    // Update the web-fetch connector config
+    const wf = listConnectors().find((c) => c.id === 'web-fetch');
+    if (wf) {
+      wf.config.allowedDomains = next;
+      persistConnectorConfig('web-fetch');
+    }
+  };
+
+  const removeDomain = (domain: string) => {
+    const next = allowedDomains.filter((d) => d !== domain);
+    setAllowedDomains(next);
+    saveAllowedDomains(next);
+    const wf = listConnectors().find((c) => c.id === 'web-fetch');
+    if (wf) {
+      wf.config.allowedDomains = next;
+      persistConnectorConfig('web-fetch');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {connectors.map((connector) => (
+        <div
+          key={connector.id}
+          className="rounded-xl border border-border/60 bg-card p-4"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              {connectorIcons[connector.icon] ?? <Link2 className="size-4" />}
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">{connector.name}</span>
+                <Badge variant={connector.status === 'active' ? 'default' : 'secondary'} className="text-[10px]">
+                  {connector.status === 'active' ? t('Active', 'Aktiv') : t('Inactive', 'Inaktiv')}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">{connector.description}</p>
+            </div>
+            <Button
+              variant={connector.status === 'active' ? 'secondary' : 'default'}
+              size="sm"
+              onClick={() => toggleConnector(connector.id)}
+            >
+              {connector.status === 'active' ? t('Disable', 'Deaktivieren') : t('Enable', 'Aktivieren')}
+            </Button>
+          </div>
+
+          {/* Actions list */}
+          <div className="mt-3 space-y-1">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+              {t('Actions', 'Aktionen')}
+            </p>
+            {connector.actions.map((action) => (
+              <div key={action.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="font-mono text-[11px]">{action.id}</span>
+                <Badge variant="outline" className="text-[9px]">{action.riskLevel}</Badge>
+              </div>
+            ))}
+          </div>
+
+          {/* Web-fetch domain allowlist config */}
+          {connector.id === 'web-fetch' && connector.status === 'active' && (
+            <div className="mt-4 space-y-2 border-t border-border/40 pt-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                {t('Allowed domains', 'Erlaubte Domains')}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {allowedDomains.map((domain) => (
+                  <Badge key={domain} variant="secondary" className="gap-1 text-[11px]">
+                    {domain}
+                    <button
+                      type="button"
+                      className="ml-1 text-muted-foreground hover:text-foreground"
+                      onClick={() => removeDomain(domain)}
+                    >
+                      ×
+                    </button>
+                  </Badge>
+                ))}
+                {allowedDomains.length === 0 && (
+                  <span className="text-[11px] text-muted-foreground/60">{t('No domains configured', 'Keine Domains konfiguriert')}</span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="e.g. api.example.com"
+                  value={domainDraft}
+                  onChange={(e) => setDomainDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDomain(); } }}
+                />
+                <Button size="sm" variant="secondary" onClick={addDomain}>
+                  {t('Add', 'Hinzufuegen')}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }

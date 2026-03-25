@@ -140,7 +140,7 @@ export type GatewayDiscoveryResult = {
   message: string;
 };
 
-export type LocalActionType = 'create_file' | 'append_file' | 'read_file' | 'list_dir' | 'exists' | 'rename' | 'delete';
+export type LocalActionType = 'create_file' | 'append_file' | 'read_file' | 'list_dir' | 'exists' | 'rename' | 'delete' | 'shell_exec' | 'web_fetch';
 
 export type LocalActionReceipt = {
   id: string;

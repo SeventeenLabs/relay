@@ -49,6 +49,10 @@ import { createFileService, LocalFileService } from './lib/file-service';
 import { buildMemoryContext, loadMemoryEntries } from './lib/memory-context';
 import { accumulateTodayUsage, addUsage, loadTodayUsage, parseUsageFromPayload } from './lib/token-usage';
 import { loadSafetyScopes, resolveLocalActionPolicy } from './lib/safety-policy';
+import { registerConnector, hydrateConnectors } from './lib/connectors';
+import { createFilesystemConnector } from './lib/connectors/filesystem';
+import { createShellConnector } from './lib/connectors/shell';
+import { createWebFetchConnector } from './lib/connectors/web-fetch';
 
 import { OnboardingPage } from './features/auth/onboarding-page';
 import { useAuth } from './hooks/use-auth';
@@ -302,6 +306,14 @@ declare global {
 
 
 export default function App() {
+  /* ── Initialize connectors once ──────────────────────────────────────── */
+  useMemo(() => {
+    registerConnector(createFilesystemConnector());
+    registerConnector(createShellConnector());
+    registerConnector(createWebFetchConnector());
+    hydrateConnectors();
+  }, []);
+
   const bridge = window.relay;
   const gatewayClientRef = useRef<OpenClawGatewayClient | null>(null);
   const activeSessionKeyRef = useRef('');
@@ -2185,6 +2197,82 @@ export default function App() {
                       previews.push(`- deleted ${result.path}`);
                       continue;
                     }
+
+                    if (action.type === 'shell_exec') {
+                      if (!bridge.shellExec) {
+                        const message = `${actionPath}: shell_exec is unavailable in this app context.`;
+                        errors.push(message);
+                        actionReceipts.push({
+                          id: actionId,
+                          type: 'shell_exec',
+                          path: actionPath,
+                          status: 'error',
+                          errorCode: 'UNAVAILABLE',
+                          message,
+                        });
+                        continue;
+                      }
+
+                      const timeoutMs = typeof action.timeoutMs === 'number' ? action.timeoutMs : 30_000;
+                      const result = await bridge.shellExec(rootPath, action.command, timeoutMs);
+                      const ok = result.exitCode === 0;
+                      actionReceipts.push({
+                        id: actionId,
+                        type: 'shell_exec',
+                        path: actionPath,
+                        status: ok ? 'ok' : 'error',
+                        message: result.timedOut ? 'Command timed out' : (ok ? `Exit 0` : `Exit ${result.exitCode}`),
+                      });
+                      previews.push(`$ ${action.command}`);
+                      if (result.stdout) {
+                        previews.push('```');
+                        previews.push(result.stdout.slice(0, 2000));
+                        previews.push('```');
+                      }
+                      if (result.stderr) {
+                        previews.push('stderr:');
+                        previews.push('```');
+                        previews.push(result.stderr.slice(0, 1000));
+                        previews.push('```');
+                      }
+                      continue;
+                    }
+
+                    if (action.type === 'web_fetch') {
+                      if (!bridge.webFetch) {
+                        const message = `${actionPath}: web_fetch is unavailable in this app context.`;
+                        errors.push(message);
+                        actionReceipts.push({
+                          id: actionId,
+                          type: 'web_fetch',
+                          path: actionPath,
+                          status: 'error',
+                          errorCode: 'UNAVAILABLE',
+                          message,
+                        });
+                        continue;
+                      }
+
+                      const method = typeof action.method === 'string' ? action.method : 'GET';
+                      const headers: Record<string, string> = {};
+                      if (typeof action.contentType === 'string') headers['Content-Type'] = action.contentType;
+                      const result = await bridge.webFetch(action.url, { method, headers, body: action.body });
+                      const ok = result.status >= 200 && result.status < 400;
+                      actionReceipts.push({
+                        id: actionId,
+                        type: 'web_fetch',
+                        path: action.url,
+                        status: ok ? 'ok' : 'error',
+                        message: `${result.status} ${result.statusText}${result.truncated ? ' (truncated)' : ''}`,
+                      });
+                      previews.push(`> fetch ${method} ${action.url} => ${result.status}`);
+                      if (result.body) {
+                        previews.push('```');
+                        previews.push(result.body.slice(0, 2000));
+                        previews.push('```');
+                      }
+                      continue;
+                    }
                   } catch (error) {
                     const message = error instanceof Error ? error.message : 'Unknown local file action error.';
                     const fullMessage = `${actionPath}: ${message}`;
@@ -2216,6 +2304,15 @@ export default function App() {
 
                 const summary = summaryParts.join(' ') || 'No file actions were applied.';
                 postActionReceipt(summary, actionReceipts, previews, errors);
+
+                // Fire desktop notification when cowork task completes
+                if (bridge?.notify) {
+                  const title = errorCount > 0 ? 'Relay — Task completed with errors' : 'Relay — Task completed';
+                  const body = runContext.projectTitle
+                    ? `${runContext.projectTitle}: ${okCount} action${okCount === 1 ? '' : 's'} executed`
+                    : `${okCount} action${okCount === 1 ? '' : 's'} executed`;
+                  bridge.notify(title, body).catch(() => { /* notification failure is non-critical */ });
+                }
               })();
             } else if (relayActions.length === 0) {
               setCoworkProgressStage('deliverables', {
@@ -2229,6 +2326,10 @@ export default function App() {
                   outcome: visibleText,
                 });
                 finalizeCoworkTaskRun(eventSessionKey || coworkSessionKeyRef.current, taskEntry.taskId);
+
+                if (bridge?.notify) {
+                  bridge.notify('Relay — Task completed', runContext.projectTitle || 'Cowork run finished.').catch(() => {});
+                }
               }
 
               const noActionMessage: ChatMessage = {
@@ -2719,7 +2820,7 @@ export default function App() {
 
       const selected = await new Promise<string>((resolve) => {
         input.onchange = () => {
-          resolve(input.files?.[0]?.webkitRelativePath?.split('/')[0] ?? '');
+          resolve(input.files?.[0]?.webkitRelativePath?.split('/')?.[0] ?? '');
         };
         input.click();
       });

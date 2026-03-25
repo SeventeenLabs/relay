@@ -1,10 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, session, shell } from 'electron';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
+import { exec, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
+
+const execAsync = promisify(exec);
 import type {
   AppConfig,
   HealthCheckResult,
@@ -1163,6 +1165,90 @@ app.whenReady().then(async () => {
 
     const targetPath = typeof payload.targetPath === 'string' ? payload.targetPath : '';
     return openLocalPath(targetPath);
+  });
+
+  /* ── Shell exec IPC ─────────────────────────────────────────────────────── */
+  ipcMain.handle('local:shell-exec', async (_event, payload: { rootPath: string; command: string; timeoutMs?: number }) => {
+    if (!payload || typeof payload !== 'object') throw new Error('Invalid shell-exec payload.');
+    const rootPath = typeof payload.rootPath === 'string' ? payload.rootPath.trim() : '';
+    const command = typeof payload.command === 'string' ? payload.command.trim() : '';
+    const timeoutMs = typeof payload.timeoutMs === 'number' && payload.timeoutMs > 0 ? payload.timeoutMs : 30_000;
+
+    if (!rootPath) throw new Error('A folder path is required.');
+    if (!command) throw new Error('A command is required.');
+
+    // Validate rootPath exists
+    const rootStat = await fs.stat(rootPath).catch(() => null);
+    if (!rootStat?.isDirectory()) throw new Error('Root path is not a valid directory.');
+
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        cwd: rootPath,
+        timeout: timeoutMs,
+        maxBuffer: 1024 * 1024, // 1 MB
+        shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/sh',
+      });
+
+      return { stdout: stdout || '', stderr: stderr || '', exitCode: 0, timedOut: false };
+    } catch (err: unknown) {
+      const execErr = err as { stdout?: string; stderr?: string; code?: number | string; killed?: boolean; signal?: string };
+      const timedOut = execErr.killed === true || execErr.signal === 'SIGTERM';
+      return {
+        stdout: typeof execErr.stdout === 'string' ? execErr.stdout : '',
+        stderr: typeof execErr.stderr === 'string' ? execErr.stderr : '',
+        exitCode: typeof execErr.code === 'number' ? execErr.code : 1,
+        timedOut,
+      };
+    }
+  });
+
+  /* ── Web fetch IPC ──────────────────────────────────────────────────────── */
+  ipcMain.handle('local:web-fetch', async (_event, payload: { url: string; options?: { method?: string; headers?: Record<string, string>; body?: string } }) => {
+    if (!payload || typeof payload !== 'object') throw new Error('Invalid web-fetch payload.');
+    const url = typeof payload.url === 'string' ? payload.url.trim() : '';
+    if (!url) throw new Error('URL is required.');
+
+    const opts = payload.options ?? {};
+    const method = typeof opts.method === 'string' ? opts.method.toUpperCase() : 'GET';
+
+    const fetchOptions: RequestInit = {
+      method,
+      headers: opts.headers ?? {},
+      signal: AbortSignal.timeout(30_000),
+    };
+
+    if (method !== 'GET' && method !== 'HEAD' && typeof opts.body === 'string') {
+      fetchOptions.body = opts.body;
+    }
+
+    const response = await fetch(url, fetchOptions);
+    const bodyText = await response.text();
+    const maxLen = 100_000;
+    const truncated = bodyText.length > maxLen;
+    const headersObj: Record<string, string> = {};
+    response.headers.forEach((value, key) => { headersObj[key] = value; });
+
+    return {
+      status: response.status,
+      statusText: response.statusText,
+      headers: headersObj,
+      body: truncated ? bodyText.slice(0, maxLen) : bodyText,
+      truncated,
+    };
+  });
+
+  /* ── Notification IPC ───────────────────────────────────────────────────── */
+  ipcMain.handle('notify', async (_event, payload: { title: string; body?: string }) => {
+    if (!payload || typeof payload !== 'object') return { ok: false };
+    const title = typeof payload.title === 'string' ? payload.title : 'Relay';
+    const body = typeof payload.body === 'string' ? payload.body : '';
+
+    if (Notification.isSupported()) {
+      const notification = new Notification({ title, body });
+      notification.show();
+      return { ok: true };
+    }
+    return { ok: false, message: 'Notifications not supported on this platform.' };
   });
 
   await createWindow();

@@ -78,28 +78,28 @@ async function seedActiveE2EProject(page: Page) {
 
 test.describe('Cowork approval flow', () => {
   let app: ElectronApplication;
-  let window: Page;
+  let page: Page;
 
   test.beforeEach(async () => {
     app = await electron.launch({
       args: ['.'],
     });
 
-    window = await app.firstWindow();
-    await window.waitForLoadState('domcontentloaded');
+    page = await app.firstWindow();
+    await page.waitForLoadState('domcontentloaded');
 
-    await window.evaluate(([onboardingKey, usageModeKey, recentsKey]) => {
+    await page.evaluate(([onboardingKey, usageModeKey, recentsKey]) => {
       localStorage.setItem(onboardingKey, 'true');
       localStorage.setItem(usageModeKey, 'guest');
       localStorage.removeItem(recentsKey);
       sessionStorage.clear();
     }, [ONBOARDING_COMPLETE_KEY, USAGE_MODE_KEY, RELAY_RECENTS_KEY]);
 
-    await window.reload();
-    await window.waitForLoadState('domcontentloaded');
+    await page.reload();
+    await page.waitForLoadState('domcontentloaded');
 
     if (!USE_REAL_GATEWAY) {
-      await window.evaluate(async () => {
+      await page.evaluate(async () => {
         if (!window.relay?.saveConfig) {
           return;
         }
@@ -110,14 +110,14 @@ test.describe('Cowork approval flow', () => {
         });
       });
 
-      await window.reload();
-      await window.waitForLoadState('domcontentloaded');
-      await seedActiveE2EProject(window);
-      await window.reload();
-      await window.waitForLoadState('domcontentloaded');
-      await ensureE2ESafetyPolicy(window);
+      await page.reload();
+      await page.waitForLoadState('domcontentloaded');
+      await seedActiveE2EProject(page);
+      await page.reload();
+      await page.waitForLoadState('domcontentloaded');
+      await ensureE2ESafetyPolicy(page);
     } else {
-      await window.evaluate(async () => {
+      await page.evaluate(async () => {
         if (!window.relay?.saveConfig) {
           return;
         }
@@ -144,12 +144,12 @@ test.describe('Cowork approval flow', () => {
         }
       });
 
-      await window.reload();
-      await window.waitForLoadState('domcontentloaded');
-      await seedActiveE2EProject(window);
-      await window.reload();
-      await window.waitForLoadState('domcontentloaded');
-      await ensureE2ESafetyPolicy(window);
+      await page.reload();
+      await page.waitForLoadState('domcontentloaded');
+      await seedActiveE2EProject(page);
+      await page.reload();
+      await page.waitForLoadState('domcontentloaded');
+      await ensureE2ESafetyPolicy(page);
     }
   });
 
@@ -159,61 +159,61 @@ test.describe('Cowork approval flow', () => {
 
   if (USE_REAL_GATEWAY) {
     test('real gateway: operator can approve a live relay_actions request', async () => {
-      await window.getByPlaceholder('How can I help you today?').fill(
+      await page.getByPlaceholder('How can I help you today?').fill(
         'Return ONLY one JSON code block with relay_actions containing exactly one append_file action for path relay-e2e/mock-approval.txt and content "line from real gateway". No prose.',
       );
-      await window.getByLabel('Send task').click();
+      await page.getByLabel('Send task').click();
 
-      const { approvalCard, approvalId } = await waitForFirstApproval(window, 90000);
+      const { approvalCard, approvalId } = await waitForFirstApproval(page, 90000);
 
-      await window.getByTestId(`pending-approval-approve-${approvalId}`).click();
+      await page.getByTestId(`pending-approval-approve-${approvalId}`).click();
       await expect(approvalCard).toHaveCount(0);
 
-      await expect(window.getByText('append_file • ok')).toBeVisible({ timeout: 45000 });
+      await expect(page.getByText('append_file â€¢ ok')).toBeVisible({ timeout: 45000 });
     });
   } else {
     test('mock gateway: operator can reject then approve requests from live chat events', async () => {
       await sendCoworkPrompt(
-        window,
+        page,
         'Run 1: Return one relay_actions append_file action for relay-e2e/mock-approval.txt with content "line from run 1".',
       );
 
-      const { approvalCard, approvalId } = await waitForFirstApproval(window);
+      const { approvalCard, approvalId } = await waitForFirstApproval(page);
 
-      const rejectReason = window.getByTestId(`pending-approval-reason-${approvalId}`);
-      const rejectButton = window.getByTestId(`pending-approval-reject-${approvalId}`);
+      const rejectReason = page.getByTestId(`pending-approval-reason-${approvalId}`);
+      const rejectButton = page.getByTestId(`pending-approval-reject-${approvalId}`);
       await rejectReason.fill('Operator rejected via E2E');
       await expect(rejectButton).toBeEnabled();
       await rejectButton.click();
       await expect(approvalCard).toHaveCount(0);
-      await expect(window.getByText('append_file • error')).toBeVisible();
+      await expect(page.getByText('append_file â€¢ error')).toBeVisible();
 
       await sendCoworkPrompt(
-        window,
+        page,
         'Run 2: Return one relay_actions append_file action for relay-e2e/mock-approval.txt with content "line from run 2".',
       );
 
-      const { approvalCard: approvalCard2, approvalId: approvalId2 } = await waitForFirstApproval(window);
-      await window.getByTestId(`pending-approval-approve-${approvalId2}`).click();
+      const { approvalCard: approvalCard2, approvalId: approvalId2 } = await waitForFirstApproval(page);
+      await page.getByTestId(`pending-approval-approve-${approvalId2}`).click();
       await expect(approvalCard2).toHaveCount(0);
-      await expect(window.getByText('append_file • ok')).toBeVisible();
+      await expect(page.getByText('append_file â€¢ ok')).toBeVisible();
     });
 
     test('mock gateway: reject stays disabled until reason is provided and approved action writes file content', async () => {
       await sendCoworkPrompt(
-        window,
+        page,
         'Run 3: Return one relay_actions append_file action for relay-e2e/mock-approval.txt with content "line from run 3".',
       );
 
-      const { approvalCard, approvalId } = await waitForFirstApproval(window);
-      const rejectButton = window.getByTestId(`pending-approval-reject-${approvalId}`);
+      const { approvalCard, approvalId } = await waitForFirstApproval(page);
+      const rejectButton = page.getByTestId(`pending-approval-reject-${approvalId}`);
       await expect(rejectButton).toBeDisabled();
 
-      await window.getByTestId(`pending-approval-approve-${approvalId}`).click();
+      await page.getByTestId(`pending-approval-approve-${approvalId}`).click();
       await expect(approvalCard).toHaveCount(0);
-      await expect(window.getByText('append_file • ok')).toBeVisible();
+      await expect(page.getByText('append_file â€¢ ok')).toBeVisible();
 
-      const fileContent = await window.evaluate(async () => {
+      const fileContent = await page.evaluate(async () => {
         const bridge = window.relay;
         if (!bridge?.getDownloadsPath || !bridge.readFileInFolder) {
           return '';
@@ -228,7 +228,7 @@ test.describe('Cowork approval flow', () => {
     });
 
     test('mock gateway: disabled file-modify policy blocks append without approval card', async () => {
-      await window.evaluate(() => {
+      await page.evaluate(() => {
         const raw = localStorage.getItem('relay.safety.scopes');
         if (!raw) {
           return;
@@ -254,12 +254,12 @@ test.describe('Cowork approval flow', () => {
       });
 
       await sendCoworkPrompt(
-        window,
+        page,
         'Run 4: Return one relay_actions append_file action for relay-e2e/mock-approval.txt with content "line from run 4".',
       );
 
-      await expect(window.locator('[data-testid^="pending-approval-"]')).toHaveCount(0, { timeout: 12000 });
-      await expect(window.getByText('append_file • error')).toBeVisible({ timeout: 20000 });
+      await expect(page.locator('[data-testid^="pending-approval-"]')).toHaveCount(0, { timeout: 12000 });
+      await expect(page.getByText('append_file â€¢ error')).toBeVisible({ timeout: 20000 });
     });
   }
 });

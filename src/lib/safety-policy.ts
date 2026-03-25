@@ -39,6 +39,8 @@ const localActionScopeMap: Record<LocalActionType, string> = {
   exists: 'file-read',
   rename: 'file-move',
   delete: 'file-delete',
+  shell_exec: 'shell-execute',
+  web_fetch: 'network-request',
 };
 
 type ResolvedLocalActionPolicy = {
@@ -50,6 +52,12 @@ type ResolvedLocalActionPolicy = {
 };
 
 function defaultPolicyForAction(actionType: LocalActionType): ResolvedLocalActionPolicy {
+  if (actionType === 'shell_exec') {
+    return { scopeId: 'shell-execute', scopeName: 'Shell commands', riskLevel: 'critical', enabled: false, requiresApproval: true };
+  }
+  if (actionType === 'web_fetch') {
+    return { scopeId: 'network-request', scopeName: 'Network requests', riskLevel: 'high', enabled: false, requiresApproval: true };
+  }
   const mutating = actionType === 'create_file' || actionType === 'append_file' || actionType === 'rename' || actionType === 'delete';
   return {
     scopeId: localActionScopeMap[actionType] ?? 'unknown',

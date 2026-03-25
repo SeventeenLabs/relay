@@ -63,7 +63,7 @@ export default definePluginEntry({
     }
   },
 
-  register(api) {
+  register(api: any) {
     try {
       const cfg = api.config;
       const pluginCfg = (api.pluginConfig as any) || {};
