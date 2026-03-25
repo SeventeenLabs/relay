@@ -1,7 +1,8 @@
 {
   "name": "relay",
   "version": "2026.3.24",
-  "private": true,
+  "private": false,
+  "license": "MIT",
   "description": "Electron desktop cowork client for OpenClaw backends",
   "main": "dist-electron/electron/main.js",
   "type": "module",

@@ -1,54 +1,50 @@
 <p align="center">
-	<img src="branding/relay-logo-gateway.svg" alt="Relay" width="680" />
+  <img src="assets/abstract-svg/relay-abstract-01-operator-desk.svg" alt="Relay operator desk" width="720" />
 </p>
 
 <p align="center">
-	<a href="#quickstart"><strong>Quickstart</strong></a>
-	&middot;
-	<a href="docs/product-strategy.md"><strong>Strategy</strong></a>
-	&middot;
-	<a href="docs/RELAY-MVP-DEFINITION.md"><strong>MVP</strong></a>
-	&middot;
-	<a href="docs/WORKSPACE-RPC-SPEC.md"><strong>RPC Spec</strong></a>
+  <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
+  <a href="#features"><strong>Features</strong></a> &middot;
+  <a href="#development"><strong>Development</strong></a> &middot;
+  <a href="#community"><strong>Community</strong></a>
 </p>
 
 <p align="center">
-	<img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" />
-	<img src="https://img.shields.io/badge/desktop-Electron-47848f" alt="Electron" />
-	<img src="https://img.shields.io/badge/frontend-React%20%2B%20Vite-646cff" alt="React and Vite" />
-	<img src="https://img.shields.io/badge/language-TypeScript-3178c6" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" />
+  <img src="https://img.shields.io/badge/desktop-Electron-47848f" alt="Electron" />
+  <img src="https://img.shields.io/badge/frontend-React%20%2B%20Vite-646cff" alt="React + Vite" />
+  <img src="https://img.shields.io/badge/language-TypeScript-3178c6" alt="TypeScript" />
 </p>
 
 <br/>
 
-## What is Relay?
+## What Is Relay?
 
 # Open-source cowork interface for OpenClaw operators
 
-**If OpenClaw is the runtime, Relay is the operating desk.**
+**If OpenClaw is the runtime, Relay is the operator desk.**
 
-Relay is an Electron desktop app for running AI work with human oversight.
-It combines chat, cowork execution, workspace context, and operator settings in one interface.
+Relay is an Electron desktop app for running AI work with human oversight. It combines chat, cowork execution, workspace context, and operator controls in one interface.
 
-You can run Relay against local, VPS, or custom OpenClaw endpoints.
+It looks simple on the surface, but under the hood it is designed for approvals, execution context, and day-to-day operational visibility.
 
 **Manage execution from one place, not from tab sprawl.**
 
 |        | Step               | Example                                                         |
 | ------ | ------------------ | --------------------------------------------------------------- |
 | **01** | Connect runtime    | Point Relay to your OpenClaw gateway and verify health.         |
-| **02** | Run work           | Use Chat and Cowork to execute tasks with context and controls. |
-| **03** | Supervise outcomes | Track activity, memory, schedule, safety, and settings.         |
+| **02** | Run work           | Use Chat and Cowork to execute tasks with project context.      |
+| **03** | Supervise outcomes | Review activity, memory, schedule, safety, and approvals.       |
 
 <br/>
 
-## Relay is right for you if
+## Relay Is Right For You If
 
 - You want a dedicated desktop operator app for AI workflows.
 - You run OpenClaw in local, VPS, or custom environments.
 - You need one control surface for chat, cowork, and workspace operations.
-- You want a human-in-the-loop interface with safety and governance pages.
-- You want configurable appearance, language, and system prompt preferences.
+- You want human-in-the-loop controls for higher-risk actions.
+- You want persistent preferences and repeatable operating workflows.
 
 <br/>
 
@@ -58,68 +54,65 @@ You can run Relay against local, VPS, or custom OpenClaw endpoints.
 <tr>
 <td align="center" width="33%">
 <h3>Desktop First</h3>
-Electron shell with native window controls, preload bridge, and packaged builds.
+Electron shell with native desktop packaging and reliable local operation.
 </td>
 <td align="center" width="33%">
 <h3>Chat + Cowork</h3>
-Claude-style interaction for discussion and execution-oriented task flows.
+Discussion and execution flows in one operator interface.
 </td>
 <td align="center" width="33%">
-<h3>Endpoint Routing</h3>
-Connect to local, VPS, or custom OpenClaw gateway targets.
+<h3>Project Context</h3>
+Project-scoped tasks grounded in a selected working folder.
 </td>
 </tr>
 <tr>
 <td align="center">
-<h3>Workspace Surface</h3>
-Files, Activity, Memory, Scheduled, and Safety pages in one app shell.
+<h3>Approval Controls</h3>
+Safety scopes and approval requirements for sensitive actions.
 </td>
 <td align="center">
-<h3>Operator Controls</h3>
-Profile, appearance, language, system prompt, gateway, privacy, and developer settings.
+<h3>Workspace Visibility</h3>
+Files, activity, memory, schedule, and safety views in one shell.
 </td>
 <td align="center">
-<h3>Persistent Preferences</h3>
-Theme/style/language and user settings persisted locally for consistent operation.
+<h3>Flexible Routing</h3>
+Connect to local, VPS, or custom OpenClaw-compatible endpoints.
 </td>
 </tr>
 </table>
 
 <br/>
 
-## Problems Relay solves
+## Problems Relay Solves
 
 | Without Relay | With Relay |
 | --- | --- |
-| You bounce between terminals, browser tabs, and config files to run daily AI work. | Relay centralizes chat, cowork, settings, and workspace operations in one desktop surface. |
-| Runtime endpoint setup is fragmented and brittle across environments. | Gateway configuration, token entry, and health checks are built into the app flow. |
-| Operator context gets scattered between ad hoc notes and disconnected UIs. | Files, activity, memory, scheduled work, and safety are available in one consistent shell. |
-| Personal operating preferences get reset or lost between sessions. | Theme, style, language, and profile settings are persisted locally. |
+| You bounce between terminals, browser tabs, and config files to run AI work. | Relay centralizes execution, settings, and workspace oversight in one desktop surface. |
+| Runtime setup is fragmented across environments. | Gateway URL/token setup and health checks are built directly into app flow. |
+| Context drifts between tasks and folders. | Project-scoped cowork runs keep actions grounded in the intended workspace. |
+| Risky actions happen without clear review boundaries. | Approval gates and safety scopes enforce human-in-the-loop control where needed. |
 
 <br/>
 
-## Why Relay is different
-
-Relay is intentionally the user-facing layer, not the orchestration runtime.
+## Why Relay Is Different
 
 | | |
 | --- | --- |
-| **Runtime separation.** | OpenClaw handles backend execution; Relay handles operator UX and supervision. |
-| **Desktop reliability.** | Electron shell + preload bridge provide a stable local operator environment. |
-| **Human-in-the-loop UX.** | Designed for guided execution and review, not blind autonomy. |
-| **Configurable operation.** | Works across local, VPS, and custom endpoint topologies. |
-| **Workspace-aware surface.** | Operational pages keep context visible while executing work. |
+| **Runtime separation.** | OpenClaw handles backend execution while Relay focuses on operator control and visibility. |
+| **Desktop reliability.** | Electron packaging and local persistence support real day-to-day operations. |
+| **Human-in-the-loop by design.** | Approval workflows are first-class, not an afterthought. |
+| **Context-aware execution.** | Projects and workspace views reduce drift and mistakes during execution. |
 
 <br/>
 
-## What Relay is not
+## What Relay Is Not
 
 | | |
 | --- | --- |
-| **Not a base model provider.** | Relay does not train or host foundation models. |
-| **Not the backend runtime.** | OpenClaw remains the execution/orchestration layer. |
-| **Not a browser-only wrapper.** | Relay is built as a desktop operating interface. |
-| **Not a no-governance autopilot.** | The UX is built for supervision, controls, and progressive trust. |
+| **Not a model provider.** | Relay does not train or host foundation models. |
+| **Not the runtime itself.** | OpenClaw remains the execution/orchestration backend. |
+| **Not a browser-only wrapper.** | Relay is a desktop operator interface. |
+| **Not blind autopilot.** | Relay is built for governed operation and progressive trust. |
 
 <br/>
 
@@ -130,93 +123,76 @@ Requirements:
 - Node.js 20+
 - npm 10+
 
-Install and run:
-
 ```bash
 npm install
 npm run dev
 ```
 
-This starts Vite, compiles Electron in watch mode, and launches the desktop app.
+This starts Vite, compiles Electron in watch mode, and launches Relay.
 
-Optional Supabase setup for cloud mode:
+Optional cloud auth setup:
 
 ```bash
 cp .env.example .env
 ```
 
-Set:
+Set these when needed:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
-You can skip this if you only use local mode.
-
 <br/>
 
-## Configure Gateway
+## Gateway Setup
 
-In **Settings -> Gateway**:
+In Settings -> Gateway:
 
 1. Enter gateway URL and token.
-2. Save and run health check.
-3. Confirm status before daily operation.
+2. Save.
+3. Run health check.
 
 Typical endpoint patterns:
 
 - Local: `ws://127.0.0.1:18789`
-- VPS: your secure remote gateway URL
+- VPS: `wss://<your-host>`
 - Custom: any OpenClaw-compatible endpoint
-
-<br/>
-
-## Cowork Projects
-
-Relay Cowork projects give you a stable execution context.
-
-- A project = title + folder (+ optional description)
-- Selecting a project sets the active Cowork working folder
-- Local actions and approvals then run against that folder context
-
-Create projects from the left sidebar in Cowork (`Projects` section, `+` button).
-
-See the full usage guide: [Cowork Projects](docs/RELAY-COWORK-PROJECTS.md)
 
 <br/>
 
 ## Development
 
 ```bash
-npm run dev                # Full desktop dev loop
-npm run build              # Build renderer + electron
-npm run preview            # Preview renderer build
-npm run package            # Create packaged app in release/
-npm run test:local-actions # Smoke test local actions
+npm run dev                 # Full desktop dev loop
+npm run build               # Build renderer + electron
+npm run preview             # Preview renderer build
+npm run package             # Build and package app to release/
+npm run lint                # ESLint
+npm run typecheck           # TS type checks (renderer + electron)
+npm run verify              # lint + typecheck + local actions smoke
+npm run test:local-actions  # Local actions smoke tests
+npm run test:e2e            # Electron E2E tests (mock gateway)
 ```
 
 <br/>
 
-## Docs
+## Open Source
 
-- [Product strategy](docs/product-strategy.md)
-- [MVP definition](docs/RELAY-MVP-DEFINITION.md)
-- [MVP v1 features](docs/RELAY-MVP-V1-FEATURES.md)
-- [Cowork projects](docs/RELAY-COWORK-PROJECTS.md)
-- [Cowork projects checklist](docs/RELAY-COWORK-PROJECTS-TEST-CHECKLIST.md)
-- [Workspace RPC spec](docs/WORKSPACE-RPC-SPEC.md)
+- License: [MIT](LICENSE)
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Code of conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- Security: [SECURITY.md](SECURITY.md)
+- Support: [SUPPORT.md](SUPPORT.md)
 
 <br/>
 
-## Roadmap
+## Community
 
-- Improve cowork execution depth and operator feedback loops
-- Expand workspace automation and scheduling workflows
-- Strengthen safety and governance UX patterns
-- Improve onboarding for OpenClaw endpoint setup
-- Continue polishing Relay style and desktop ergonomics
+- Security contact: hello@seventeenlabs.io
+- Use GitHub Issues for bugs and feature requests.
+- Use pull requests for improvements and fixes.
 
 <br/>
 
 ## License
 
-MIT
+MIT Copyright (c) 2026 SeventeenLabs

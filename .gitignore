@@ -3,4 +3,17 @@ dist
 dist-electron
 release
 *.log
-docs
+.env
+.env.*
+!.env.example
+test-results
+docs/product-images
+
+# Keep internal strategy/commercial docs private
+docs/RELAY-LAUNCH-STRATEGY.md
+docs/RELAY-REVENUE-STRATEGY-2026-03-24.md
+docs/RELAY-COMPETITIVE-NARRATIVE.md
+docs/RELAY-RISK-REGISTER.md
+docs/RELAY-SUCCESS-STRATEGY-DEEP-DIVE.md
+docs/RELAY-MARKET-RESEARCH-2026-03-24.md
+docs/RELAY-CLAUDE-COWORK-RESEARCH-SUMMARY-2026-03-23.md
