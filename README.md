@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/abstract-svg/relay-abstract-01-operator-desk.svg" alt="Relay operator desk" width="720" />
+  <img src="assets/screenshots/cowork.png" alt="Relay cowork view" width="1100" style="border-radius: 5px;" />
 </p>
 
 <p align="center">
