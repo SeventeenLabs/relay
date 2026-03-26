@@ -239,6 +239,34 @@ Files, activity, memory, schedule, safety, and approvals all visible in one plac
 
 <br/>
 
+## Interface Tour
+
+### Chat
+
+<p align="center">
+  <img src="assets/screenshots/chat.png" alt="Relay chat home" width="1100" style="border-radius: 10px;" />
+</p>
+
+### Project Workspace (Remote Files)
+
+<p align="center">
+  <img src="assets/screenshots/filea.png" alt="Relay remote workspace file explorer" width="1100" style="border-radius: 10px;" />
+</p>
+
+### Safety And Approvals
+
+<p align="center">
+  <img src="assets/screenshots/safety.png" alt="Relay safety and approval gates" width="1100" style="border-radius: 10px;" />
+</p>
+
+### Settings
+
+<p align="center">
+  <img src="assets/screenshots/appearance.png" alt="Relay appearance settings" width="1100" style="border-radius: 10px;" />
+</p>
+
+<br/>
+
 ## Relay vs Claude Cowork
 
 | Capability | Relay | Claude Cowork |
@@ -340,6 +368,10 @@ In **Settings > Gateway**:
 - **Local:** `ws://127.0.0.1:18789`
 - **VPS:** `wss://your-domain.com`
 - **Custom:** Any OpenClaw-compatible endpoint
+
+<p align="center">
+  <img src="assets/screenshots/gateway.png" alt="Relay gateway settings" width="1100" style="border-radius: 10px;" />
+</p>
 
 <br/>
 
