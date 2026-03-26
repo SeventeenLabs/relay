@@ -26,15 +26,15 @@
 
 **If OpenClaw is the runtime, Relay is your local command center.**
 
-Relay is an Electron desktop app that gives you the same experience as Claude Cowork — autonomous task execution, scheduling, sub-agents, connectors — but on **your infrastructure**, with **your model**, and with **real governance**.
+Relay is an Electron desktop app that gives you the same workflow as Claude Cowork (autonomous task execution, scheduling, sub-agents, connectors) but running on **your infrastructure**, with **your choice of model**, and with **real governance built in**.
 
-Claude Cowork is excellent. But companies are looking for alternatives because of three structural limits:
+Cowork is a great product. But there are three structural limits that push companies toward alternatives:
 
-1. **Data sovereignty** — Cowork runs files through a sandboxed VM on Anthropic's servers. Regulated industries can't send sensitive data there.
-2. **Model lock-in** — Cowork only works with Claude. Companies want to route tasks to GPT-4, Llama, Gemini, or custom endpoints.
-3. **Compliance gaps** — Anthropic themselves recommend against using Cowork for regulated workflows because activities aren't yet captured in standard audit logs or compliance APIs.
+1. **Data sovereignty.** Cowork processes your files on Anthropic's infrastructure. If you're in a regulated industry or have strict data policies, that's a dealbreaker.
+2. **Model lock-in.** Cowork only works with Claude. If you want to route tasks to GPT-4, Llama, Gemini, or a custom endpoint, you're out of luck.
+3. **Compliance gaps.** Anthropic themselves recommend against using Cowork for regulated workflows because activities aren't yet captured in standard audit logs or compliance APIs.
 
-Relay solves all three. Same workflow pattern — different trust model.
+Relay solves all three. Same workflow pattern, different trust model.
 
 <br/>
 
@@ -125,14 +125,14 @@ Example: Scheduled daily briefing
 
 ## Why Relay?
 
-| Problem | Relay's Answer |
+| Problem | How Relay handles it |
 |---------|---|
-| **Data sovereignty** | Your files never leave your machine. Agents run on your server. Your keys. |
-| **Model lock-in** | Use any LLM through OpenClaw. Claude, GPT-4, Llama, custom endpoint — your choice. |
+| **Data sovereignty** | Your files stay on your machine. Agents run on your server. Your keys. |
+| **Model lock-in** | Use any LLM through OpenClaw: Claude, GPT-4, Llama, custom endpoints. |
 | **No compliance-ready audit** | Full audit trail with exportable execution history, approval records, and action rationale. |
 | **Always-on execution** | Agents run 24/7 on a VPS while you control them from the desktop. |
-| **Token cost at scale** | Cowork burns through plan limits fast. Relay + OpenClaw lets you manage costs with your own infrastructure. |
-| **No syncing friction** | Your workspace files are in agent context in real-time. No FTP, no SSH, no copy-paste. |
+| **Token cost at scale** | Cowork burns through plan limits fast. With Relay + OpenClaw you manage costs on your own infrastructure. |
+| **Syncing friction** | Your workspace files are in agent context in real-time. No FTP, no SSH, no copy-paste. |
 
 <br/>
 
@@ -147,43 +147,46 @@ You give the goal → Agent plans the steps → You approve what matters → Age
 | **01** | Connect            | Point Relay to your OpenClaw gateway (local, VPS, or custom). Verify health. |
 | **02** | Dispatch           | Give the agent a task in a project context. Agent plans and starts working. |
 | **03** | Approve            | High-risk actions pause for your review. You approve, reject, or redirect. |
-| **04** | Track              | Full timeline: every action, approval, cost, and result — exportable. |
+| **04** | Track              | Full timeline of every action, approval, cost, and result. Exportable. |
 
 <br/>
 
 ## Who Should Use Relay
 
-- ✅ You run OpenClaw on a VPS and want a desktop control plane
-- ✅ You need data sovereignty (GDPR, HIPAA, or internal policy)
-- ✅ You work in regulated industries (finance, legal, healthcare, government)
-- ✅ You want model-agnostic routing, not Claude-only lock-in
-- ✅ You need exportable audit trails for compliance
-- ✅ You want to control token costs on your own infrastructure
+Relay makes sense if:
 
-**Not for you if:**
-- ❌ You're happy with Claude-only on Anthropic's cloud (just use Cowork)
-- ❌ You want fully autonomous agents with zero human oversight
+- You run OpenClaw on a VPS and want a proper desktop control plane for it
+- You need data sovereignty (GDPR, HIPAA, or internal policy)
+- You work in regulated industries like finance, legal, healthcare, or government
+- You want to pick your own model instead of being locked into Claude
+- You need exportable audit trails for compliance
+- You want to control token costs on your own infrastructure
+
+Relay is probably **not** for you if:
+
+- You're happy using Claude on Anthropic's cloud. Just use Cowork, it's good.
+- You want fully autonomous agents with zero human oversight. That's not what this is.
 
 <br/>
 
 ## Why Not Just Use a Chat App?
 
-You could wire OpenClaw to Telegram, Discord, or Slack and talk to your agent there. Many people do. Here's why that breaks down:
+You could wire OpenClaw to Telegram, Discord, or Slack and talk to your agent there. Plenty of people do. But it breaks down quickly once you need more than a text box:
 
 | Capability | Chat app (Telegram, etc.) | Relay |
 |---|---|---|
-| **Send a message to an agent** | ✅ Works | ✅ Works |
-| **Approve risky actions before they run** | ❌ No approval gates — agent just does it | ✅ File deletes, shell commands, data sends pause for review |
-| **See what the agent actually did** | ❌ You get a text reply, not an execution log | ✅ Full timeline: every action, tool call, file change, cost |
-| **Schedule recurring tasks** | ❌ You'd need a separate cron + glue code | ✅ Define schedules in the UI, OpenClaw runs them |
-| **Project context** | ❌ Every message starts from zero | ✅ Tasks scoped to a working folder with persistent context |
-| **Agent memory** | ❌ Chat history is all you get | ✅ Structured memory that persists across sessions |
-| **Manage connectors** | ❌ You wire each integration yourself | ✅ Configure Slack, Notion, GitHub, Jira from the UI |
-| **Audit trail** | ❌ Scroll through chat logs | ✅ Exportable execution history with approval records |
-| **Cost visibility** | ❌ No idea what a task cost | ✅ Token usage and cost tracked per task |
-| **Multi-step execution** | ❌ Agent replies in one shot | ✅ Agent plans steps, uses tools, reports back with deliverables |
+| **Send a message to an agent** | Works fine | Works fine |
+| **Approve risky actions before they run** | No approval gates, agent just does it | File deletes, shell commands, data sends pause for review |
+| **See what the agent actually did** | You get a text reply, not an execution log | Full timeline: every action, tool call, file change, cost |
+| **Schedule recurring tasks** | You'd need a separate cron + glue code | Define schedules in the UI, OpenClaw runs them |
+| **Project context** | Every message starts from zero | Tasks scoped to a working folder with persistent context |
+| **Agent memory** | Chat history is all you get | Structured memory that persists across sessions |
+| **Manage connectors** | You wire each integration yourself | Configure Slack, Notion, GitHub, Jira from the UI |
+| **Audit trail** | Scroll through chat logs | Exportable execution history with approval records |
+| **Cost visibility** | No idea what a task cost | Token usage and cost tracked per task |
+| **Multi-step execution** | Agent replies in one shot | Agent plans steps, uses tools, reports back with deliverables |
 
-**The bottom line:** A chat app gives you a text box. Relay gives you an operator desk — dispatch, govern, track, and audit everything your agent does.
+A chat app gives you a text box. Relay gives you an operator desk where you can dispatch, govern, track, and audit everything your agent does.
 
 <br/>
 
@@ -192,44 +195,44 @@ You could wire OpenClaw to Telegram, Discord, or Slack and talk to your agent th
 <table>
 <tr>
 <td align="center" width="33%">
-<h3>🖥️ Desktop First</h3>
-Native Electron app with persistent local state. Reliable day-to-day operations, not a browser tab.
+<h3>Desktop First</h3>
+Native Electron app with persistent local state. This is a proper desktop tool, not a browser tab.
 </td>
 <td align="center" width="33%">
-<h3>💬 Chat + Execution</h3>
-Dispatch tasks, guide decisions, and review results in one unified interface.
+<h3>Chat + Execution</h3>
+Dispatch tasks, guide decisions, and review results in one interface.
 </td>
 <td align="center" width="33%">
-<h3>📂 Project Context</h3>
-Every task scoped to a working folder. No context drift between runs.
+<h3>Project Context</h3>
+Every task is scoped to a working folder. No context drift between runs.
 </td>
 </tr>
 <tr>
 <td align="center">
-<h3>✅ Approval Gates</h3>
-File deletes, shell commands, data exports — risky actions pause for your review.
+<h3>Approval Gates</h3>
+File deletes, shell commands, data exports: risky actions pause for your review before they run.
 </td>
 <td align="center">
-<h3>🔐 Audit Trail</h3>
-Every action logged with execution timeline, rationale, and approval records. Exportable.
+<h3>Audit Trail</h3>
+Every action logged with execution timeline, rationale, and approval records. All exportable.
 </td>
 <td align="center">
-<h3>🔌 Flexible Routing</h3>
-Connect to local, VPS, or custom OpenClaw-compatible endpoints. Any model.
+<h3>Flexible Routing</h3>
+Connect to local, VPS, or custom OpenClaw-compatible endpoints. Use any model.
 </td>
 </tr>
 <tr>
 <td align="center">
-<h3>🧠 Memory System</h3>
-Persistent operator context injected into every interaction. Agents remember.
+<h3>Memory System</h3>
+Persistent operator context injected into every interaction. Agents remember what matters.
 </td>
 <td align="center">
-<h3>📅 Scheduling</h3>
+<h3>Scheduling</h3>
 Create recurring tasks from the UI. Daily reports, weekly cleanups, continuous monitoring.
 </td>
 <td align="center">
-<h3>📊 Full Visibility</h3>
-Files, activity, memory, schedule, safety, and approvals in one operator shell.
+<h3>Full Visibility</h3>
+Files, activity, memory, schedule, safety, and approvals all visible in one place.
 </td>
 </tr>
 </table>
@@ -240,44 +243,44 @@ Files, activity, memory, schedule, safety, and approvals in one operator shell.
 
 | Capability | Relay | Claude Cowork |
 |---------|-------|---------------|
-| **Autonomous task execution** | ✅ | ✅ |
-| **Scheduling** | ✅ | ✅ |
-| **Sub-agents / multi-agent** | ✅ | ✅ |
-| **Connectors / integrations** | ✅ | ✅ (Anthropic cloud) |
-| **Desktop app** | ✅ | ✅ |
-| **Local file access** | ✅ Truly local | ⚠️ Sandboxed VM on Anthropic's servers |
-| **Self-hosted runtime** | ✅ | ❌ |
-| **Model choice** | ✅ Any model via OpenClaw | ❌ Claude only |
-| **Compliance-ready audit trail** | ✅ Exportable | ❌ Not in audit logs or compliance APIs yet |
-| **Approval gates** | ✅ Per-action risk scopes | ⚠️ Limited |
-| **Data on your infrastructure** | ✅ | ❌ |
-| **Token cost control** | ✅ Your infra, your budget | ⚠️ Plan limits, high token burn |
+| **Autonomous task execution** | Yes | Yes |
+| **Scheduling** | Yes | Yes |
+| **Sub-agents / multi-agent** | Yes | Yes |
+| **Connectors / integrations** | Yes | Yes (Anthropic cloud) |
+| **Desktop app** | Yes | Yes |
+| **Local file access** | Truly local, on your machine | Processed on Anthropic's infrastructure |
+| **Self-hosted runtime** | Yes | No |
+| **Model choice** | Any model via OpenClaw | Claude only |
+| **Compliance-ready audit trail** | Exportable | Not in audit logs or compliance APIs yet |
+| **Approval gates** | Per-action risk scopes | Limited |
+| **Data on your infrastructure** | Yes | No |
+| **Token cost control** | Your infra, your budget | Plan limits apply |
 
-**The bottom line:** Claude Cowork is excellent for personal productivity on Anthropic's cloud. Relay is for teams and companies that need **data sovereignty, compliance-ready audit trails, and model freedom** — all on their own infrastructure.
+Cowork is a great product for personal productivity on Anthropic's cloud. Relay exists for teams and companies that need data sovereignty, compliance-ready audit trails, and model freedom on their own infrastructure.
 
-> **Note:** Anthropic recommends against using Cowork for strongly regulated workflows because activities are not yet captured in standard audit logs or compliance APIs. Relay is built for exactly this gap.
+Anthropic themselves recommend against using Cowork for regulated workflows because activities are not yet captured in standard audit logs or compliance APIs. That's the gap Relay is built for.
 
 <br/>
 
 ## Use Cases
 
 ### Operations: Daily Briefing
-Schedule a daily task → Agent synthesizes metrics, customer feedback, and team updates overnight → Results appear in Relay each morning → Operator reviews and acts on decision-ready recommendations.
+You schedule a daily task. The agent synthesizes metrics, customer feedback, and team updates overnight. Results show up in Relay each morning. You review them and decide what to act on.
 
 ### Finance: Expense Approval
-Agent flags an exception in an expense report → Relay pauses for approval → Finance lead reviews context and risk level → Approves or requests clarification → Action executes with full audit receipt.
+The agent flags an exception in an expense report. Relay pauses for approval. The finance lead reviews the context and risk level, approves or asks for clarification, and the action executes with a full audit receipt.
 
 ### Compliance: Recurring Audit Prep
-"Every Friday, scan all project changes and produce a compliance summary" → Agent runs on schedule → Results appear in Relay → Exportable audit trail ready for review.
+You set up a recurring task: "Every Friday, scan all project changes and produce a compliance summary." The agent runs on schedule, results appear in Relay, and the audit trail is ready to export.
 
 ### Technical: Code Review Automation
-Agent runs `npm test`, scans for TODO comments, and produces a summary → Shell commands require approval → Operator reviews results → Follow-up actions triggered from one thread.
+The agent runs `npm test`, scans for TODO comments, and produces a summary. Shell commands require your approval. You review results and trigger follow-up actions from one thread.
 
 ### Product: Feedback Synthesis
-Customer feedback scattered across email, Slack, and support tickets → Agent collects and synthesizes → Clusters themes with priority logic → Produces actionable roadmap recommendations.
+Customer feedback is scattered across email, Slack, and support tickets. The agent collects it, clusters themes by priority, and produces roadmap recommendations you can actually act on.
 
 ### Content: Weekly Planning
-"Every Friday, summarize trending topics in our space and draft 3 content ideas" → Results appear Monday morning → Team reviews and approves → Straight into the editorial calendar.
+You tell the agent: "Every Friday, summarize trending topics in our space and draft 3 content ideas." Results are ready Monday morning. The team reviews, approves, and drops them into the editorial calendar.
 
 <br/>
 
@@ -285,13 +288,13 @@ Customer feedback scattered across email, Slack, and support tickets → Agent c
 
 | If you need... | Use Cowork | Use Relay |
 | --- | --- | --- |
-| Personal AI productivity | ✅ Great fit | Overkill |
-| Data sovereignty (GDPR, HIPAA) | ❌ Data goes to Anthropic | ✅ Your infrastructure |
-| Compliance-ready audit logs | ❌ Not available yet | ✅ Built in, exportable |
-| Model flexibility | ❌ Claude only | ✅ Any model via OpenClaw |
-| Token cost control | ❌ Plan limits | ✅ Your infra, your budget |
-| Team approval workflows | ⚠️ Limited | ✅ Per-action risk scopes |
-| Always-on agents on your VPS | ❌ Anthropic's cloud | ✅ Your server, 24/7 |
+| Personal AI productivity | Great fit | Overkill |
+| Data sovereignty (GDPR, HIPAA) | Data goes to Anthropic | Your infrastructure |
+| Compliance-ready audit logs | Not available yet | Built in, exportable |
+| Model flexibility | Claude only | Any model via OpenClaw |
+| Token cost control | Plan limits | Your infra, your budget |
+| Team approval workflows | Limited | Per-action risk scopes |
+| Always-on agents on your VPS | Anthropic's cloud | Your server, 24/7 |
 
 <br/>
 
@@ -326,7 +329,7 @@ Set these when needed:
 
 ## Gateway Setup
 
-In **Settings → Gateway**:
+In **Settings > Gateway**:
 
 1. Enter your OpenClaw gateway URL and token
 2. Save
@@ -371,10 +374,9 @@ npm run test:e2e            # Electron E2E tests (mock gateway)
 
 - License: [MIT](LICENSE)
 - Copyright © 2026 SeventeenLabs
-- Built for operators who believe AI should be governed, auditable, and under human control.
 
 ---
 
 **Get started:** [Download](https://github.com/SeventeenLabs/relay/releases) the latest build or clone and run locally.
 
-**Questions?** Open an issue or reach out to hello@seventeenlabs.io.
+**Questions?** Open an issue or email hello@seventeenlabs.io.
