@@ -38,6 +38,91 @@ Relay solves all three. Same workflow pattern — different trust model.
 
 <br/>
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          You (Operator)                                  │
+│         give goals · review deliverables · approve risky actions         │
+└─────────────────────────────┬───────────────────────────────────────────┘
+                              │
+              ┌───────────────▼───────────────┐
+              │     Relay (Desktop App)        │
+              │     ── Control Plane ──        │
+              │                                │
+              │  Dispatch & Chat               │  You see everything.
+              │  • Give a task in natural lang │  You approve what matters.
+              │  • Agent plans steps for you   │  You stay in control.
+              │  • Review polished deliverable │
+              │                                │
+              │  Governance                    │
+              │  • Approval gates (file ops,   │
+              │    shell commands, data sends) │
+              │  • Exportable audit trail      │
+              │  • Cost tracking per task      │
+              │                                │
+              │  Configure                     │
+              │  • Schedule recurring tasks    │─ ─ ┐ Relay defines.
+              │  • Browse & edit agent memory  │    │ OpenClaw executes.
+              │  • Manage connectors (Slack,   │    │
+              │    Notion, GitHub, Jira, etc.) │    │
+              │  • Set project working folder  │    │
+              └───────────────┬───────────────┘    │
+                              │                    │
+                       WebSocket / API             │
+                              │                    │
+              ┌───────────────▼───────────────┐    │
+              │  OpenClaw Gateway (Runtime)    │◄ ─ ┘
+              │  local · VPS · custom URL      │
+              │  ── Execution Plane ──         │
+              │                                │
+              │  Agent Runtime                 │  Runs on YOUR infra.
+              │  • Autonomous task execution   │  Your keys. Your data.
+              │  • Multi-step planning & tools │
+              │  • Sub-agent orchestration     │
+              │                                │
+              │  Persistence                   │
+              │  • Memory storage & retrieval  │
+              │  • Schedule runner (cron)      │
+              │  • File read / write / search  │
+              │                                │
+              │  Integrations                  │
+              │  • Connectors (Slack, Notion,  │
+              │    GitHub, Jira, email, etc.)  │
+              │  • Computer use (browser, UI)  │
+              │  • Shell / script execution    │
+              │                                │
+              │  Model Router                  │
+              │  • Routes to any LLM backend   │
+              └──┬──────────┬──────────┬──────┘
+                 │          │          │
+           ┌─────▼──┐ ┌────▼───┐ ┌────▼─────┐
+           │ Claude  │ │ GPT-4  │ │  Llama   │
+           │ Gemini  │ │ Mixtral│ │  Custom  │
+           └────────┘ └────────┘ └──────────┘
+```
+
+**Relay is the control plane — you see, configure, and approve.
+OpenClaw is the execution plane — agents run, remember, and act on your infrastructure.**
+
+```
+Example: Scheduled daily briefing
+
+  Relay (you define)                 OpenClaw (it executes)
+  ──────────────────                 ──────────────────────
+  Create schedule: "Daily 8am"  ────►  Stores schedule
+  Set connectors: Slack + Notion     Cron fires at 8am
+                                     Agent reads project files
+                                     Pulls Slack threads & Notion pages
+                                     Calls LLM (your model choice)
+                                     Writes briefing to memory
+  Briefing appears in Relay  ◄────── Returns deliverable
+  You review, approve, or redirect
+  Full audit trail exported
+```
+
+<br/>
+
 ## Why Relay?
 
 | Problem | Relay's Answer |
@@ -78,6 +163,27 @@ You give the goal → Agent plans the steps → You approve what matters → Age
 **Not for you if:**
 - ❌ You're happy with Claude-only on Anthropic's cloud (just use Cowork)
 - ❌ You want fully autonomous agents with zero human oversight
+
+<br/>
+
+## Why Not Just Use a Chat App?
+
+You could wire OpenClaw to Telegram, Discord, or Slack and talk to your agent there. Many people do. Here's why that breaks down:
+
+| Capability | Chat app (Telegram, etc.) | Relay |
+|---|---|---|
+| **Send a message to an agent** | ✅ Works | ✅ Works |
+| **Approve risky actions before they run** | ❌ No approval gates — agent just does it | ✅ File deletes, shell commands, data sends pause for review |
+| **See what the agent actually did** | ❌ You get a text reply, not an execution log | ✅ Full timeline: every action, tool call, file change, cost |
+| **Schedule recurring tasks** | ❌ You'd need a separate cron + glue code | ✅ Define schedules in the UI, OpenClaw runs them |
+| **Project context** | ❌ Every message starts from zero | ✅ Tasks scoped to a working folder with persistent context |
+| **Agent memory** | ❌ Chat history is all you get | ✅ Structured memory that persists across sessions |
+| **Manage connectors** | ❌ You wire each integration yourself | ✅ Configure Slack, Notion, GitHub, Jira from the UI |
+| **Audit trail** | ❌ Scroll through chat logs | ✅ Exportable execution history with approval records |
+| **Cost visibility** | ❌ No idea what a task cost | ✅ Token usage and cost tracked per task |
+| **Multi-step execution** | ❌ Agent replies in one shot | ✅ Agent plans steps, uses tools, reports back with deliverables |
+
+**The bottom line:** A chat app gives you a text box. Relay gives you an operator desk — dispatch, govern, track, and audit everything your agent does.
 
 <br/>
 
