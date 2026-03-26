@@ -41,12 +41,12 @@ Relay solves all three. Same workflow pattern — different trust model.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────────┐
 │                          You (Operator)                                  │
 │         give goals · review deliverables · approve risky actions         │
-└─────────────────────────────┬───────────────────────────────────────────┘
+└─────────────────────────────┬────────────────────────────────────────────┘
                               │
-              ┌───────────────▼───────────────┐
+              ┌───────────────▼────────────────┐
               │     Relay (Desktop App)        │
               │     ── Control Plane ──        │
               │                                │
@@ -67,11 +67,11 @@ Relay solves all three. Same workflow pattern — different trust model.
               │  • Manage connectors (Slack,   │    │
               │    Notion, GitHub, Jira, etc.) │    │
               │  • Set project working folder  │    │
-              └───────────────┬───────────────┘    │
-                              │                    │
-                       WebSocket / API             │
-                              │                    │
-              ┌───────────────▼───────────────┐    │
+              └───────────────┬────────────────┘    │
+                              │                     │
+                       WebSocket / API              │
+                              │                     │
+              ┌───────────────▼────────────────┐    │
               │  OpenClaw Gateway (Runtime)    │◄ ─ ┘
               │  local · VPS · custom URL      │
               │  ── Execution Plane ──         │
@@ -94,12 +94,12 @@ Relay solves all three. Same workflow pattern — different trust model.
               │                                │
               │  Model Router                  │
               │  • Routes to any LLM backend   │
-              └──┬──────────┬──────────┬──────┘
+              └──┬──────────┬──────────┬───────┘
                  │          │          │
-           ┌─────▼──┐ ┌────▼───┐ ┌────▼─────┐
+           ┌─────▼───┐ ┌────▼───┐ ┌────▼─────┐
            │ Claude  │ │ GPT-4  │ │  Llama   │
            │ Gemini  │ │ Mixtral│ │  Custom  │
-           └────────┘ └────────┘ └──────────┘
+           └─────────┘ └────────┘ └──────────┘
 ```
 
 **Relay is the control plane — you see, configure, and approve.
