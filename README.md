@@ -108,15 +108,15 @@ OpenClaw is the execution plane — agents run, remember, and act on your infras
 ```
 Example: Scheduled daily briefing
 
-  Relay (you define)                 OpenClaw (it executes)
-  ──────────────────                 ──────────────────────
-  Create schedule: "Daily 8am"  ────►  Stores schedule
-  Set connectors: Slack + Notion     Cron fires at 8am
-                                     Agent reads project files
-                                     Pulls Slack threads & Notion pages
-                                     Calls LLM (your model choice)
-                                     Writes briefing to memory
-  Briefing appears in Relay  ◄────── Returns deliverable
+  Relay (you define)                                    OpenClaw (it executes)
+  ──────────────────                                    ──────────────────────
+  Create schedule: "Daily 8am"          ──────►         Stores schedule
+  Set connectors: Slack + Notion                        Cron fires at 8am
+                                                        Agent reads project files
+                                                        Pulls Slack threads & Notion pages
+                                                        Calls LLM (your model choice)
+                                                        Writes briefing to memory
+  Briefing appears in Relay             ◄──────         Returns deliverable
   You review, approve, or redirect
   Full audit trail exported
 ```
