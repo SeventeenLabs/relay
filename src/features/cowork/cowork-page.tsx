@@ -28,6 +28,7 @@ import {
 
 type CoworkPageProps = {
   projectTitle: string;
+  projectSelected: boolean;
   projectInstructions: string;
   scheduledCount: number;
   taskPrompt: string;
@@ -55,6 +56,7 @@ const COWORK_DEFAULT_MODEL_LABEL = 'Default model';
 
 export function CoworkPage({
   projectTitle,
+  projectSelected,
   projectInstructions,
   scheduledCount,
   taskPrompt,
@@ -80,7 +82,7 @@ export function CoworkPage({
   const formRef = useRef<HTMLFormElement | null>(null);
   const [expandedInlineActivityId, setExpandedInlineActivityId] = useState<string | null>(null);
   const [approvalRejectReasons, setApprovalRejectReasons] = useState<Record<string, string>>({});
-  const canSend = taskPrompt.trim().length > 0 && !sending;
+  const canSend = taskPrompt.trim().length > 0 && !sending && projectSelected;
   const visibleMessages = useMemo(() => messages.filter((message) => !isSystemLikeMessage(message)), [messages]);
   const isInitialWorkspace = visibleMessages.length === 0;
 
@@ -102,6 +104,23 @@ export function CoworkPage({
       onSubmit={onSubmit}
       ref={formRef}
     >
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Badge
+          variant="outline"
+          className={`rounded-full font-sans text-[10px] ${
+            projectSelected
+              ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+              : 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+          }`}
+        >
+          {projectSelected ? `Runs in: ${projectTitle}` : 'No project selected'}
+        </Badge>
+        {!projectSelected ? (
+          <span className="font-sans text-[11px] text-muted-foreground">
+            Select a project in the sidebar before running a task.
+          </span>
+        ) : null}
+      </div>
       <Textarea
         value={taskPrompt}
         onChange={(event) => onTaskPromptChange(event.target.value)}
@@ -112,7 +131,9 @@ export function CoworkPage({
         className={`${textareaMinHeightClass} resize-none border-0 bg-transparent px-0 py-1.5 font-sans text-lg leading-7 text-foreground shadow-none focus-visible:ring-0`}
       />
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-        <p className="font-sans text-xs text-muted-foreground">Press Enter to send, Shift+Enter for a new line</p>
+        <p className="font-sans text-xs text-muted-foreground">
+          {projectSelected ? 'Press Enter to send, Shift+Enter for a new line' : 'Choose a project to enable sending'}
+        </p>
 
         <div className="ml-auto flex items-center gap-2">
           <select
@@ -158,8 +179,18 @@ export function CoworkPage({
       >
         <div className="px-2 pt-2">
           <div className="w-full rounded-xl border border-border bg-card/85 px-3 py-2">
-            <p className="truncate text-sm font-semibold tracking-tight text-foreground">{projectTitle || 'Cowork'}</p>
+              <p className="truncate text-sm font-semibold tracking-tight text-foreground">{projectTitle || 'Cowork'}</p>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <Badge
+                  variant="outline"
+                  className={`rounded-full font-sans text-[10px] ${
+                    projectSelected
+                      ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                      : 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                  }`}
+                >
+                  {projectSelected ? 'project selected' : 'select project'}
+                </Badge>
               <Badge variant="outline" className="rounded-full font-sans text-[10px]">{projectTasks.length} recents</Badge>
               <Badge variant="outline" className="rounded-full font-sans text-[10px]">{artifacts.length} artifacts</Badge>
               <Badge variant="outline" className="rounded-full font-sans text-[10px]">{pendingApprovals.length} approvals</Badge>
@@ -358,11 +389,14 @@ export function CoworkPage({
         <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto py-2 pr-1">
           <Card className="overflow-visible rounded-2xl border-border bg-card/90" data-testid="cowork-instructions-card">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Instructions</CardTitle>
+              <CardTitle className="text-sm">Project Instructions</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
+              <p className="mb-1 font-sans text-[11px] text-muted-foreground">
+                Execution guidance used for cowork runs in this project.
+              </p>
               <p className="font-sans text-xs text-foreground/90">
-                {projectInstructions.trim() || 'Add project instructions in the Projects panel to define role, tone, and operating constraints.'}
+                {projectInstructions.trim() || 'Add project instructions in Project Settings to define role, tone, constraints, and output format.'}
               </p>
             </CardContent>
           </Card>

@@ -88,6 +88,7 @@ import {
 
 const ChatPage = lazy(() => import('./features/chat/chat-page').then((module) => ({ default: module.ChatPage })));
 const CoworkPage = lazy(() => import('./features/cowork/cowork-page').then((module) => ({ default: module.CoworkPage })));
+const ProjectPage = lazy(() => import('./features/cowork/project-page').then((module) => ({ default: module.ProjectPage })));
 const SettingsPage = lazy(() => import('./features/settings/settings-page').then((module) => ({ default: module.SettingsPage })));
 const ActivityPage = lazy(() => import('./features/workspace/activity-page').then((module) => ({ default: module.ActivityPage })));
 const FilesPage = lazy(() => import('./features/workspace/files-page').then((module) => ({ default: module.FilesPage })));
@@ -107,7 +108,7 @@ const defaultConfig: AppConfig = {
   gatewayToken: '',
 };
 
-type AppPage = 'chat' | 'cowork' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'safety' | 'settings';
+type AppPage = 'chat' | 'cowork' | 'project' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'safety' | 'settings';
 type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Gateway' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 
 const COWORK_SEND_SPINNER_MS = 300;
@@ -203,6 +204,7 @@ function loadCoworkProjects(): CoworkProject[] {
         const id = typeof record.id === 'string' ? record.id.trim() : '';
         const name = typeof record.name === 'string' ? record.name.trim() : '';
         const description = typeof record.description === 'string' ? record.description.trim() : '';
+        const instructionsRaw = typeof record.instructions === 'string' ? record.instructions.trim() : '';
         const workspaceFolder = typeof record.workspaceFolder === 'string' ? record.workspaceFolder.trim() : '';
         const createdAt = typeof record.createdAt === 'number' ? record.createdAt : Date.now();
         const updatedAt = typeof record.updatedAt === 'number' ? record.updatedAt : createdAt;
@@ -213,6 +215,7 @@ function loadCoworkProjects(): CoworkProject[] {
           id,
           name,
           description: description || undefined,
+          instructions: instructionsRaw || description || undefined,
           workspaceFolder,
           createdAt,
           updatedAt,
@@ -426,7 +429,8 @@ export default function App() {
 
   const recentChatItems = toRecentSidebarItems(chatThreads, 'chat');
   const recentCoworkItems = toRecentSidebarItems(coworkThreads, 'cowork');
-  const recentItems = activePage === 'cowork' ? recentCoworkItems : recentChatItems;
+  const isCoworkSidebarContext = ['cowork', 'project', 'files', 'local-files', 'activity', 'memory', 'scheduled', 'safety'].includes(activePage);
+  const recentItems = isCoworkSidebarContext ? recentCoworkItems : recentChatItems;
   const activeCoworkProject = useMemo(
     () => coworkProjects.find((project) => project.id === activeCoworkProjectId) ?? null,
     [coworkProjects, activeCoworkProjectId],
@@ -1839,8 +1843,12 @@ export default function App() {
                   return `Check exists ${action.path}`;
                 };
 
-                const isLowRiskCreateFileAction = (action: (typeof boundedActions)[number]) => {
-                  if (action.type !== 'create_file' || action.overwrite) {
+                const isLowRiskTextWriteAction = (action: (typeof boundedActions)[number]) => {
+                  if (action.type !== 'create_file' && action.type !== 'append_file') {
+                    return false;
+                  }
+
+                  if (action.type === 'create_file' && action.overwrite) {
                     return false;
                   }
 
@@ -1864,6 +1872,8 @@ export default function App() {
                   const actionId = action.id || `action-${index + 1}`;
                   const actionPath = action.path ?? '.';
                   const policy = resolveLocalActionPolicy(action.type, safetyScopes);
+                  let createFileOverwriteApproved = false;
+                  let approvedByOperator = false;
 
                   const pathValidation = validateProjectRelativePath(actionPath, {
                     allowEmpty: action.type === 'list_dir',
@@ -1927,11 +1937,87 @@ export default function App() {
                     continue;
                   }
 
-                  const autoApproved = policy.requiresApproval && isLowRiskCreateFileAction(action);
+                  if (
+                    action.type === 'create_file' &&
+                    !action.overwrite &&
+                    bridge.existsInFolder
+                  ) {
+                    try {
+                      const existing = await bridge.existsInFolder(rootPath, action.path);
+                      if (existing.exists) {
+                        const overwriteApprovalId = `${runId}-${actionId}-${index + 1}-overwrite`;
+                        setCoworkRunStatus(`Awaiting overwrite approval for ${actionPath}...`);
+                        setCoworkProgressStage('executing_workstreams', {
+                          details: `File exists at ${actionPath}. Awaiting overwrite approval.`,
+                        });
+
+                        const overwriteDecision = await requestActionApproval({
+                          id: overwriteApprovalId,
+                          runId,
+                          actionId,
+                          actionType: action.type,
+                          projectId: runContext.projectId || undefined,
+                          projectTitle: runContext.projectTitle || undefined,
+                          projectRootFolder: runContext.rootFolder || undefined,
+                          path: actionPath,
+                          scopeId: policy.scopeId,
+                          scopeName: policy.scopeName,
+                          riskLevel: 'high',
+                          summary: `${runContext.projectTitle ? `[${runContext.projectTitle}] ` : ''}Overwrite existing file ${actionPath}`,
+                          preview: [
+                            'The file already exists.',
+                            'Approve to overwrite it with the new generated content.',
+                            '',
+                            formatPreviewContent(action.content),
+                          ].join('\n'),
+                          createdAt: Date.now(),
+                        });
+
+                        if (!overwriteDecision.approved) {
+                          const reason = overwriteDecision.reason || 'Overwrite rejected by operator.';
+                          const code = overwriteDecision.expired ? 'APPROVAL_TIMEOUT' : 'REJECTED_BY_OPERATOR';
+                          errors.push(`${actionPath}: ${reason}`);
+                          actionReceipts.push({
+                            id: actionId,
+                            type: action.type,
+                            path: actionPath,
+                            status: 'error',
+                            errorCode: code,
+                            message: reason,
+                          });
+                          continue;
+                        }
+
+                        approvedByOperator = true;
+                        createFileOverwriteApproved = true;
+                        previews.push(`Approved overwrite create_file -> ${actionPath}`);
+                        if (taskEntry) {
+                          setCoworkTaskStatus(taskEntry.taskId, 'approved', {
+                            runId,
+                            summary: `Approved overwrite: ${action.type} ${actionPath}`,
+                          });
+                        }
+                      }
+                    } catch (error) {
+                      const message = error instanceof Error ? error.message : 'Unable to verify file existence.';
+                      errors.push(`${actionPath}: ${message}`);
+                      actionReceipts.push({
+                        id: actionId,
+                        type: action.type,
+                        path: actionPath,
+                        status: 'error',
+                        errorCode: 'ACTION_FAILED',
+                        message,
+                      });
+                      continue;
+                    }
+                  }
+
+                  const autoApproved = policy.requiresApproval && isLowRiskTextWriteAction(action);
 
                   const requiresHardApproval = isDestructiveLocalAction(action.type) || policy.riskLevel === 'critical';
 
-                  if ((policy.requiresApproval || requiresHardApproval) && !autoApproved) {
+                  if ((policy.requiresApproval || requiresHardApproval) && !autoApproved && !approvedByOperator) {
                     const approvalId = `${runId}-${actionId}-${index + 1}`;
                     const previewBody =
                       action.type === 'create_file' || action.type === 'append_file'
@@ -2020,7 +2106,12 @@ export default function App() {
                         continue;
                       }
 
-                      const result = await bridge.createFileInFolder(rootPath, action.path, action.content, action.overwrite);
+                      const result = await bridge.createFileInFolder(
+                        rootPath,
+                        action.path,
+                        action.content,
+                        createFileOverwriteApproved ? true : action.overwrite,
+                      );
                       actionReceipts.push({
                         id: actionId,
                         type: 'create_file',
@@ -2666,6 +2757,9 @@ export default function App() {
       return;
     }
 
+    // Clear the composer immediately so submit feedback matches user expectation.
+    setTaskPrompt('');
+
     const client = gatewayClientRef.current;
     if (!client) {
       setStatus('Gateway client not initialized.');
@@ -2778,6 +2872,9 @@ export default function App() {
         details: message,
       });
       setStatus(message);
+      // Restore the prompt for quick retry when send/setup fails,
+      // but do not overwrite a newer prompt the user already started typing.
+      setTaskPrompt((current) => (current.trim() ? current : text));
     } finally {
       setCoworkSending(false);
     }
@@ -3017,10 +3114,11 @@ export default function App() {
     setStatus(`Project selected: ${selected.name}`);
   };
 
-  const handleCreateCoworkProject = (name: string, workspaceFolder: string, description?: string) => {
+  const handleCreateCoworkProject = (name: string, workspaceFolder: string, description?: string, instructions?: string) => {
     const normalizedName = name.trim();
     const normalizedFolder = workspaceFolder.trim();
     const normalizedDescription = description?.trim() ?? '';
+    const normalizedInstructions = instructions?.trim() ?? '';
     if (!normalizedName || !normalizedFolder) {
       setStatus('Project name and workspace folder are required.');
       return;
@@ -3035,6 +3133,7 @@ export default function App() {
       id: projectId,
       name: normalizedName,
       description: normalizedDescription || undefined,
+      instructions: normalizedInstructions || undefined,
       workspaceFolder: normalizedFolder,
       createdAt: now,
       updatedAt: now,
@@ -3047,10 +3146,11 @@ export default function App() {
     setStatus(`Project created: ${normalizedName}`);
   };
 
-  const handleRenameCoworkProject = (projectId: string, name: string, description?: string) => {
+  const handleRenameCoworkProject = (projectId: string, name: string, description?: string, instructions?: string) => {
     const normalizedProjectId = projectId.trim();
     const normalizedName = name.trim();
     const normalizedDescription = description?.trim() ?? '';
+    const normalizedInstructions = instructions?.trim() ?? '';
     if (!normalizedProjectId || !normalizedName) {
       setStatus('Project name is required.');
       return;
@@ -3068,6 +3168,7 @@ export default function App() {
           ...project,
           name: normalizedName,
           description: normalizedDescription || undefined,
+          instructions: normalizedInstructions || undefined,
           updatedAt: Date.now(),
         };
       }),
@@ -3075,6 +3176,48 @@ export default function App() {
 
     if (renamedProjectName) {
       setStatus(`Project updated: ${renamedProjectName}`);
+    }
+  };
+
+  const handleUpdateCoworkProject = (projectId: string, name: string, workspaceFolder: string, description?: string, instructions?: string) => {
+    const normalizedProjectId = projectId.trim();
+    const normalizedName = name.trim();
+    const normalizedFolder = workspaceFolder.trim();
+    const normalizedDescription = description?.trim() ?? '';
+    const normalizedInstructions = instructions?.trim() ?? '';
+    if (!normalizedProjectId || !normalizedName || !normalizedFolder) {
+      setStatus('Project name and workspace folder are required.');
+      return;
+    }
+
+    let updatedProjectName = '';
+    let updatedProjectFolder = '';
+    setCoworkProjects((current) =>
+      current.map((project) => {
+        if (project.id !== normalizedProjectId) {
+          return project;
+        }
+
+        updatedProjectName = normalizedName;
+        updatedProjectFolder = normalizedFolder;
+        return {
+          ...project,
+          name: normalizedName,
+          description: normalizedDescription || undefined,
+          instructions: normalizedInstructions || undefined,
+          workspaceFolder: normalizedFolder,
+          updatedAt: Date.now(),
+        };
+      }),
+    );
+
+    if (normalizedProjectId === activeCoworkProjectId && updatedProjectFolder) {
+      setWorkingFolder(updatedProjectFolder);
+      workingFolderRef.current = updatedProjectFolder;
+    }
+
+    if (updatedProjectName) {
+      setStatus(`Project updated: ${updatedProjectName}`);
     }
   };
 
@@ -3910,8 +4053,9 @@ export default function App() {
               {activePage === 'cowork' ? (
                 <CoworkPage
                   key={`cowork-${coworkResetKey}`}
-                  projectTitle={activeCoworkProject?.name || 'Cowork'}
-                  projectInstructions={activeCoworkProject?.description || ''}
+                  projectTitle={activeCoworkProject?.name || 'No project selected'}
+                  projectSelected={Boolean(activeCoworkProject)}
+                  projectInstructions={activeCoworkProject?.instructions || ''}
                   scheduledCount={scheduledJobs.length}
                   taskPrompt={taskPrompt}
                   messages={coworkMessages}
@@ -3932,6 +4076,16 @@ export default function App() {
                   onSubmit={handlePlanTask}
                   onApprovePendingAction={handleApprovePendingAction}
                   onRejectPendingAction={handleRejectPendingAction}
+                />
+              ) : activePage === 'project' ? (
+                <ProjectPage
+                  project={activeCoworkProject}
+                  tasks={visibleCoworkTasks}
+                  scheduledCount={scheduledJobs.length}
+                  pendingApprovalsCount={pendingApprovals.length}
+                  onPickFolder={handlePickWorkingFolderForProject}
+                  onUpdateProject={handleUpdateCoworkProject}
+                  onSelectPage={(page) => setActivePage(page)}
                 />
               ) : activePage === 'files' ? (
                 <FilesPage

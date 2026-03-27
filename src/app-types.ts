@@ -237,6 +237,7 @@ export type CoworkProject = {
   id: string;
   name: string;
   description?: string;
+  instructions?: string;
   workspaceFolder: string;
   createdAt: number;
   updatedAt: number;

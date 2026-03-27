@@ -5,6 +5,7 @@ import {
   Brain,
   CalendarClock,
   Check,
+  ChevronDown,
   ChevronRight,
   ChevronUp,
   Code2,
@@ -19,6 +20,7 @@ import {
   MessageSquareText,
   Palette,
   Pencil,
+  Play,
   Plus,
   Search,
   Settings,
@@ -55,7 +57,7 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 
-type AppPage = 'chat' | 'cowork' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'safety' | 'settings';
+type AppPage = 'chat' | 'cowork' | 'project' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'safety' | 'settings';
 type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Gateway' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 type AppLanguage = 'en' | 'de';
 
@@ -95,8 +97,8 @@ type AppSidebarProps = {
   onRenameRecentItem: (item: RecentSidebarItem) => void;
   onDeleteRecentItem: (item: RecentSidebarItem) => void;
   onSelectCoworkProject: (projectId: string) => void;
-  onCreateCoworkProject: (name: string, workspaceFolder: string, description?: string) => void;
-  onRenameCoworkProject: (projectId: string, name: string, description?: string) => void;
+  onCreateCoworkProject: (name: string, workspaceFolder: string, description?: string, instructions?: string) => void;
+  onRenameCoworkProject: (projectId: string, name: string, description?: string, instructions?: string) => void;
   onDeleteCoworkProject: (projectId: string) => void;
   onPickWorkingFolder: () => Promise<string | undefined>;
   onStartNewChat: () => void;
@@ -116,13 +118,10 @@ const coworkNavItems = [
   { label: 'Search', icon: Search },
 ] as const;
 
-const projectNavItems: { label: string; icon: typeof FolderOpen; page: AppPage }[] = [
-  { label: 'Project Files', icon: FolderOpen, page: 'files' },
-  { label: 'Project Activity', icon: Zap, page: 'activity' },
-  { label: 'Project Memory', icon: Brain, page: 'memory' },
-];
-
-const globalNavItems: { label: string; icon: typeof FolderOpen; page: AppPage }[] = [
+const projectFolderNavItems: { label: string; icon: typeof FolderOpen; page: AppPage }[] = [
+  { label: 'File Viewer', icon: FolderOpen, page: 'local-files' },
+  { label: 'Activity', icon: Zap, page: 'activity' },
+  { label: 'Memory', icon: Brain, page: 'memory' },
   { label: 'Schedule', icon: CalendarClock, page: 'scheduled' },
   { label: 'Safety', icon: Shield, page: 'safety' },
 ];
@@ -188,7 +187,7 @@ export function AppSidebar({
   const t = (en: string, de: string) => (language === 'de' ? de : en);
   const isChatView = activePage === 'chat';
   const isSettingsView = activePage === 'settings';
-  const isWorkspacePage = ['files', 'local-files', 'activity', 'memory', 'scheduled', 'safety'].includes(activePage);
+  const isWorkspacePage = ['project', 'files', 'local-files', 'activity', 'memory', 'scheduled', 'safety'].includes(activePage);
   const compact = !sidebarOpen;
   const navItems = isChatView ? chatNavItems : coworkNavItems;
   const safeRecentItems = recentItems ?? [];
@@ -201,13 +200,16 @@ export function AppSidebar({
   const [projectTitleDraft, setProjectTitleDraft] = useState('');
   const [projectFolderDraft, setProjectFolderDraft] = useState('');
   const [projectDescriptionDraft, setProjectDescriptionDraft] = useState('');
+  const [projectInstructionsDraft, setProjectInstructionsDraft] = useState('');
   const [projectFolderBrowsing, setProjectFolderBrowsing] = useState(false);
   const [renameProjectOpen, setRenameProjectOpen] = useState(false);
   const [renameProjectId, setRenameProjectId] = useState('');
   const [renameProjectTitleDraft, setRenameProjectTitleDraft] = useState('');
   const [renameProjectDescriptionDraft, setRenameProjectDescriptionDraft] = useState('');
+  const [renameProjectInstructionsDraft, setRenameProjectInstructionsDraft] = useState('');
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [deleteProjectId, setDeleteProjectId] = useState('');
+  const [expandedProjectId, setExpandedProjectId] = useState(activeCoworkProjectId);
   const languageMenuCloseTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const profilePopupPositionClass = compact
@@ -236,6 +238,15 @@ export function AppSidebar({
   const safeCoworkProjects = coworkProjects ?? [];
   const renameProjectTarget = safeCoworkProjects.find((project) => project.id === renameProjectId) ?? null;
   const deleteProjectTarget = safeCoworkProjects.find((project) => project.id === deleteProjectId) ?? null;
+
+  useEffect(() => {
+    setExpandedProjectId((current) => {
+      if (!safeCoworkProjects.some((project) => project.id === current)) {
+        return activeCoworkProjectId || safeCoworkProjects[0]?.id || '';
+      }
+      return current;
+    });
+  }, [activeCoworkProjectId, safeCoworkProjects]);
 
   useEffect(() => {
     if (!profileMenuOpen) {
@@ -293,6 +304,7 @@ export function AppSidebar({
     setProjectTitleDraft('');
     setProjectFolderDraft(workingFolder || '');
     setProjectDescriptionDraft('');
+    setProjectInstructionsDraft('');
     setCreateProjectOpen(true);
   };
 
@@ -311,11 +323,13 @@ export function AppSidebar({
       return;
     }
     const trimmedDescription = projectDescriptionDraft.trim();
-    onCreateCoworkProject(trimmedTitle, trimmedFolder, trimmedDescription || undefined);
+    const trimmedInstructions = projectInstructionsDraft.trim();
+    onCreateCoworkProject(trimmedTitle, trimmedFolder, trimmedDescription || undefined, trimmedInstructions || undefined);
     setCreateProjectOpen(false);
     setProjectTitleDraft('');
     setProjectFolderDraft('');
     setProjectDescriptionDraft('');
+    setProjectInstructionsDraft('');
   };
 
   const handleBrowseProjectFolder = async () => {
@@ -334,6 +348,7 @@ export function AppSidebar({
     setRenameProjectId(project.id);
     setRenameProjectTitleDraft(project.name);
     setRenameProjectDescriptionDraft(project.description ?? '');
+    setRenameProjectInstructionsDraft(project.instructions ?? '');
     setRenameProjectOpen(true);
   };
 
@@ -345,11 +360,13 @@ export function AppSidebar({
     }
 
     const trimmedDescription = renameProjectDescriptionDraft.trim();
-    onRenameCoworkProject(trimmedId, trimmedTitle, trimmedDescription || undefined);
+    const trimmedInstructions = renameProjectInstructionsDraft.trim();
+    onRenameCoworkProject(trimmedId, trimmedTitle, trimmedDescription || undefined, trimmedInstructions || undefined);
     setRenameProjectOpen(false);
     setRenameProjectId('');
     setRenameProjectTitleDraft('');
     setRenameProjectDescriptionDraft('');
+    setRenameProjectInstructionsDraft('');
   };
 
   const handleOpenDeleteProject = (project: CoworkProject) => {
@@ -405,19 +422,20 @@ export function AppSidebar({
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu aria-label="Primary workspace menu">
-
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      type="button"
-                      className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
-                      title={isChatView ? 'New Chat' : 'New Task'}
-                      aria-label={isChatView ? 'Start a new chat' : 'Start a new task'}
-                      onClick={isChatView ? onStartNewChat : onStartNewTask}
-                    >
-                      <Plus data-icon="inline-start" />
-                      {!compact && <span className="min-w-0 flex-1 truncate">{isChatView ? 'New Chat' : 'New Task'}</span>}
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                  {isChatView ? (
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        type="button"
+                        className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
+                        title="New Chat"
+                        aria-label="Start a new chat"
+                        onClick={onStartNewChat}
+                      >
+                        <Plus data-icon="inline-start" />
+                        {!compact && <span className="min-w-0 flex-1 truncate">New Chat</span>}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ) : null}
                   {navItems.map((item) => (
                     <SidebarMenuItem key={item.label}>
                       <SidebarMenuButton
@@ -446,64 +464,28 @@ export function AppSidebar({
             {/* Project and global pages */}
             {!isChatView && (
               <>
-                <SidebarGroup className="mt-3">
-                  {!compact && <SidebarGroupLabel>Project</SidebarGroupLabel>}
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      {projectNavItems.map((item) => (
-                        <SidebarMenuItem key={item.label}>
+                {!compact && (
+                  <SidebarGroup className="mt-3">
+                    <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+                    <SidebarGroupContent>
+                      <SidebarMenu>
+                        <SidebarMenuItem>
                           <SidebarMenuButton
                             type="button"
-                            active={activePage === item.page}
-                            aria-current={activePage === item.page ? 'page' : undefined}
-                            onClick={() => onSelectPage(item.page)}
-                            className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
-                            title={item.label}
+                            active={activePage === 'local-files'}
+                            aria-current={activePage === 'local-files' ? 'page' : undefined}
+                            onClick={() => onSelectPage('local-files')}
+                            className="gap-2 font-sans text-[13px]"
+                            title="Local Files"
                           >
-                            <item.icon data-icon="inline-start" />
-                            {!compact && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+                            <HardDrive data-icon="inline-start" />
+                            <span className="min-w-0 flex-1 truncate">Local Files</span>
                           </SidebarMenuButton>
                         </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
-
-                <SidebarGroup className="mt-1">
-                  {!compact && <SidebarGroupLabel>Global</SidebarGroupLabel>}
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          type="button"
-                          active={activePage === 'local-files'}
-                          aria-current={activePage === 'local-files' ? 'page' : undefined}
-                          onClick={() => onSelectPage('local-files')}
-                          className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
-                          title="Local Files"
-                        >
-                          <HardDrive data-icon="inline-start" />
-                          {!compact && <span className="min-w-0 flex-1 truncate">Local Files</span>}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      {globalNavItems.map((item) => (
-                        <SidebarMenuItem key={item.label}>
-                          <SidebarMenuButton
-                            type="button"
-                            active={activePage === item.page}
-                            aria-current={activePage === item.page ? 'page' : undefined}
-                            onClick={() => onSelectPage(item.page)}
-                            className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
-                            title={item.label}
-                          >
-                            <item.icon data-icon="inline-start" />
-                            {!compact && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
+                      </SidebarMenu>
+                    </SidebarGroupContent>
+                  </SidebarGroup>
+                )}
               </>
             )}
 
@@ -603,48 +585,98 @@ export function AppSidebar({
                       ) : (
                         safeCoworkProjects.map((project) => (
                           <SidebarMenuItem key={project.id}>
-                            <div className="group flex items-center gap-1">
-                              <SidebarMenuButton
-                                type="button"
-                                active={project.id === activeCoworkProjectId}
-                                aria-current={project.id === activeCoworkProjectId ? 'page' : undefined}
-                                data-testid={`project-select-${project.id}`}
-                                className="min-w-0 w-full gap-2 font-sans text-[12px]"
-                                title={`${project.name}${project.description ? ` - ${project.description}` : ''} (${project.workspaceFolder})`}
-                                onClick={() => onSelectCoworkProject(project.id)}
-                              >
-                                <span className="block min-w-0 flex-1 truncate">{project.name}</span>
-                              </SidebarMenuButton>
-                              <div className="flex shrink-0 items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-                                <Button
+                            <div className="group rounded-xl border border-border/70 bg-card/40 px-1 py-1">
+                              <div className="flex items-center gap-1">
+                                <SidebarMenuButton
                                   type="button"
-                                  size="icon"
-                                  variant="ghost"
-                                  className="size-6"
-                                  data-testid={`project-rename-${project.id}`}
-                                  title={`Rename project ${project.name}`}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleOpenRenameProject(project);
+                                  active={project.id === activeCoworkProjectId}
+                                  aria-current={project.id === activeCoworkProjectId ? 'page' : undefined}
+                                  data-testid={`project-select-${project.id}`}
+                                  className="min-w-0 w-full gap-2 font-sans text-[12px]"
+                                  title={`${project.name}${project.description ? ` - ${project.description}` : ''} (${project.workspaceFolder})`}
+                                  onClick={() => {
+                                    onSelectCoworkProject(project.id);
+                                    onSelectPage('project');
+                                    setExpandedProjectId((current) => (current === project.id ? '' : project.id));
                                   }}
                                 >
-                                  <Pencil className="size-3.5" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="ghost"
-                                  className="size-6 text-destructive hover:text-destructive"
-                                  data-testid={`project-delete-${project.id}`}
-                                  title={`Delete project ${project.name}`}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleOpenDeleteProject(project);
-                                  }}
-                                >
-                                  <Trash2 className="size-3.5" />
-                                </Button>
+                                  {expandedProjectId === project.id ? (
+                                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                                  ) : (
+                                    <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                                  )}
+                                  <span className="block min-w-0 flex-1 truncate">{project.name}</span>
+                                </SidebarMenuButton>
+                                <div className="flex shrink-0 items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="size-6"
+                                    title={`New task in ${project.name}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      onSelectCoworkProject(project.id);
+                                      onStartNewTask();
+                                    }}
+                                  >
+                                    <Play className="size-3.5" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="size-6"
+                                    data-testid={`project-rename-${project.id}`}
+                                    title={`Rename project ${project.name}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleOpenRenameProject(project);
+                                    }}
+                                  >
+                                    <Pencil className="size-3.5" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="size-6 text-destructive hover:text-destructive"
+                                    data-testid={`project-delete-${project.id}`}
+                                    title={`Delete project ${project.name}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleOpenDeleteProject(project);
+                                    }}
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                </div>
                               </div>
+
+                              {expandedProjectId === project.id && (
+                                <div className="mt-1 border-l border-border/70 pl-2">
+                                  <SidebarMenu>
+                                    {projectFolderNavItems.map((item) => (
+                                      <SidebarMenuItem key={`${project.id}-${item.page}`}>
+                                        <SidebarMenuButton
+                                          type="button"
+                                          active={project.id === activeCoworkProjectId && activePage === item.page}
+                                          aria-current={project.id === activeCoworkProjectId && activePage === item.page ? 'page' : undefined}
+                                          className="gap-2 font-sans text-[12px]"
+                                          title={`${item.label} · ${project.name}`}
+                                          onClick={() => {
+                                            onSelectCoworkProject(project.id);
+                                            onSelectPage(item.page);
+                                          }}
+                                        >
+                                          <item.icon data-icon="inline-start" className="size-3.5" />
+                                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                        </SidebarMenuButton>
+                                      </SidebarMenuItem>
+                                    ))}
+                                  </SidebarMenu>
+                                </div>
+                              )}
                             </div>
                           </SidebarMenuItem>
                         ))
@@ -667,6 +699,7 @@ export function AppSidebar({
               setProjectTitleDraft('');
               setProjectFolderDraft('');
               setProjectDescriptionDraft('');
+              setProjectInstructionsDraft('');
             }
           }}
         >
@@ -721,7 +754,14 @@ export function AppSidebar({
                   <Textarea
                     value={projectDescriptionDraft}
                     onChange={(event) => setProjectDescriptionDraft(event.target.value)}
-                    placeholder="Tell Relay how to work in this project (optional)"
+                    placeholder="Project description (what this project is about)"
+                    rows={2}
+                    className="font-sans text-sm"
+                  />
+                  <Textarea
+                    value={projectInstructionsDraft}
+                    onChange={(event) => setProjectInstructionsDraft(event.target.value)}
+                    placeholder="Project instructions for cowork runs (role, tone, constraints, output format)"
                     rows={4}
                     className="font-sans text-sm"
                   />
@@ -775,6 +815,7 @@ export function AppSidebar({
               setRenameProjectId('');
               setRenameProjectTitleDraft('');
               setRenameProjectDescriptionDraft('');
+              setRenameProjectInstructionsDraft('');
             }
           }}
         >
@@ -796,6 +837,13 @@ export function AppSidebar({
                 value={renameProjectDescriptionDraft}
                 onChange={(event) => setRenameProjectDescriptionDraft(event.target.value)}
                 placeholder="Description (optional)"
+              />
+              <Textarea
+                value={renameProjectInstructionsDraft}
+                onChange={(event) => setRenameProjectInstructionsDraft(event.target.value)}
+                placeholder="Instructions for cowork runs (optional)"
+                rows={4}
+                className="font-sans text-sm"
               />
               {renameProjectTarget && (
                 <p className="font-sans text-[11px] text-muted-foreground">
