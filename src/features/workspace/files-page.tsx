@@ -779,7 +779,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
       <section className="flex h-full items-center justify-center">
         <div className="text-center">
           <HardDrive className="mx-auto mb-3 size-10 text-muted-foreground/50" />
-          <h2 className="text-lg font-medium">No local folder selected</h2>
+          <h2 className="text-lg font-medium">No project folder selected</h2>
           <p className="mt-1 font-sans text-sm text-muted-foreground">
             Pick a local working folder to browse your files here.
           </p>
@@ -912,7 +912,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
             {rootProp !== 'workspace' && desktopBridgeAvailable && (
               <Button type="button" variant="outline" size="sm" onClick={onPickFolder}>
                 <Folder className="mr-1.5 size-3.5" />
-                Pick local folder
+                    Pick project folder
               </Button>
             )}
           </div>
@@ -1065,7 +1065,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
           {/* Remote mode indicator */}
           {isRemote && (
             <Badge variant="outline" className="ml-1 shrink-0 border-blue-500/40 bg-blue-50 text-[10px] text-blue-700 dark:bg-blue-950/30 dark:text-blue-400">
-              {activeRoot === 'workspace' ? 'Remote Workspace' : 'Local Folder'}
+                    {activeRoot === 'workspace' ? 'Workspace' : 'Project Folder'}
             </Badge>
           )}
 

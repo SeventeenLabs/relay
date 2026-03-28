@@ -390,7 +390,7 @@ export function ProjectPage({ project, tasks, scheduledCount, pendingApprovalsCo
               </Button>
               <Button type="button" variant="outline" className="justify-start gap-2" onClick={() => onSelectPage('local-files')}>
                 <FolderOpen className="size-3.5" />
-                Open Local Folder
+                Open Project Folder
               </Button>
             </div>
           </div>
