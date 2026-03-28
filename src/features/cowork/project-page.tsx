@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Brain, CalendarClock, CheckCircle2, Clock3, FolderOpen, ListChecks, Pencil, Play, Shield, Sparkles, XCircle, Zap } from 'lucide-react';
+import { AlertTriangle, Brain, CalendarClock, CheckCircle2, Clock3, FileText, FolderOpen, ListChecks, Pencil, Play, Search, Shield, Sparkles, Trash2, XCircle, Zap } from 'lucide-react';
 
-import type { CoworkProject, CoworkProjectTask } from '@/app-types';
+import type { CoworkArtifact, CoworkProject, CoworkProjectTask, ProjectKnowledgeItem } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,8 +14,15 @@ type ProjectPageProps = {
   tasks: CoworkProjectTask[];
   scheduledCount: number;
   pendingApprovalsCount: number;
+  artifacts: CoworkArtifact[];
+  projectKnowledge: ProjectKnowledgeItem[];
+  webSearchEnabled: boolean;
   onPickFolder: () => Promise<string | undefined>;
   onUpdateProject: (projectId: string, name: string, workspaceFolder: string, description?: string, instructions?: string) => void;
+  onOpenArtifact: (artifact: CoworkArtifact) => void;
+  onAddKnowledge: (projectId: string, title: string, content: string) => void;
+  onDeleteKnowledge: (knowledgeId: string) => void;
+  onWebSearchEnabledChange: (enabled: boolean) => void;
   onSelectPage: (page: ProjectPageTarget) => void;
 };
 
@@ -77,13 +84,30 @@ function statusBadgeClass(status: CoworkProjectTask['status']): string {
   return 'border-border bg-muted text-muted-foreground';
 }
 
-export function ProjectPage({ project, tasks, scheduledCount, pendingApprovalsCount, onPickFolder, onUpdateProject, onSelectPage }: ProjectPageProps) {
+export function ProjectPage({
+  project,
+  tasks,
+  scheduledCount,
+  pendingApprovalsCount,
+  artifacts,
+  projectKnowledge,
+  webSearchEnabled,
+  onPickFolder,
+  onUpdateProject,
+  onOpenArtifact,
+  onAddKnowledge,
+  onDeleteKnowledge,
+  onWebSearchEnabledChange,
+  onSelectPage,
+}: ProjectPageProps) {
   const [editingProject, setEditingProject] = useState(false);
   const [draftName, setDraftName] = useState('');
   const [draftDescription, setDraftDescription] = useState('');
   const [draftInstructions, setDraftInstructions] = useState('');
   const [draftFolder, setDraftFolder] = useState('');
   const [folderBrowsing, setFolderBrowsing] = useState(false);
+  const [knowledgeTitle, setKnowledgeTitle] = useState('');
+  const [knowledgeContent, setKnowledgeContent] = useState('');
 
   useEffect(() => {
     if (!project) {
@@ -162,6 +186,24 @@ export function ProjectPage({ project, tasks, scheduledCount, pendingApprovalsCo
     setEditingProject(false);
   };
 
+  const handleAddKnowledge = () => {
+    if (!project) {
+      return;
+    }
+    onAddKnowledge(project.id, knowledgeTitle, knowledgeContent);
+    setKnowledgeTitle('');
+    setKnowledgeContent('');
+  };
+
+  const artifactDisplayName = (artifact: CoworkArtifact) => {
+    const normalizedPath = artifact.path.replace(/\\/g, '/');
+    const fileName = normalizedPath.split('/').filter(Boolean).pop();
+    if (fileName) {
+      return fileName;
+    }
+    return artifact.label;
+  };
+
   return (
     <section className="mx-auto grid h-full w-full max-w-[1180px] min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3 p-4">
       <header className="relative overflow-hidden rounded-2xl border border-border/60 bg-card p-5">
@@ -187,6 +229,15 @@ export function ProjectPage({ project, tasks, scheduledCount, pendingApprovalsCo
             <Button type="button" className="gap-2" onClick={() => onSelectPage('cowork')}>
               <Play className="size-3.5" />
               Run Task
+            </Button>
+            <Button
+              type="button"
+              variant={webSearchEnabled ? 'default' : 'outline'}
+              className="gap-2"
+              onClick={() => onWebSearchEnabledChange(!webSearchEnabled)}
+            >
+              <Search className="size-3.5" />
+              {webSearchEnabled ? 'Web Search On' : 'Web Search Off'}
             </Button>
             <Button type="button" variant="outline" className="gap-2" onClick={() => onSelectPage('local-files')}>
               <FolderOpen className="size-3.5" />
@@ -338,6 +389,60 @@ export function ProjectPage({ project, tasks, scheduledCount, pendingApprovalsCo
               ))}
             </div>
           </div>
+
+          <div className="rounded-2xl border border-border/60 bg-card p-3">
+            <div className="mb-2 flex items-center gap-2">
+              <Brain className="size-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold">Project Knowledge</h2>
+            </div>
+            <div className="grid gap-2">
+              <Input
+                value={knowledgeTitle}
+                onChange={(event) => setKnowledgeTitle(event.target.value)}
+                placeholder="Knowledge title"
+              />
+              <Textarea
+                value={knowledgeContent}
+                onChange={(event) => setKnowledgeContent(event.target.value)}
+                placeholder="Facts, rules, context, terminology..."
+                rows={3}
+              />
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  onClick={handleAddKnowledge}
+                  disabled={!knowledgeTitle.trim() || !knowledgeContent.trim()}
+                >
+                  Add Knowledge
+                </Button>
+              </div>
+              {projectKnowledge.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-border/70 bg-muted/30 px-3 py-3 font-sans text-xs text-muted-foreground">
+                  No project knowledge yet.
+                </p>
+              ) : (
+                <div className="grid gap-2">
+                  {projectKnowledge.map((item) => (
+                    <div key={item.id} className="rounded-lg border border-border/60 bg-background px-2.5 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-xs font-semibold">{item.title}</p>
+                        <Button
+                          type="button"
+                          size="icon-xs"
+                          variant="ghost"
+                          onClick={() => onDeleteKnowledge(item.id)}
+                          aria-label={`Delete knowledge ${item.title}`}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                      <p className="mt-1 whitespace-pre-wrap font-sans text-[11px] text-muted-foreground">{item.content}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         <aside className="grid min-h-0 gap-3">
@@ -360,6 +465,34 @@ export function ProjectPage({ project, tasks, scheduledCount, pendingApprovalsCo
                 <p className="mt-1 text-sm font-semibold">{failedTasks} recent fail/reject</p>
               </div>
             </div>
+          </div>
+
+          <div className="rounded-2xl border border-border/60 bg-card p-3">
+            <div className="mb-2 flex items-center gap-2">
+              <FileText className="size-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold">Artifact Workspace</h2>
+            </div>
+            {artifacts.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border/70 bg-muted/30 px-3 py-3 font-sans text-xs text-muted-foreground">
+                No artifacts for this project yet.
+              </p>
+            ) : (
+              <div className="grid max-h-56 gap-1.5 overflow-y-auto pr-1">
+                {artifacts.map((artifact) => (
+                  <button
+                    key={artifact.id}
+                    type="button"
+                    className="rounded-lg border border-border/60 bg-background px-2.5 py-2 text-left transition-colors hover:bg-accent/40"
+                    onClick={() => onOpenArtifact(artifact)}
+                  >
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <p className="truncate font-sans text-xs font-medium text-foreground">{artifactDisplayName(artifact)}</p>
+                      <Badge variant="outline" className="text-[10px]">{artifact.status}</Badge>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="rounded-2xl border border-border/60 bg-card p-3">

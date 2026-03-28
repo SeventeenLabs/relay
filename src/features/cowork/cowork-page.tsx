@@ -1,7 +1,7 @@
-import { useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 
-import { ArrowUp, ChevronRight, FileText, Loader2 } from 'lucide-react';
+import { ArrowUp, ChevronRight, FileText, FolderOpen, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type {
@@ -10,13 +10,13 @@ import type {
   CoworkArtifact,
   CoworkProjectTask,
   PendingApprovalAction,
+  ProjectPathReference,
 } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Textarea } from '@/components/ui/textarea';
 import { chatMarkdownComponents } from '@/lib/chat-markdown';
 import {
   approvalRiskClasses,
@@ -45,14 +45,108 @@ type CoworkPageProps = {
   pendingApprovals: PendingApprovalAction[];
   projectTasks: CoworkProjectTask[];
   sending: boolean;
+  webSearchEnabled: boolean;
+  projectPathReferences: ProjectPathReference[];
   onTaskPromptChange: (value: string) => void;
   onModelChange: (value: string) => void;
+  onWebSearchEnabledChange: (enabled: boolean) => void;
   onSubmit: (event: FormEvent) => void | Promise<void>;
   onApprovePendingAction: (approvalId: string) => void;
   onRejectPendingAction: (approvalId: string, reason: string) => void;
 };
 
 const COWORK_DEFAULT_MODEL_LABEL = 'Default model';
+const MENTION_TOKEN_PATTERN = /@project:"[^"]+"/g;
+
+function buildEditorFragmentFromText(text: string): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  MENTION_TOKEN_PATTERN.lastIndex = 0;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = MENTION_TOKEN_PATTERN.exec(text)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (start > cursor) {
+      fragment.appendChild(document.createTextNode(text.slice(cursor, start)));
+    }
+    const mention = document.createElement('span');
+    mention.className =
+      'inline-flex items-center rounded-md border border-sky-500/35 bg-sky-500/12 px-1.5 py-[1px] font-mono text-[0.88em] font-medium text-sky-700 dark:text-sky-200';
+    mention.textContent = text.slice(start, end);
+    fragment.appendChild(mention);
+    cursor = end;
+  }
+
+  if (cursor < text.length) {
+    fragment.appendChild(document.createTextNode(text.slice(cursor)));
+  }
+
+  return fragment;
+}
+
+function getEditorPlainText(editor: HTMLDivElement): string {
+  return (editor.textContent ?? '').replace(/\u00A0/g, ' ');
+}
+
+function setEditorHtmlFromText(editor: HTMLDivElement, text: string): void {
+  editor.replaceChildren(buildEditorFragmentFromText(text));
+}
+
+function getCaretCharacterOffset(root: HTMLElement): number {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return 0;
+  }
+  const range = selection.getRangeAt(0);
+  const preCaretRange = range.cloneRange();
+  preCaretRange.selectNodeContents(root);
+  preCaretRange.setEnd(range.endContainer, range.endOffset);
+  return preCaretRange.toString().length;
+}
+
+function setCaretCharacterOffset(root: HTMLElement, offset: number): void {
+  const selection = window.getSelection();
+  if (!selection) {
+    return;
+  }
+  const range = document.createRange();
+  const stack: Node[] = [root];
+  let remaining = offset;
+
+  while (stack.length > 0) {
+    const node = stack.shift()!;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent ?? '';
+      if (remaining <= text.length) {
+        range.setStart(node, Math.max(0, remaining));
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return;
+      }
+      remaining -= text.length;
+      continue;
+    }
+
+    const children = Array.from(node.childNodes);
+    stack.unshift(...children);
+  }
+
+  placeCaretAtEnd(root);
+}
+
+function placeCaretAtEnd(root: HTMLElement): void {
+  const selection = window.getSelection();
+  if (!selection) {
+    return;
+  }
+  const range = document.createRange();
+  range.selectNodeContents(root);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
 
 export function CoworkPage({
   projectTitle,
@@ -73,13 +167,17 @@ export function CoworkPage({
   pendingApprovals,
   projectTasks,
   sending,
+  webSearchEnabled,
+  projectPathReferences,
   onTaskPromptChange,
   onModelChange,
+  onWebSearchEnabledChange,
   onSubmit,
   onApprovePendingAction,
   onRejectPendingAction,
 }: CoworkPageProps) {
   const formRef = useRef<HTMLFormElement | null>(null);
+  const composerEditorRef = useRef<HTMLDivElement | null>(null);
   const taskPromptId = useId();
   const taskPromptHelpId = useId();
   const modelSelectId = useId();
@@ -88,7 +186,10 @@ export function CoworkPage({
   const [expandedInlineActivityId, setExpandedInlineActivityId] = useState<string | null>(null);
   const [workspaceCardCollapsed, setWorkspaceCardCollapsed] = useState(false);
   const [approvalRejectReasons, setApprovalRejectReasons] = useState<Record<string, string>>({});
-  const canSend = taskPrompt.trim().length > 0 && !sending && projectSelected;
+  const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
+  const [mentionMenuIndex, setMentionMenuIndex] = useState(0);
+  const [composerText, setComposerText] = useState(taskPrompt);
+  const canSend = composerText.trim().length > 0 && !sending && projectSelected;
   const visibleMessages = useMemo(() => messages.filter((message) => !isSystemLikeMessage(message)), [messages]);
   const isInitialWorkspace = visibleMessages.length === 0;
   const dateTimeFormatter = useMemo(
@@ -115,7 +216,103 @@ export function CoworkPage({
     return role;
   };
 
-  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const artifactDisplayName = (artifact: CoworkArtifact) => {
+    const normalizedPath = artifact.path.replace(/\\/g, '/');
+    const fileName = normalizedPath.split('/').filter(Boolean).pop();
+    if (fileName) {
+      return fileName;
+    }
+    return artifact.label;
+  };
+
+  useEffect(() => {
+    setComposerText(taskPrompt);
+  }, [taskPrompt]);
+
+  useEffect(() => {
+    const editor = composerEditorRef.current;
+    if (!editor) {
+      return;
+    }
+
+    const editorText = getEditorPlainText(editor);
+    if (editorText === composerText) {
+      return;
+    }
+    setEditorHtmlFromText(editor, composerText);
+  }, [composerText]);
+
+  const mentionQuery = useMemo(() => {
+    const match = composerText.match(/(^|\s)@([^\s]*)$/);
+    if (!match) {
+      return null;
+    }
+    return match[2] ?? '';
+  }, [composerText]);
+
+  const mentionCommands = useMemo(() => {
+    if (!projectSelected || mentionQuery === null) {
+      return [] as Array<{ path: string; kind: ProjectPathReference['kind'] }>;
+    }
+
+    const normalizedQuery = mentionQuery.toLowerCase();
+    return projectPathReferences
+      .filter((entry) => {
+        const normalizedPath = entry.path.toLowerCase();
+        if (!normalizedQuery) {
+          return true;
+        }
+        return normalizedPath.includes(normalizedQuery) || `project/${normalizedPath}`.includes(normalizedQuery);
+      })
+      .slice(0, 30);
+  }, [mentionQuery, projectPathReferences, projectSelected]);
+
+  useEffect(() => {
+    setMentionMenuOpen(Boolean(projectSelected && mentionQuery !== null && mentionCommands.length > 0));
+    setMentionMenuIndex(0);
+  }, [mentionCommands.length, mentionQuery, projectSelected]);
+
+  const executeMentionCommand = (index: number) => {
+    const command = mentionCommands[index];
+    if (!command) {
+      return;
+    }
+
+    const mentionPath = command.kind === 'directory' ? `${command.path}/` : command.path;
+    const mentionToken = `@project:"${mentionPath}" `;
+    const nextPrompt = composerText.replace(/(^|\s)@([^\s]*)$/, (full, prefix) => `${prefix}${mentionToken}`);
+    setComposerText(nextPrompt);
+    onTaskPromptChange(nextPrompt);
+    if (composerEditorRef.current) {
+      setEditorHtmlFromText(composerEditorRef.current, nextPrompt);
+      placeCaretAtEnd(composerEditorRef.current);
+    }
+    setMentionMenuOpen(false);
+  };
+
+  const handleComposerKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (mentionMenuOpen && mentionCommands.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setMentionMenuIndex((current) => (current + 1) % mentionCommands.length);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setMentionMenuIndex((current) => (current - 1 + mentionCommands.length) % mentionCommands.length);
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        executeMentionCommand(mentionMenuIndex);
+        return;
+      }
+      if (event.key === 'Escape') {
+        setMentionMenuOpen(false);
+        return;
+      }
+    }
+
     if (event.key !== 'Enter' || event.shiftKey) {
       return;
     }
@@ -127,13 +324,79 @@ export function CoworkPage({
     formRef.current?.requestSubmit();
   };
 
+  const renderMentionMenu = () => {
+    if (!mentionMenuOpen || mentionCommands.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="absolute bottom-full left-4 z-20 mb-2 w-[min(680px,calc(100%-2rem))] overflow-hidden rounded-2xl border border-border bg-popover shadow-[0_20px_45px_rgba(20,20,18,0.20)]">
+        <div className="flex items-center justify-between border-b border-border bg-muted px-3 py-2">
+          <p className="font-sans text-xs font-semibold tracking-wide text-foreground">Project references</p>
+          <p className="font-sans text-[11px] text-muted-foreground">Enter to insert</p>
+        </div>
+        <div className="max-h-72 overflow-y-auto bg-popover p-1.5">
+          {mentionCommands.map((command, index) => {
+            const fullPath = `${command.path}${command.kind === 'directory' ? '/' : ''}`;
+            const segments = command.path.split('/');
+            const name = segments[segments.length - 1] || command.path;
+            const parent = segments.length > 1 ? segments.slice(0, -1).join('/') : '';
+
+            return (
+              <button
+                key={`${command.kind}-${command.path}`}
+                type="button"
+                onClick={() => executeMentionCommand(index)}
+                className={`group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition ${
+                  index === mentionMenuIndex
+                    ? 'bg-muted text-foreground ring-1 ring-border'
+                    : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                }`}
+              >
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
+                  {command.kind === 'directory' ? (
+                    <FolderOpen className="h-3.5 w-3.5 text-sky-600 dark:text-sky-300" />
+                  ) : (
+                    <FileText className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-300" />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-sans text-sm text-foreground">{name}{command.kind === 'directory' ? '/' : ''}</span>
+                  {parent ? <span className="block truncate font-mono text-[11px] text-muted-foreground">{parent}</span> : null}
+                </span>
+                <span className="rounded-full border border-border bg-background px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  {command.kind === 'directory' ? '@folder' : '@file'}
+                </span>
+                <span className="sr-only">{fullPath}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const handleEditorInput = () => {
+    const editor = composerEditorRef.current;
+    if (!editor) {
+      return;
+    }
+    const caretOffset = getCaretCharacterOffset(editor);
+    const nextText = getEditorPlainText(editor);
+    setEditorHtmlFromText(editor, nextText);
+    setCaretCharacterOffset(editor, caretOffset);
+    setComposerText(nextText);
+    onTaskPromptChange(nextText);
+  };
+
   const renderCoworkComposer = (textareaMinHeightClass: string) => (
     <form
-      className="rounded-[26px] border border-border/90 bg-card/98 px-4 py-3.5 shadow-[0_14px_34px_rgba(24,23,20,0.10)]"
+      className="relative rounded-[26px] border border-border bg-card px-4 py-3.5 shadow-[0_14px_34px_rgba(24,23,20,0.10)]"
       onSubmit={onSubmit}
       ref={formRef}
       aria-busy={sending || awaitingStream}
-    >
+      >
+        {renderMentionMenu()}
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Badge
           variant="outline"
@@ -151,23 +414,40 @@ export function CoworkPage({
           </span>
         ) : null}
       </div>
-      <Textarea
-        id={taskPromptId}
-        value={taskPrompt}
-        onChange={(event) => onTaskPromptChange(event.target.value)}
-        placeholder="How can I help you today?"
-        rows={2}
-        onKeyDown={handleComposerKeyDown}
-        aria-label="Task prompt"
-        aria-describedby={taskPromptHelpId}
-        className={`${textareaMinHeightClass} resize-none border-0 bg-transparent px-0 py-1.5 font-sans text-lg leading-7 text-foreground shadow-none focus-visible:ring-0`}
-      />
+      <div className="relative">
+        {!composerText ? (
+          <span className="pointer-events-none absolute left-0 top-1.5 font-sans text-base text-muted-foreground">
+            How can I help you today?
+          </span>
+        ) : null}
+        <div
+          id={taskPromptId}
+          ref={composerEditorRef}
+          role="textbox"
+          aria-label="Task prompt"
+          aria-multiline="true"
+          aria-describedby={taskPromptHelpId}
+          contentEditable
+          suppressContentEditableWarning
+          onInput={handleEditorInput}
+          onKeyDown={handleComposerKeyDown}
+          className={`${textareaMinHeightClass} max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-0 py-1.5 font-sans text-base leading-6 text-foreground outline-none`}
+        />
+      </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
         <p id={taskPromptHelpId} className="font-sans text-xs text-muted-foreground">
-          {projectSelected ? 'Press Enter to send, Shift+Enter for a new line' : 'Choose a project to enable sending'}
+          {projectSelected ? 'Type @ to reference project files/folders. Enter sends, Shift+Enter new line.' : 'Choose a project to enable sending'}
         </p>
 
         <div className="ml-auto flex items-center gap-2">
+          <Button
+            type="button"
+            variant={webSearchEnabled ? 'default' : 'outline'}
+            className="h-9 rounded-xl px-2.5 font-sans text-[11px]"
+            onClick={() => onWebSearchEnabledChange(!webSearchEnabled)}
+          >
+            Web Search {webSearchEnabled ? 'On' : 'Off'}
+          </Button>
           <label htmlFor={modelSelectId} className="sr-only">Model</label>
           <select
             id={modelSelectId}
@@ -204,6 +484,91 @@ export function CoworkPage({
     </form>
   );
 
+  const renderPendingApprovalsPanel = () => {
+    if (pendingApprovals.length === 0) {
+      return null;
+    }
+
+    return (
+      <Card
+        className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
+        data-testid="pending-approvals-card"
+        aria-labelledby={approvalsHeadingId}
+      >
+        <CardHeader className="border-b border-border/80 pb-2">
+          <CardTitle id={approvalsHeadingId} className="flex items-center justify-between gap-2 text-sm">
+            <span>Approvals required</span>
+            <Badge variant="outline" className="rounded-full font-sans text-[10px]">
+              {pendingApprovals.length}
+            </Badge>
+          </CardTitle>
+          <p className="font-sans text-xs text-muted-foreground">Review and approve or reject pending high-risk actions.</p>
+        </CardHeader>
+        <CardContent className="max-h-64 space-y-2 overflow-y-auto pt-3 pr-2">
+          {pendingApprovals.map((approval) => {
+            const rejectReason = approvalRejectReasons[approval.id] || '';
+            const rejectReasonId = `pending-approval-reason-field-${approval.id}`;
+            return (
+              <div key={approval.id} className="rounded-xl border border-border bg-background p-2.5" data-testid={`pending-approval-${approval.id}`}>
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <Badge variant="outline" className={`rounded-full font-sans text-[10px] uppercase ${approvalRiskClasses(approval.riskLevel)}`}>
+                    {approval.riskLevel}
+                  </Badge>
+                  <p className="font-mono text-[10px] text-muted-foreground">{approval.scopeName}</p>
+                </div>
+                <p className="break-words font-sans text-xs text-foreground">{approval.summary}</p>
+                <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">{approval.path}</p>
+                {approval.preview ? (
+                  <div className="mt-1.5 rounded-lg border border-border bg-card p-1.5">
+                    <p className="max-h-28 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[10px] text-muted-foreground">{approval.preview}</p>
+                  </div>
+                ) : null}
+                <label htmlFor={rejectReasonId} className="sr-only">
+                  Rejection reason for {approval.summary}
+                </label>
+                <Input
+                  id={rejectReasonId}
+                  data-testid={`pending-approval-reason-${approval.id}`}
+                  value={rejectReason}
+                  onChange={(event) =>
+                    setApprovalRejectReasons((current) => ({
+                      ...current,
+                      [approval.id]: event.target.value,
+                    }))
+                  }
+                  placeholder="Reason required for reject"
+                  className="mt-2 h-8 font-sans text-xs"
+                />
+                <div className="mt-2 flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 border-0 bg-primary text-primary-foreground hover:bg-primary/90"
+                    onClick={() => onApprovePendingAction(approval.id)}
+                    data-testid={`pending-approval-approve-${approval.id}`}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    onClick={() => onRejectPendingAction(approval.id, rejectReason)}
+                    disabled={!rejectReason.trim()}
+                    data-testid={`pending-approval-reject-${approval.id}`}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+    );
+  };
+
   return (
     <section
       className={`grid h-full w-full min-h-0 overflow-hidden transition-[grid-template-columns,gap] duration-200 ${
@@ -233,92 +598,14 @@ export function CoworkPage({
                   </ul>
                 </div>
 
-                <div className="mt-4">{renderCoworkComposer('min-h-[90px]')}</div>
+                <div className="mt-4 grid gap-2">
+                  {renderPendingApprovalsPanel()}
+                  {renderCoworkComposer('min-h-[90px]')}
+                </div>
               </div>
             </div>
           ) : (
             <div className="mx-auto grid w-full max-w-[860px] gap-3" role="log" aria-live="polite" aria-relevant="additions">
-              {pendingApprovals.length > 0 ? (
-                <Card
-                  className="overflow-visible rounded-2xl border-amber-300/70 bg-amber-50/60 dark:border-amber-700/40 dark:bg-amber-950/20"
-                  data-testid="pending-approvals-card"
-                  aria-labelledby={approvalsHeadingId}
-                >
-                  <CardHeader className="pb-2">
-                    <CardTitle id={approvalsHeadingId} className="text-sm">
-                      Action required: approvals ({pendingApprovals.length})
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-2 pt-0">
-                    {pendingApprovals.map((approval) => {
-                      const rejectReason = approvalRejectReasons[approval.id] || '';
-                      const rejectReasonId = `pending-approval-reason-field-${approval.id}`;
-                      return (
-                        <div key={approval.id} className="rounded-xl border border-border bg-card p-2.5" data-testid={`pending-approval-${approval.id}`}>
-                          <div className="mb-1.5 flex items-center gap-2">
-                            <Badge variant="outline" className={`rounded-full font-sans text-[10px] uppercase ${approvalRiskClasses(approval.riskLevel)}`}>
-                              {approval.riskLevel}
-                            </Badge>
-                            <p className="break-words font-sans text-xs text-foreground">{approval.summary}</p>
-                          </div>
-                          <p className="break-words font-sans text-xs text-muted-foreground">Scope: {approval.scopeName}</p>
-                          {approval.projectTitle ? (
-                            <p className="break-words font-sans text-xs text-muted-foreground">Project: {approval.projectTitle}</p>
-                          ) : null}
-                          <p className="break-all font-sans text-xs text-muted-foreground">Path: {approval.path}</p>
-                          {approval.preview ? (
-                            <div className="mt-1.5 rounded border border-border bg-background p-1.5">
-                              <p className="max-h-36 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[10px] text-muted-foreground">{approval.preview}</p>
-                            </div>
-                          ) : null}
-                          <label htmlFor={rejectReasonId} className="sr-only">
-                            Rejection reason for {approval.summary}
-                          </label>
-                          <Input
-                            id={rejectReasonId}
-                            data-testid={`pending-approval-reason-${approval.id}`}
-                            value={rejectReason}
-                            onChange={(event) =>
-                              setApprovalRejectReasons((current) => ({
-                                ...current,
-                                [approval.id]: event.target.value,
-                              }))
-                            }
-                            placeholder="Rejection reason (required to reject)"
-                            className="mt-2 h-8 font-sans text-xs"
-                          />
-                          <div className="mt-2 flex items-center gap-1.5">
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="h-7 border-0 bg-primary text-primary-foreground hover:bg-primary/90"
-                              onClick={() => onApprovePendingAction(approval.id)}
-                              data-testid={`pending-approval-approve-${approval.id}`}
-                            >
-                              Approve
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-7"
-                              onClick={() => onRejectPendingAction(approval.id, rejectReason)}
-                              disabled={!rejectReason.trim()}
-                              data-testid={`pending-approval-reject-${approval.id}`}
-                            >
-                              Reject
-                            </Button>
-                          </div>
-                          <p className="mt-1 font-sans text-[10px] text-muted-foreground">
-                            Reject requires a reason to keep the project audit trail clear.
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
-              ) : null}
-
               {visibleMessages.map((message) => {
                 const inline = extractInlineActivityCards(message);
 
@@ -411,6 +698,7 @@ export function CoworkPage({
         {!isInitialWorkspace ? (
           <div className="px-2">
             <div className="mx-auto grid w-full max-w-[920px] gap-2">
+              {renderPendingApprovalsPanel()}
               {renderCoworkComposer('min-h-[84px]')}
             </div>
           </div>
@@ -526,7 +814,7 @@ export function CoworkPage({
                     data-testid={`cowork-artifact-${artifact.id}`}
                   >
                     <div className="mb-1 flex items-center justify-between gap-2">
-                      <p className="truncate font-sans text-xs font-medium text-foreground">{artifact.label}</p>
+                      <p className="truncate font-sans text-xs font-medium text-foreground">{artifactDisplayName(artifact)}</p>
                       <div className="flex items-center gap-1">
                         {artifact.source ? (
                           <Badge variant="outline" className="rounded-full font-sans text-[10px] capitalize">
@@ -541,7 +829,6 @@ export function CoworkPage({
                         </Badge>
                       </div>
                     </div>
-                    <p className="break-all font-sans text-[10px] text-muted-foreground">{artifact.path}</p>
                     <p className="mt-1 font-sans text-[10px] text-muted-foreground" title={String(artifact.updatedAt)}>
                       Updated {formatTimestamp(artifact.updatedAt)}
                     </p>

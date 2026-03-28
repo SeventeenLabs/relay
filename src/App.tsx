@@ -18,6 +18,8 @@ import type {
   LocalActionReceipt,
   LocalFilePlanAction,
   PendingApprovalAction,
+  ProjectPathReference,
+  ProjectKnowledgeItem,
   ScheduledJob,
   TaskState,
 } from './app-types';
@@ -104,6 +106,8 @@ const GATEWAY_CONNECTIONS_STORAGE_KEY = 'relay.gateway.connections.v1';
 const COWORK_PROJECTS_STORAGE_KEY = 'relay.cowork.projects.v1';
 const COWORK_ACTIVE_PROJECT_STORAGE_KEY = 'relay.cowork.projects.active.v1';
 const COWORK_TASKS_STORAGE_KEY = 'relay.cowork.tasks.v1';
+const COWORK_PROJECT_KNOWLEDGE_STORAGE_KEY = 'relay.cowork.project.knowledge.v1';
+const COWORK_WEB_SEARCH_MODE_STORAGE_KEY = 'relay.cowork.websearch.v1';
 
 const defaultConfig: AppConfig = {
   gatewayUrl: DEFAULT_GATEWAY_URL,
@@ -190,6 +194,33 @@ function validateProjectRelativePath(inputPath: string, options?: { allowEmpty?:
   }
 
   return { ok: true };
+}
+
+function extractProjectFileMentions(inputText: string): string[] {
+  if (!inputText) {
+    return [];
+  }
+
+  const mentions = new Set<string>();
+  const quotedPattern = /@project:"([^"]+)"/g;
+  let quotedMatch: RegExpExecArray | null;
+  while ((quotedMatch = quotedPattern.exec(inputText)) !== null) {
+    const nextPath = quotedMatch[1]?.trim();
+    if (nextPath) {
+      mentions.add(nextPath);
+    }
+  }
+
+  const unquotedPattern = /@project\/([^\s,;]+)/g;
+  let unquotedMatch: RegExpExecArray | null;
+  while ((unquotedMatch = unquotedPattern.exec(inputText)) !== null) {
+    const nextPath = unquotedMatch[1]?.trim();
+    if (nextPath) {
+      mentions.add(nextPath);
+    }
+  }
+
+  return Array.from(mentions);
 }
 
 function loadCoworkProjects(): CoworkProject[] {
@@ -355,6 +386,49 @@ function loadCoworkTasks(): CoworkProjectTask[] {
   }
 }
 
+function loadProjectKnowledgeItems(): ProjectKnowledgeItem[] {
+  try {
+    const raw = localStorage.getItem(COWORK_PROJECT_KNOWLEDGE_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .map((entry): ProjectKnowledgeItem | null => {
+        if (!entry || typeof entry !== 'object') {
+          return null;
+        }
+        const record = entry as Record<string, unknown>;
+        const id = typeof record.id === 'string' ? record.id.trim() : '';
+        const projectId = typeof record.projectId === 'string' ? record.projectId.trim() : '';
+        const title = typeof record.title === 'string' ? record.title.trim() : '';
+        const content = typeof record.content === 'string' ? record.content.trim() : '';
+        const createdAt = typeof record.createdAt === 'number' ? record.createdAt : Date.now();
+        const updatedAt = typeof record.updatedAt === 'number' ? record.updatedAt : createdAt;
+        if (!id || !projectId || !title || !content) {
+          return null;
+        }
+        return {
+          id,
+          projectId,
+          title,
+          content,
+          createdAt,
+          updatedAt,
+        };
+      })
+      .filter((item): item is ProjectKnowledgeItem => item !== null)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  } catch {
+    return [];
+  }
+}
+
 declare global {
   interface Window {
     relayE2E?: RelayE2EBridge;
@@ -436,6 +510,7 @@ export default function App() {
   const [coworkProjects, setCoworkProjects] = useState<CoworkProject[]>(() => loadCoworkProjects());
   const [activeCoworkProjectId, setActiveCoworkProjectId] = useState(() => loadActiveCoworkProjectId());
   const [coworkTasks, setCoworkTasks] = useState<CoworkProjectTask[]>(() => loadCoworkTasks());
+  const [projectKnowledgeItems, setProjectKnowledgeItems] = useState<ProjectKnowledgeItem[]>(() => loadProjectKnowledgeItems());
   const [taskState, setTaskState] = useState<TaskState>('idle');
   const [localPlanActions, setLocalPlanActions] = useState<LocalFilePlanAction[]>([]);
   const [localPlanLoading, setLocalPlanLoading] = useState(false);
@@ -469,6 +544,14 @@ export default function App() {
   const [coworkModel, setCoworkModel] = useState('');
   const [coworkRunPhase, setCoworkRunPhase] = useState<CoworkRunPhase>('idle');
   const [coworkRunStatus, setCoworkRunStatus] = useState('Ready for a new task.');
+  const [coworkWebSearchEnabled, setCoworkWebSearchEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(COWORK_WEB_SEARCH_MODE_STORAGE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [coworkProjectPathReferences, setCoworkProjectPathReferences] = useState<ProjectPathReference[]>([]);
   const [localActionReceipts, setLocalActionReceipts] = useState<LocalActionReceipt[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalAction[]>([]);
   const [coworkProgressSteps, setCoworkProgressSteps] = useState<CoworkProgressStep[]>(() => createInitialCoworkProgressSteps());
@@ -516,6 +599,22 @@ export default function App() {
       .filter((approval) => approval.projectId === activeCoworkProjectId)
       .sort((a, b) => b.createdAt - a.createdAt);
   }, [activeCoworkProjectId, pendingApprovals]);
+  const visibleProjectKnowledge = useMemo(() => {
+    if (!activeCoworkProjectId) {
+      return [] as ProjectKnowledgeItem[];
+    }
+    return projectKnowledgeItems
+      .filter((item) => item.projectId === activeCoworkProjectId)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 40);
+  }, [activeCoworkProjectId, projectKnowledgeItems]);
+  const visibleProjectArtifacts = useMemo(() => {
+    const runIds = new Set(visibleCoworkTasks.map((task) => task.runId).filter((runId): runId is string => typeof runId === 'string' && runId.length > 0));
+    if (runIds.size === 0) {
+      return coworkArtifacts.slice(0, 40);
+    }
+    return coworkArtifacts.filter((artifact) => !artifact.runId || runIds.has(artifact.runId)).slice(0, 40);
+  }, [coworkArtifacts, visibleCoworkTasks]);
   const selectedGatewayConnectionId = useMemo(() => {
     const normalizedUrl = draftGatewayUrl.trim() || DEFAULT_GATEWAY_URL;
     const normalizedToken = draftGatewayToken ?? '';
@@ -1122,6 +1221,22 @@ export default function App() {
 
   useEffect(() => {
     try {
+      localStorage.setItem(COWORK_PROJECT_KNOWLEDGE_STORAGE_KEY, JSON.stringify(projectKnowledgeItems.slice(0, 500)));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [projectKnowledgeItems]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COWORK_WEB_SEARCH_MODE_STORAGE_KEY, coworkWebSearchEnabled ? 'true' : 'false');
+    } catch {
+      // ignore persistence failures
+    }
+  }, [coworkWebSearchEnabled]);
+
+  useEffect(() => {
+    try {
       if (activeCoworkProjectId) {
         localStorage.setItem(COWORK_ACTIVE_PROJECT_STORAGE_KEY, activeCoworkProjectId);
       } else {
@@ -1168,6 +1283,89 @@ export default function App() {
     setWorkingFolder(nextFolder);
     workingFolderRef.current = nextFolder;
   }, [activeCoworkProject, workingFolder]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProjectFileReferences = async () => {
+      const rootPath = activeCoworkProject?.workspaceFolder?.trim() ?? '';
+      if (!rootPath || !bridge?.listDirInFolder) {
+        setCoworkProjectPathReferences([]);
+        return;
+      }
+
+      const MAX_ITEMS = 500;
+      const MAX_DEPTH = 4;
+      const MAX_DIR_VISITS = 120;
+      const queue: Array<{ relPath: string; depth: number }> = [{ relPath: '', depth: 0 }];
+      const pathRefs: ProjectPathReference[] = [];
+      let directoryVisits = 0;
+
+      while (queue.length > 0 && pathRefs.length < MAX_ITEMS && directoryVisits < MAX_DIR_VISITS) {
+        const next = queue.shift();
+        if (!next) {
+          break;
+        }
+
+        let listing: Awaited<ReturnType<NonNullable<typeof bridge.listDirInFolder>>>;
+        try {
+          listing = await bridge.listDirInFolder(rootPath, next.relPath);
+        } catch {
+          break;
+        }
+
+        directoryVisits += 1;
+        const sortedItems = [...listing.items].sort((a, b) => a.path.localeCompare(b.path, undefined, { sensitivity: 'base' }));
+
+        for (const item of sortedItems) {
+          pathRefs.push({
+            path: item.path,
+            kind: item.kind,
+          });
+          if (pathRefs.length >= MAX_ITEMS) {
+            break;
+          }
+
+          if (item.kind === 'file') {
+            continue;
+          }
+
+          if (item.kind === 'directory' && next.depth + 1 < MAX_DEPTH && directoryVisits + queue.length < MAX_DIR_VISITS) {
+            queue.push({ relPath: item.path, depth: next.depth + 1 });
+          }
+        }
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      const deduped = new Map<string, ProjectPathReference>();
+      for (const item of pathRefs) {
+        const key = `${item.kind}:${item.path}`;
+        if (!deduped.has(key)) {
+          deduped.set(key, item);
+        }
+      }
+
+      setCoworkProjectPathReferences(
+        Array.from(deduped.values())
+          .sort((a, b) => {
+            if (a.kind !== b.kind) {
+              return a.kind === 'directory' ? -1 : 1;
+            }
+            return a.path.localeCompare(b.path, undefined, { sensitivity: 'base' });
+          })
+          .slice(0, MAX_ITEMS),
+      );
+    };
+
+    void loadProjectFileReferences();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCoworkProject?.id, activeCoworkProject?.workspaceFolder, bridge]);
 
   const loadChatSession = async (sessionKeyInput: string, statusMessage?: string) => {
     const client = gatewayClientRef.current;
@@ -1922,25 +2120,35 @@ export default function App() {
                   ];
 
                   const activityItems: ChatActivityItem[] = [
-                    {
-                      id: `activity-summary-${runId}`,
-                      label: summary,
-                      details: [
-                        ...previews,
-                        ...errors.map((line) => `! ${line}`),
-                      ].join('\n').trim() || summary,
-                      tone: errors.length > 0 ? 'danger' : 'success',
-                    },
                     ...actionReceipts.map((receipt, index): ChatActivityItem => {
                       const tone: ChatActivityItem['tone'] = receipt.status === 'ok' ? 'success' : 'danger';
+                      const verb =
+                        receipt.type === 'create_file' ? 'Created' :
+                        receipt.type === 'append_file' ? 'Appended' :
+                        receipt.type === 'read_file' ? 'Read' :
+                        receipt.type === 'list_dir' ? 'Listed' :
+                        receipt.type === 'exists' ? 'Checked' :
+                        receipt.type === 'rename' ? 'Renamed' :
+                        receipt.type === 'delete' ? 'Deleted' :
+                        receipt.type === 'shell_exec' ? 'Executed' :
+                        receipt.type === 'web_fetch' ? 'Fetched' :
+                        'Completed';
                       return {
                         id: `activity-receipt-${runId}-${index + 1}`,
-                        label: `${receipt.status === 'ok' ? 'Done.' : 'Failed.'} ${receipt.type} ${receipt.path}`,
+                        label: `${receipt.status === 'ok' ? verb : `${verb} failed`}: ${receipt.path}`,
                         details: receipt.message || receipt.errorCode || receipt.path,
                         tone,
                       };
                     }),
                   ];
+                  if (activityItems.length === 0) {
+                    activityItems.push({
+                      id: `activity-summary-${runId}`,
+                      label: summary,
+                      details: summary,
+                      tone: errors.length > 0 ? 'danger' : 'success',
+                    });
+                  }
 
                   const receiptMessage: ChatMessage = {
                     id: `cowork-actions-${runId}`,
@@ -3028,6 +3236,66 @@ export default function App() {
       }
 
       const folderContext = workingFolderRef.current;
+      const selectedKindByPath = new Map(
+        coworkProjectPathReferences.map((entry) => [entry.path, entry.kind] as const),
+      );
+      const referencedProjectPaths = Array.from(new Set(extractProjectFileMentions(text))).slice(0, 8);
+      let referencedProjectFilesContext = '';
+      if (referencedProjectPaths.length > 0 && folderContext) {
+        const snippets: string[] = [];
+        const MAX_FILE_CHARS = 8_000;
+        const MAX_FOLDER_LIST_ITEMS = 40;
+
+        for (const rawPath of referencedProjectPaths) {
+          const mentionsDirectory = /\/+$/.test(rawPath) || selectedKindByPath.get(rawPath) === 'directory';
+          const relPath = rawPath.replace(/\/+$/, '').trim();
+          if (!relPath) {
+            continue;
+          }
+
+          const validated = validateProjectRelativePath(relPath);
+          if (!validated.ok) {
+            snippets.push(`- ${relPath}: skipped (${validated.reason})`);
+            continue;
+          }
+
+          if (mentionsDirectory && bridge?.listDirInFolder) {
+            try {
+              const listing = await bridge.listDirInFolder(folderContext, relPath);
+              const listed = listing.items
+                .slice(0, MAX_FOLDER_LIST_ITEMS)
+                .map((item) => `- ${item.kind === 'directory' ? '[dir]' : '[file]'} ${item.path}`)
+                .join('\n');
+              const truncated = listing.items.length > MAX_FOLDER_LIST_ITEMS ? '\n- ...truncated...' : '';
+              snippets.push(`### ${relPath}/\n${listed || '- (empty)'}${truncated}`);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Failed to list folder';
+              snippets.push(`- ${relPath}/: list failed (${message})`);
+            }
+            continue;
+          }
+
+          if (!bridge?.readFileInFolder) {
+            snippets.push(`- ${relPath}: read unavailable in this mode`);
+            continue;
+          }
+
+          try {
+            const fileResult = await bridge.readFileInFolder(folderContext, relPath);
+            const fullContent = fileResult.content ?? '';
+            const snippet = fullContent.slice(0, MAX_FILE_CHARS);
+            const truncated = fullContent.length > MAX_FILE_CHARS ? '\n[...truncated...]' : '';
+            snippets.push(`### ${relPath}\n\`\`\`\n${snippet}${truncated}\n\`\`\``);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to read file';
+            snippets.push(`- ${relPath}: read failed (${message})`);
+          }
+        }
+
+        if (snippets.length > 0) {
+          referencedProjectFilesContext = `Referenced project files:\n${snippets.join('\n\n')}`;
+        }
+      }
 
       setCoworkTaskStatus(queuedTaskId, 'running', {
         summary: 'Sending task to cowork.',
@@ -3047,13 +3315,30 @@ export default function App() {
         'If filenames are unknown, first emit a list_dir action and do not ask follow-up questions.',
         'Never respond with natural language explanations for file-operation requests.',
       ].join('\n');
+      const projectKnowledgeContext = activeCoworkProject
+        ? projectKnowledgeItems
+            .filter((item) => item.projectId === activeCoworkProject.id)
+            .slice(0, 8)
+            .map((item) => `- ${item.title}: ${item.content}`)
+            .join('\n')
+        : '';
+      const webSearchInstruction = coworkWebSearchEnabled
+        ? [
+            'Web search mode is enabled.',
+            'For requests requiring up-to-date or external information, use web tools and provide citations.',
+            'Always include a Sources section with markdown links for any factual claims from external sources.',
+          ].join('\n')
+        : '';
       const coworkMemoryContext = preferences.injectMemory
         ? buildMemoryContext(loadMemoryEntries(), preferences.systemPrompt)
         : preferences.systemPrompt.trim();
       const outboundMessage = [
         coworkMemoryContext,
         activeCoworkProject ? `Project context: ${activeCoworkProject.name}` : '',
+        projectKnowledgeContext ? `Project knowledge:\n${projectKnowledgeContext}` : '',
         folderContext ? `Working folder context: ${folderContext}` : '',
+        referencedProjectFilesContext,
+        webSearchInstruction,
         relayFileInstruction,
         '',
         text,
@@ -3428,6 +3713,44 @@ export default function App() {
     }
   };
 
+  const handleAddProjectKnowledge = (projectId: string, title: string, content: string) => {
+    const normalizedProjectId = projectId.trim();
+    const normalizedTitle = title.trim();
+    const normalizedContent = content.trim();
+    if (!normalizedProjectId || !normalizedTitle || !normalizedContent) {
+      setStatus('Knowledge title and content are required.');
+      return;
+    }
+
+    const now = Date.now();
+    const id =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `knowledge-${now}-${Math.random().toString(16).slice(2)}`;
+
+    setProjectKnowledgeItems((current) => [
+      {
+        id,
+        projectId: normalizedProjectId,
+        title: normalizedTitle,
+        content: normalizedContent,
+        createdAt: now,
+        updatedAt: now,
+      },
+      ...current,
+    ].slice(0, 500));
+    setStatus(`Knowledge saved: ${normalizedTitle}`);
+  };
+
+  const handleDeleteProjectKnowledge = (knowledgeId: string) => {
+    const normalizedId = knowledgeId.trim();
+    if (!normalizedId) {
+      return;
+    }
+    setProjectKnowledgeItems((current) => current.filter((item) => item.id !== normalizedId));
+    setStatus('Knowledge entry deleted.');
+  };
+
   const handleDeleteCoworkProject = (projectId: string) => {
     const normalizedProjectId = projectId.trim();
     if (!normalizedProjectId) {
@@ -3442,6 +3765,7 @@ export default function App() {
       }
       return current.filter((project) => project.id !== normalizedProjectId);
     });
+    setProjectKnowledgeItems((current) => current.filter((item) => item.projectId !== normalizedProjectId));
 
     if (activeCoworkProjectId === normalizedProjectId) {
       setActiveCoworkProjectId('');
@@ -4278,8 +4602,11 @@ export default function App() {
                   pendingApprovals={visiblePendingApprovals}
                   projectTasks={visibleCoworkTasks}
                   sending={coworkSending}
+                  webSearchEnabled={coworkWebSearchEnabled}
+                  projectPathReferences={coworkProjectPathReferences}
                   onTaskPromptChange={setTaskPrompt}
                   onModelChange={handleCoworkModelChange}
+                  onWebSearchEnabledChange={setCoworkWebSearchEnabled}
                   onSubmit={handlePlanTask}
                   onApprovePendingAction={handleApprovePendingAction}
                   onRejectPendingAction={handleRejectPendingAction}
@@ -4290,8 +4617,15 @@ export default function App() {
                   tasks={visibleCoworkTasks}
                   scheduledCount={scheduledJobs.length}
                   pendingApprovalsCount={visiblePendingApprovals.length}
+                  artifacts={visibleProjectArtifacts}
+                  projectKnowledge={visibleProjectKnowledge}
+                  webSearchEnabled={coworkWebSearchEnabled}
                   onPickFolder={handlePickWorkingFolderForProject}
                   onUpdateProject={handleUpdateCoworkProject}
+                  onOpenArtifact={handleOpenCoworkArtifact}
+                  onAddKnowledge={handleAddProjectKnowledge}
+                  onDeleteKnowledge={handleDeleteProjectKnowledge}
+                  onWebSearchEnabledChange={setCoworkWebSearchEnabled}
                   onSelectPage={(page) => setActivePage(page)}
                 />
               ) : activePage === 'files' ? (

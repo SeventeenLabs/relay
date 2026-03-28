@@ -253,6 +253,20 @@ export type CoworkProject = {
   updatedAt: number;
 };
 
+export type ProjectKnowledgeItem = {
+  id: string;
+  projectId: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ProjectPathReference = {
+  path: string;
+  kind: 'file' | 'directory';
+};
+
 export type MemoryEntry = {
   id: string;
   category: 'about-me' | 'rules' | 'knowledge' | 'reflection';
