@@ -25,6 +25,7 @@ import {
   Search,
   Settings,
   Shield,
+  ShieldAlert,
   Trash2,
   User,
   Wifi,
@@ -57,7 +58,7 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 
-type AppPage = 'chat' | 'cowork' | 'project' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'safety' | 'settings';
+type AppPage = 'chat' | 'cowork' | 'project' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'approvals' | 'safety' | 'settings';
 type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Gateway' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 type AppLanguage = 'en' | 'de';
 
@@ -122,6 +123,7 @@ const projectFolderNavItems: { label: string; icon: typeof FolderOpen; page: App
   { label: 'Activity', icon: Zap, page: 'activity' },
   { label: 'Memory', icon: Brain, page: 'memory' },
   { label: 'Schedule', icon: CalendarClock, page: 'scheduled' },
+  { label: 'Approvals', icon: ShieldAlert, page: 'approvals' },
   { label: 'Safety', icon: Shield, page: 'safety' },
 ];
 
@@ -185,7 +187,7 @@ export function AppSidebar({
   const t = (en: string, de: string) => (language === 'de' ? de : en);
   const isChatView = activePage === 'chat';
   const isSettingsView = activePage === 'settings';
-  const isWorkspacePage = ['project', 'files', 'local-files', 'activity', 'memory', 'scheduled', 'safety'].includes(activePage);
+  const isWorkspacePage = ['project', 'files', 'local-files', 'activity', 'memory', 'scheduled', 'approvals', 'safety'].includes(activePage);
   const compact = !sidebarOpen;
   const navItems = isChatView ? chatNavItems : coworkNavItems;
   const safeRecentItems = recentItems ?? [];

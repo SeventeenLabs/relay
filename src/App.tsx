@@ -97,6 +97,7 @@ const ActivityPage = lazy(() => import('./features/workspace/activity-page').the
 const FilesPage = lazy(() => import('./features/workspace/files-page').then((module) => ({ default: module.FilesPage })));
 const MemoryPage = lazy(() => import('./features/workspace/memory-page').then((module) => ({ default: module.MemoryPage })));
 const SafetyPage = lazy(() => import('./features/workspace/safety-page').then((module) => ({ default: module.SafetyPage })));
+const ApprovalsPage = lazy(() => import('./features/workspace/approvals-page').then((module) => ({ default: module.ApprovalsPage })));
 const ScheduledPage = lazy(() => import('./features/workspace/scheduled-page').then((module) => ({ default: module.ScheduledPage })));
 
 const DEFAULT_GATEWAY_URL = 'ws://127.0.0.1:18789';
@@ -116,7 +117,7 @@ const defaultConfig: AppConfig = {
   gatewayToken: '',
 };
 
-type AppPage = 'chat' | 'cowork' | 'project' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'safety' | 'settings';
+type AppPage = 'chat' | 'cowork' | 'project' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'approvals' | 'safety' | 'settings';
 type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Gateway' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 
 const COWORK_SEND_SPINNER_MS = 300;
@@ -594,7 +595,7 @@ export default function App() {
 
   const recentChatItems = toRecentSidebarItems(chatThreads, 'chat');
   const recentCoworkItems = toRecentSidebarItems(coworkThreads, 'cowork');
-  const isCoworkSidebarContext = ['cowork', 'project', 'files', 'local-files', 'activity', 'memory', 'scheduled', 'safety'].includes(activePage);
+  const isCoworkSidebarContext = ['cowork', 'project', 'files', 'local-files', 'activity', 'memory', 'scheduled', 'approvals', 'safety'].includes(activePage);
   const recentItems = isCoworkSidebarContext ? recentCoworkItems : recentChatItems;
   const activeCoworkProject = useMemo(
     () => coworkProjects.find((project) => project.id === activeCoworkProjectId) ?? null,
@@ -4802,6 +4803,15 @@ export default function App() {
                         loading={scheduledLoading}
                         status={status}
                         onRefresh={loadScheduledJobs}
+                      />
+                    )}
+
+                    {activePage === 'approvals' && (
+                      <ApprovalsPage
+                        projectTitle={activeCoworkProject?.name}
+                        pendingApprovals={visiblePendingApprovals}
+                        onApprovePendingAction={handleApprovePendingAction}
+                        onRejectPendingAction={handleRejectPendingAction}
                       />
                     )}
 

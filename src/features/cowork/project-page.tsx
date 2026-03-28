@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
-type ProjectPageTarget = 'cowork' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'safety';
+type ProjectPageTarget = 'cowork' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'approvals' | 'safety';
 
 type ProjectPageProps = {
   project: CoworkProject | null;
@@ -55,6 +55,12 @@ const projectActions: Array<{
     description: 'Inspect and manage scheduled jobs.',
     page: 'scheduled',
     icon: CalendarClock,
+  },
+  {
+    label: 'Approvals',
+    description: 'Review and action pending approvals.',
+    page: 'approvals',
+    icon: AlertTriangle,
   },
   {
     label: 'Safety',
@@ -243,9 +249,9 @@ export function ProjectPage({
               <FolderOpen className="size-3.5" />
               Open Project Folder
             </Button>
-            <Button type="button" variant="outline" className="gap-2" onClick={() => onSelectPage('safety')}>
-              <Shield className="size-3.5" />
-              Review Safety
+            <Button type="button" variant="outline" className="gap-2" onClick={() => onSelectPage('approvals')}>
+              <AlertTriangle className="size-3.5" />
+              Open Approvals
             </Button>
             <Button type="button" variant="outline" className="gap-2" onClick={() => setEditingProject((current) => !current)}>
               <Pencil className="size-3.5" />
@@ -505,8 +511,8 @@ export function ProjectPage({
                 <Play className="size-3.5" />
                 Start Another Task
               </Button>
-              <Button type="button" variant="outline" className="justify-start gap-2" onClick={() => onSelectPage('safety')}>
-                <Shield className="size-3.5" />
+              <Button type="button" variant="outline" className="justify-start gap-2" onClick={() => onSelectPage('approvals')}>
+                <AlertTriangle className="size-3.5" />
                 Clear Pending Approvals
               </Button>
               <Button type="button" variant="outline" className="justify-start gap-2" onClick={() => onSelectPage('scheduled')}>
