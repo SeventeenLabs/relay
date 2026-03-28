@@ -171,12 +171,19 @@ function validateProjectRelativePath(inputPath: string, options?: { allowEmpty?:
   }
 
   const normalized = raw.replace(/\\/g, '/');
+  if (/[\u0000-\u001F]/.test(normalized)) {
+    return { ok: false, reason: 'Path contains invalid control characters.' };
+  }
   if (normalized.startsWith('/') || normalized.startsWith('~/') || /^[a-zA-Z]:\//.test(normalized)) {
     return { ok: false, reason: 'Absolute paths are not allowed for project-bound actions.' };
   }
 
+  if (normalized === '.' || normalized === './') {
+    return { ok: false, reason: 'A concrete relative path is required.' };
+  }
+
   const segments = normalized.split('/').filter((segment) => segment.length > 0);
-  if (segments.some((segment) => segment === '..')) {
+  if (segments.some((segment) => segment === '..' || segment === '.')) {
     return { ok: false, reason: 'Parent directory traversal is not allowed.' };
   }
 
@@ -444,6 +451,16 @@ export default function App() {
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, 25);
   }, [activeCoworkProjectId, coworkTasks]);
+
+  const visiblePendingApprovals = useMemo(() => {
+    if (!activeCoworkProjectId) {
+      return [] as PendingApprovalAction[];
+    }
+
+    return pendingApprovals
+      .filter((approval) => approval.projectId === activeCoworkProjectId)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }, [activeCoworkProjectId, pendingApprovals]);
 
   const contextFolders = useMemo(() => {
     const folders = [activeCoworkProject?.workspaceFolder?.trim() || '', workingFolder.trim()].filter(Boolean);
@@ -1798,7 +1815,7 @@ export default function App() {
                 });
 
                 const boundedActions = relayActions.slice(0, MAX_LOCAL_ACTIONS_PER_RUN);
-                const safetyScopes = loadSafetyScopes();
+                const safetyScopes = loadSafetyScopes(runContext.projectId || undefined);
                 const actionReceipts: LocalActionReceipt[] = [];
                 const previews: string[] = [];
                 const errors: string[] = [];
@@ -1819,6 +1836,26 @@ export default function App() {
                     return trimmed;
                   }
                   return `${trimmed.slice(0, maxChars)}\n... (truncated)`;
+                };
+
+                const mapLocalActionErrorCode = (message: string): string => {
+                  const normalized = message.toLowerCase();
+                  if (normalized.includes('already exists')) {
+                    return 'FILE_EXISTS';
+                  }
+                  if (normalized.includes('not found') || normalized.includes('enoent')) {
+                    return 'NOT_FOUND';
+                  }
+                  if (normalized.includes('blocked') || normalized.includes('outside') || normalized.includes('traversal')) {
+                    return 'PROJECT_BOUNDARY_BLOCK';
+                  }
+                  if (normalized.includes('permission') || normalized.includes('eacces') || normalized.includes('eperm')) {
+                    return 'PERMISSION_DENIED';
+                  }
+                  if (normalized.includes('timeout')) {
+                    return 'TIMEOUT';
+                  }
+                  return 'ACTION_FAILED';
                 };
 
                 const summarizeActionPreview = (action: (typeof boundedActions)[number]) => {
@@ -2373,7 +2410,7 @@ export default function App() {
                       type: action.type,
                       path: actionPath,
                       status: 'error',
-                      errorCode: 'ACTION_FAILED',
+                      errorCode: mapLocalActionErrorCode(message),
                       message,
                     });
                   }
@@ -2742,7 +2779,6 @@ export default function App() {
   const handlePlanTask = async (event: FormEvent) => {
     event.preventDefault();
     workingFolderRef.current = workingFolder.trim();
-    setPendingApprovals([]);
     setCoworkSending(true);
     setCoworkAwaitingStream(false);
     setCoworkStreamingText('');
@@ -4068,7 +4104,7 @@ export default function App() {
                   models={coworkModels}
                   modelsLoading={modelsLoading}
                   changingModel={changingCoworkModel}
-                  pendingApprovals={pendingApprovals}
+                  pendingApprovals={visiblePendingApprovals}
                   projectTasks={visibleCoworkTasks}
                   sending={coworkSending}
                   onTaskPromptChange={setTaskPrompt}
@@ -4082,7 +4118,7 @@ export default function App() {
                   project={activeCoworkProject}
                   tasks={visibleCoworkTasks}
                   scheduledCount={scheduledJobs.length}
-                  pendingApprovalsCount={pendingApprovals.length}
+                  pendingApprovalsCount={visiblePendingApprovals.length}
                   onPickFolder={handlePickWorkingFolderForProject}
                   onUpdateProject={handleUpdateCoworkProject}
                   onSelectPage={(page) => setActivePage(page)}
@@ -4162,6 +4198,8 @@ export default function App() {
                     {activePage === 'safety' && (
                       <SafetyPage
                         gatewayConnected={gatewayConnected}
+                        projectId={activeCoworkProject?.id}
+                        projectTitle={activeCoworkProject?.name}
                       />
                     )}
 

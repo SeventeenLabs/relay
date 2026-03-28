@@ -121,6 +121,30 @@ Example: Scheduled daily briefing
   Full audit trail exported
 ```
 
+## OpenClaw Runtime Model (Agents, Skills, Nodes)
+
+OpenClaw is multi-agent by design. Relay treats this as an operator-visible runtime model:
+
+- **Agent** = the runtime identity that owns a task (role, memory scope, policy profile, model routing).
+- **Skill** = the capability bundle an agent can use (tools, instructions, schema expectations, policy requirements).
+- **Node** = the execution environment where work runs (local Docker, SSH host, managed runtime) with concrete limits and health.
+
+Run contract:
+
+1. Each run is assigned to one primary agent.
+2. The agent executes using one or more skills.
+3. The run executes on a selected node.
+4. Any consequential action should remain attributable to agent + skill + node in the audit trail.
+
+Relay role in this model:
+
+- Select and display which agent is active.
+- Show which skills are available and why an action is or is not possible.
+- Surface node selection, node health, and node-level limits.
+- Keep approvals and activity logs tied to runtime identity, not only chat text.
+
+Canonical definition: [docs/RELAY-OPENCLAW-AGENT-SKILL-NODE-MODEL.md](docs/RELAY-OPENCLAW-AGENT-SKILL-NODE-MODEL.md)
+
 <br/>
 
 ## Why Relay?

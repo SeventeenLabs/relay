@@ -388,16 +388,18 @@ async function writeFileInFolder(
   const overwrite = Boolean(options?.overwrite);
   if (!overwrite) {
     try {
-      await fs.access(resolvedTargetPath);
-      throw new Error('A file already exists at that path.');
+      await fs.writeFile(resolvedTargetPath, content, { encoding: 'utf8', flag: 'wx' });
     } catch (error) {
-      if (error instanceof Error && error.message === 'A file already exists at that path.') {
-        throw error;
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code === 'EEXIST') {
+        throw new Error('A file already exists at that path.');
       }
+      throw error;
     }
+  } else {
+    await fs.writeFile(resolvedTargetPath, content, 'utf8');
   }
 
-  await fs.writeFile(resolvedTargetPath, content, 'utf8');
   return {
     filePath: resolvedTargetPath,
     created: true,
@@ -647,6 +649,20 @@ async function renameInFolder(rootPath: string, oldRelative: string, newRelative
   await assertTargetPathAllowed(root, resolvedOld, 'Paths must remain inside working folder.');
   await assertRealPathInsideRoot(rootRealPath, path.dirname(resolvedNew), 'Paths must remain inside working folder.');
   await fs.access(resolvedOld);
+
+  // Prevent silent destination clobber; overwrite must be an explicit delete/create sequence.
+  if (path.resolve(resolvedOld) !== path.resolve(resolvedNew)) {
+    try {
+      await fs.access(resolvedNew);
+      throw new Error('A file or directory already exists at the destination path.');
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code !== 'ENOENT') {
+        throw error;
+      }
+    }
+  }
+
   await fs.mkdir(path.dirname(resolvedNew), { recursive: true });
   await fs.rename(resolvedOld, resolvedNew);
   return { oldPath: resolvedOld, newPath: resolvedNew, renamed: true };

@@ -162,3 +162,35 @@ Review monthly:
 3. Are connector failures driving UX friction?
 4. Is override rate trending down as product quality improves?
 5. Are new customers reaching time-to-first-value quickly?
+
+## 12. OpenClaw Runtime Object Model
+
+Relay should explicitly model OpenClaw runtime composition:
+
+1. Agent
+- Runtime identity that receives the task.
+- Owns role, model routing, memory scope, and approval profile.
+
+2. Skill
+- Capability package attached to an agent.
+- Defines tool access, instructions, and policy constraints.
+
+3. Node
+- Execution host where tools and model calls run.
+- Defines capabilities, limits, and health status.
+
+Canonical run mapping:
+
+1. Run targets one primary agent.
+2. Agent uses assigned skills.
+3. Work executes on one selected node.
+4. Audit events should record agent + skill + node attribution.
+
+Relay responsibility:
+
+1. Make agent, skill, and node visible at dispatch and in run details.
+2. Include this context in approval cards for risky actions.
+3. Preserve runtime attribution in activity and export paths.
+
+Reference specification:
+[docs/RELAY-OPENCLAW-AGENT-SKILL-NODE-MODEL.md](docs/RELAY-OPENCLAW-AGENT-SKILL-NODE-MODEL.md)

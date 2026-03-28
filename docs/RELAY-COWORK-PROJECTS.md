@@ -18,6 +18,38 @@ Projects prevent context drift.
 
 Without projects, operators can accidentally run tasks against the wrong folder. With projects, selecting a project switches Cowork into a known folder context and keeps local actions grounded in that root.
 
+## One Folder vs Multiple Folders
+
+### Use one folder when possible
+
+One folder is best when your work is mostly one product or one operational context.
+
+Benefits:
+
+- less setup and faster dispatch
+- lower chance of selecting the wrong root
+- cleaner continuity in memory and activity
+
+### Use multiple folders when isolation is required
+
+Multiple folders are useful when workstreams should not share context.
+
+Typical reasons:
+
+- separate clients
+- separate products or business units
+- different risk or compliance boundaries
+- different tool or skill expectations per workstream
+
+### Relay handling model
+
+1. Each run uses exactly one folder snapshot.
+2. Folder switch during a run does not affect that run.
+3. Next run uses the newly selected folder.
+4. Missing or inaccessible folder should block write-capable actions until rebind.
+
+Practical rule: start with one folder, then split into multiple projects only when isolation or governance needs demand it.
+
 ## Structure Recommendation
 
 Use one project per real workstream.

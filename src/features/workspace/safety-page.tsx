@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -27,6 +27,8 @@ import { loadSafetyScopes, saveSafetyScopes } from '@/lib/safety-policy';
 
 type SafetyPageProps = {
   gatewayConnected: boolean;
+  projectId?: string;
+  projectTitle?: string;
 };
 
 type PendingAction = {
@@ -56,8 +58,8 @@ function timeAgo(timestamp: number): string {
   return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
-export function SafetyPage({ gatewayConnected }: SafetyPageProps) {
-  const [scopes, setScopes] = useState<SafetyPermissionScope[]>(loadSafetyScopes);
+export function SafetyPage({ gatewayConnected, projectId, projectTitle }: SafetyPageProps) {
+  const [scopes, setScopes] = useState<SafetyPermissionScope[]>(() => loadSafetyScopes(projectId));
   const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
   const [filterQuery, setFilterQuery] = useState('');
   const [riskFilter, setRiskFilter] = useState<SafetyRiskLevel | 'all'>('all');
@@ -65,8 +67,12 @@ export function SafetyPage({ gatewayConnected }: SafetyPageProps) {
 
   const persistScopes = useCallback((updated: SafetyPermissionScope[]) => {
     setScopes(updated);
-    saveSafetyScopes(updated);
-  }, []);
+    saveSafetyScopes(updated, projectId);
+  }, [projectId]);
+
+  useEffect(() => {
+    setScopes(loadSafetyScopes(projectId));
+  }, [projectId]);
 
   const toggleScope = useCallback(
     (id: string) => {
@@ -132,6 +138,11 @@ export function SafetyPage({ gatewayConnected }: SafetyPageProps) {
         <p className="mt-1 font-sans text-sm text-muted-foreground">
           Control what your agent is allowed to do. Require approvals for high-risk actions.
         </p>
+        {projectId ? (
+          <p className="mt-1 font-sans text-xs text-muted-foreground">
+            Scope: {projectTitle?.trim() || 'Selected project'}
+          </p>
+        ) : null}
       </header>
 
       {/* Stats bar */}

@@ -66,6 +66,21 @@ When Relay connects to a **remote** OpenClaw gateway (non-localhost), the file e
 routes all file operations through `workspace.*` RPC methods instead of local Electron IPC.
 The server must implement these 6 methods to enable remote workspace browsing.
 
+## Multi-Agent Requirement
+
+In multi-agent OpenClaw deployments, `workspace.*` methods should resolve against the
+workspace of the agent assigned to the active run/session, not against a global path.
+
+Recommended behavior:
+
+1. Resolve `agentId` from authenticated session context or explicit request context.
+2. Resolve workspace root from that agent profile.
+3. Apply all path normalization and boundary checks within that agent-scoped root.
+4. Include agent attribution in audit events for `workspace.write`, `workspace.rename`, and `workspace.delete`.
+
+If no agent can be resolved, return a deterministic authorization or context error instead
+of falling back to a shared root.
+
 ## Protocol
 
 All methods use the existing JSON-RPC v3 frame format:

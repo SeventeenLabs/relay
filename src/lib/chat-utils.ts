@@ -385,6 +385,8 @@ export function readGatewayError(error: unknown): { message: string; code?: stri
 /* ── Relay file action parsing ───────────────────────────────────────────── */
 
 export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
+  const hasUnsafePathChars = (value: string): boolean => /[\u0000-\u001F]/.test(value);
+
   const normalizeRelayActions = (value: unknown): RelayFileAction[] => {
     let rawActions: unknown = value;
 
@@ -420,6 +422,9 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
         const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : undefined;
 
         const filePath = typeof record.path === 'string' ? record.path.trim() : '';
+        if (filePath && hasUnsafePathChars(filePath)) {
+          return acc;
+        }
         if ((type === 'create_file' || type === 'append_file' || type === 'read_file' || type === 'exists' || type === 'delete') && !filePath) {
           return acc;
         }
@@ -450,6 +455,9 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
                   : typeof record.to === 'string'
                     ? record.to.trim()
                     : '';
+            if ((filePath && hasUnsafePathChars(filePath)) || (newPath && hasUnsafePathChars(newPath))) {
+              return acc;
+            }
           if (!filePath || !newPath) {
             return acc;
           }

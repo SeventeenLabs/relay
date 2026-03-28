@@ -2,6 +2,14 @@ import type { LocalActionType, SafetyPermissionScope, SafetyRiskLevel } from '@/
 
 export const SAFETY_STORAGE_KEY = 'relay.safety.scopes';
 
+function getSafetyStorageKey(projectId?: string): string {
+  const normalizedProjectId = (projectId ?? '').trim();
+  if (!normalizedProjectId) {
+    return SAFETY_STORAGE_KEY;
+  }
+  return `${SAFETY_STORAGE_KEY}.project.${normalizedProjectId}`;
+}
+
 export const DEFAULT_SAFETY_SCOPES: SafetyPermissionScope[] = [
   { id: 'file-read', name: 'Read files', description: 'Agent can read files in the working folder', riskLevel: 'low', enabled: true, requiresApproval: false },
   { id: 'file-list', name: 'List directories', description: 'Agent can list directory contents', riskLevel: 'low', enabled: true, requiresApproval: false },
@@ -17,18 +25,28 @@ export const DEFAULT_SAFETY_SCOPES: SafetyPermissionScope[] = [
   { id: 'memory-write', name: 'Write memory', description: 'Agent can persist information permanently', riskLevel: 'low', enabled: true, requiresApproval: false },
 ];
 
-export function loadSafetyScopes(): SafetyPermissionScope[] {
+export function loadSafetyScopes(projectId?: string): SafetyPermissionScope[] {
   try {
-    const raw = localStorage.getItem(SAFETY_STORAGE_KEY);
-    if (!raw) return DEFAULT_SAFETY_SCOPES;
+    const scopedKey = getSafetyStorageKey(projectId);
+    const raw = localStorage.getItem(scopedKey);
+    if (!raw) {
+      // Backward-compatibility: if no project-specific scopes exist,
+      // use global scopes as baseline.
+      const legacyRaw = localStorage.getItem(SAFETY_STORAGE_KEY);
+      if (!legacyRaw) {
+        return DEFAULT_SAFETY_SCOPES;
+      }
+      return JSON.parse(legacyRaw) as SafetyPermissionScope[];
+    }
     return JSON.parse(raw) as SafetyPermissionScope[];
   } catch {
     return DEFAULT_SAFETY_SCOPES;
   }
 }
 
-export function saveSafetyScopes(scopes: SafetyPermissionScope[]) {
-  localStorage.setItem(SAFETY_STORAGE_KEY, JSON.stringify(scopes));
+export function saveSafetyScopes(scopes: SafetyPermissionScope[], projectId?: string) {
+  const scopedKey = getSafetyStorageKey(projectId);
+  localStorage.setItem(scopedKey, JSON.stringify(scopes));
 }
 
 const localActionScopeMap: Record<LocalActionType, string> = {
