@@ -27,14 +27,16 @@ type OnboardingPageProps = {
 
 /* ── Inline brand mark (track logo from branding system) ── */
 function RelayMark({ size = 48 }: { size?: number }) {
+  const primary = 'var(--app-primary)';
+  const primaryForeground = 'var(--app-primary-foreground)';
   return (
     <svg width={size} height={size} viewBox="0 0 256 256" fill="none">
-      <rect width="256" height="256" rx="58" fill="#bbf451" />
-      <rect x="44" y="54" width="56" height="120" rx="28" fill="#1f2b09" />
-      <rect x="156" y="54" width="56" height="120" rx="28" fill="#1f2b09" />
-      <rect x="98" y="88" width="68" height="52" rx="24" fill="#1f2b09" />
-      <path d="M118 114H182" stroke="#bbf451" strokeWidth="9" strokeLinecap="round" />
-      <path d="M170 102L186 114L170 126" stroke="#bbf451" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" />
+      <rect width="256" height="256" rx="58" fill={primary} />
+      <rect x="44" y="54" width="56" height="120" rx="28" fill={primaryForeground} />
+      <rect x="156" y="54" width="56" height="120" rx="28" fill={primaryForeground} />
+      <rect x="98" y="88" width="68" height="52" rx="24" fill={primaryForeground} />
+      <path d="M118 114H182" stroke={primary} strokeWidth="9" strokeLinecap="round" />
+      <path d="M170 102L186 114L170 126" stroke={primary} strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -51,15 +53,15 @@ function StepIndicator({ current }: { current: number }) {
         return (
           <div key={label} className="flex items-center gap-1">
             {i > 0 && (
-              <div className={`mx-1 h-px w-6 transition-colors duration-300 ${isDone ? 'bg-[#bbf451]' : 'bg-border'}`} />
+              <div className={`mx-1 h-px w-6 transition-colors duration-300 ${isDone ? 'bg-primary' : 'bg-border'}`} />
             )}
             <div className="flex items-center gap-1.5">
               <div
                 className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold transition-all duration-300 ${
                   isActive
-                    ? 'bg-[#bbf451] text-[#1f2b09] shadow-[0_0_0_3px_rgba(187,244,81,0.2)]'
+                    ? 'bg-primary text-primary-foreground shadow-[0_0_0_3px_hsl(var(--primary)/0.2)]'
                     : isDone
-                      ? 'bg-[#bbf451]/20 text-[#7b9f2f]'
+                      ? 'bg-primary/20 text-primary'
                       : 'bg-muted text-muted-foreground/50'
                 }`}
               >
@@ -73,7 +75,7 @@ function StepIndicator({ current }: { current: number }) {
               </div>
               <span
                 className={`font-sans text-xs font-medium transition-colors duration-300 ${
-                  isActive ? 'text-foreground' : isDone ? 'text-[#7b9f2f]' : 'text-muted-foreground/50'
+                  isActive ? 'text-foreground' : isDone ? 'text-primary' : 'text-muted-foreground/50'
                 }`}
               >
                 {label}
@@ -97,7 +99,7 @@ function PrimaryButton({
     <Button
       disabled={disabled}
       className={cn(
-        'h-11 w-full border-0 bg-[#bbf451] font-sans text-sm font-semibold text-[#1f2b09] shadow-[0_1px_0_rgba(0,0,0,0.08),0_0_0_1px_rgba(187,244,81,0.2)_inset] hover:bg-[#a8df44] disabled:opacity-50',
+        'h-11 w-full border-0 bg-primary font-sans text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50',
         className,
       )}
       {...props}
@@ -188,8 +190,8 @@ export function OnboardingPage({
     <main className="relative grid h-full place-items-center overflow-auto">
       {/* Background decoration */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -right-32 -top-32 h-[480px] w-[480px] rounded-full bg-[#bbf451]/[0.04] blur-3xl" />
-        <div className="absolute -bottom-24 -left-24 h-[360px] w-[360px] rounded-full bg-[#bbf451]/[0.03] blur-3xl" />
+        <div className="absolute -right-32 -top-32 h-[480px] w-[480px] rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute -bottom-24 -left-24 h-[360px] w-[360px] rounded-full bg-primary/5 blur-3xl" />
       </div>
 
       <div className="relative z-10 w-full max-w-[480px] px-6">
@@ -215,7 +217,7 @@ export function OnboardingPage({
             <div className="mb-8 mt-4 w-full max-w-[360px]">
               {discovery.status === 'scanning' && (
                 <div className="flex items-center justify-center gap-2.5 rounded-xl border border-border bg-muted/30 px-5 py-3">
-                  <svg className="h-4 w-4 animate-spin text-[#7b9f2f]" viewBox="0 0 24 24" fill="none">
+                  <svg className="h-4 w-4 animate-spin text-primary" viewBox="0 0 24 24" fill="none">
                     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" opacity="0.2" />
                     <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
                   </svg>
@@ -226,11 +228,11 @@ export function OnboardingPage({
               )}
 
               {discovery.status === 'done' && discovery.result.found && (
-                <div className="rounded-xl border border-[#bbf451]/30 bg-[#bbf451]/[0.06] px-5 py-3.5">
+                <div className="rounded-xl border border-primary/30 bg-primary/10 px-5 py-3.5">
                   <div className="flex items-center gap-2.5">
-                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#bbf451]/20">
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-primary">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                        <path d="M5 12l5 5L19 7" stroke="#7b9f2f" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M5 12l5 5L19 7" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     </div>
                     <div className="text-left">
@@ -246,11 +248,11 @@ export function OnboardingPage({
               )}
 
               {discovery.status === 'done' && !discovery.result.found && discovery.result.binaryFound && (
-                <div className="rounded-xl border border-[#e8b931]/25 bg-[#e8b931]/[0.05] px-5 py-3.5">
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-3.5">
                   <div className="flex items-start gap-2.5">
-                    <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8b931]/20">
+                    <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-                        <path d="M12 9v4m0 4h.01" stroke="#a68523" strokeWidth="3" strokeLinecap="round" />
+                        <path d="M12 9v4m0 4h.01" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
                       </svg>
                     </div>
                     <div className="text-left">
@@ -349,10 +351,10 @@ export function OnboardingPage({
 
         {/* ── Connect ── */}
         {visibleStep === 'connect' && (
-          <div className="rounded-2xl border border-border bg-card p-8 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.04)]">
+          <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
             <div className="mb-6">
-              <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-[#bbf451]/10">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-[#7b9f2f]">
+              <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-primary">
                   <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" stroke="currentColor" strokeWidth="2" />
                   <path d="M12 8v4l3 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
@@ -472,10 +474,10 @@ export function OnboardingPage({
 
         {/* ── Pairing ── */}
         {visibleStep === 'pairing' && (
-          <div className="rounded-2xl border border-border bg-card p-8 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.04)]">
+          <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
             <div className="mb-6">
-              <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-[#bbf451]/10">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-[#7b9f2f]">
+              <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-primary">
                   <rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="2" />
                   <path d="M8 11V7a4 4 0 1 1 8 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   <circle cx="12" cy="16" r="1" fill="currentColor" />
@@ -500,7 +502,7 @@ export function OnboardingPage({
                   onClick={copyCommand}
                 >
                   {copied ? (
-                    <span className="flex items-center gap-1 text-[#7b9f2f]">
+                    <span className="flex items-center gap-1 text-primary">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
                         <path d="M5 12l5 5L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
@@ -555,14 +557,14 @@ export function OnboardingPage({
         {visibleStep === 'ready' && (
           <div className="flex flex-col items-center text-center">
             <div className="relative mb-6">
-              <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[#bbf451]/10">
+              <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                 <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-                  <path d="M5 12l5 5L19 7" stroke="#7b9f2f" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M5 12l5 5L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
-              <div className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border-2 border-card bg-[#bbf451]">
+              <div className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border-2 border-card bg-primary text-primary-foreground">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                  <path d="M5 12l5 5L19 7" stroke="#1f2b09" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M5 12l5 5L19 7" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
             </div>
@@ -575,9 +577,9 @@ export function OnboardingPage({
             </p>
 
             {health?.message && (
-              <div className="mb-8 mt-2 inline-flex items-center gap-2 rounded-full border border-[#bbf451]/25 bg-[#bbf451]/[0.06] px-4 py-1.5">
-                <div className="h-1.5 w-1.5 rounded-full bg-[#7b9f2f]" />
-                <span className="font-mono text-[11px] text-[#7b9f2f]">
+              <div className="mb-8 mt-2 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5">
+                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                <span className="font-mono text-[11px] text-primary">
                   {health.message}
                 </span>
               </div>

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 
 import { ArrowUp, ChevronRight, FileText, Loader2 } from 'lucide-react';
@@ -80,11 +80,40 @@ export function CoworkPage({
   onRejectPendingAction,
 }: CoworkPageProps) {
   const formRef = useRef<HTMLFormElement | null>(null);
+  const taskPromptId = useId();
+  const taskPromptHelpId = useId();
+  const modelSelectId = useId();
+  const approvalsHeadingId = useId();
+  const workspaceCardBodyId = useId();
   const [expandedInlineActivityId, setExpandedInlineActivityId] = useState<string | null>(null);
+  const [workspaceCardCollapsed, setWorkspaceCardCollapsed] = useState(false);
   const [approvalRejectReasons, setApprovalRejectReasons] = useState<Record<string, string>>({});
   const canSend = taskPrompt.trim().length > 0 && !sending && projectSelected;
   const visibleMessages = useMemo(() => messages.filter((message) => !isSystemLikeMessage(message)), [messages]);
   const isInitialWorkspace = visibleMessages.length === 0;
+  const dateTimeFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }),
+    [],
+  );
+
+  const formatTimestamp = (value: string | number | Date) => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return 'Unknown time';
+    }
+    return dateTimeFormatter.format(parsed);
+  };
+
+  const roleLabel = (role: ChatMessage['role']) => {
+    if (role === 'user') return 'You';
+    if (role === 'assistant') return 'Cowork';
+    if (role === 'system') return 'System';
+    return role;
+  };
 
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey) {
@@ -103,6 +132,7 @@ export function CoworkPage({
       className="rounded-[26px] border border-border/90 bg-card/98 px-4 py-3.5 shadow-[0_14px_34px_rgba(24,23,20,0.10)]"
       onSubmit={onSubmit}
       ref={formRef}
+      aria-busy={sending || awaitingStream}
     >
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Badge
@@ -122,25 +152,30 @@ export function CoworkPage({
         ) : null}
       </div>
       <Textarea
+        id={taskPromptId}
         value={taskPrompt}
         onChange={(event) => onTaskPromptChange(event.target.value)}
         placeholder="How can I help you today?"
         rows={2}
         onKeyDown={handleComposerKeyDown}
         aria-label="Task prompt"
+        aria-describedby={taskPromptHelpId}
         className={`${textareaMinHeightClass} resize-none border-0 bg-transparent px-0 py-1.5 font-sans text-lg leading-7 text-foreground shadow-none focus-visible:ring-0`}
       />
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-        <p className="font-sans text-xs text-muted-foreground">
+        <p id={taskPromptHelpId} className="font-sans text-xs text-muted-foreground">
           {projectSelected ? 'Press Enter to send, Shift+Enter for a new line' : 'Choose a project to enable sending'}
         </p>
 
         <div className="ml-auto flex items-center gap-2">
+          <label htmlFor={modelSelectId} className="sr-only">Model</label>
           <select
+            id={modelSelectId}
             value={selectedModel}
             onChange={(event) => onModelChange(event.target.value)}
             disabled={modelsLoading || changingModel || models.length === 0}
             className="h-9 max-w-[260px] rounded-xl border border-border bg-background px-3 font-sans text-xs text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Model"
           >
             <option value="">{COWORK_DEFAULT_MODEL_LABEL}</option>
             {models.map((model) => (
@@ -161,6 +196,11 @@ export function CoworkPage({
           </Button>
         </div>
       </div>
+      {(modelsLoading || changingModel) && (
+        <p className="mt-2 font-sans text-[11px] text-muted-foreground">
+          {modelsLoading ? 'Loading models...' : 'Switching model...'}
+        </p>
+      )}
     </form>
   );
 
@@ -174,31 +214,9 @@ export function CoworkPage({
     >
       <div
         className={`grid h-full min-h-0 overflow-hidden bg-transparent ${
-          isInitialWorkspace ? 'grid-rows-[auto_minmax(0,1fr)]' : 'grid-rows-[auto_minmax(0,1fr)_auto]'
+          isInitialWorkspace ? 'grid-rows-[minmax(0,1fr)]' : 'grid-rows-[minmax(0,1fr)_auto]'
         }`}
       >
-        <div className="px-2 pt-2">
-          <div className="w-full rounded-xl border border-border bg-card/85 px-3 py-2">
-              <p className="truncate text-sm font-semibold tracking-tight text-foreground">{projectTitle || 'Cowork'}</p>
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-                <Badge
-                  variant="outline"
-                  className={`rounded-full font-sans text-[10px] ${
-                    projectSelected
-                      ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                      : 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                  }`}
-                >
-                  {projectSelected ? 'project selected' : 'select project'}
-                </Badge>
-              <Badge variant="outline" className="rounded-full font-sans text-[10px]">{projectTasks.length} recents</Badge>
-              <Badge variant="outline" className="rounded-full font-sans text-[10px]">{artifacts.length} artifacts</Badge>
-              <Badge variant="outline" className="rounded-full font-sans text-[10px]">{pendingApprovals.length} approvals</Badge>
-              <Badge variant="outline" className="rounded-full font-sans text-[10px]">{scheduledCount} scheduled</Badge>
-            </div>
-          </div>
-        </div>
-
         <ScrollArea className="h-full px-2">
           {isInitialWorkspace ? (
             <div className="mx-auto grid h-full w-full max-w-[920px] place-items-center">
@@ -208,6 +226,11 @@ export function CoworkPage({
                   <p className="font-sans text-sm text-muted-foreground">
                     Cowork runs against your configured gateway and supports file-aware task context.
                   </p>
+                  <ul className="mt-3 grid gap-1.5 font-sans text-xs text-muted-foreground">
+                    <li>Ask for planning, implementation, or review tasks.</li>
+                    <li>File writes are scoped to the selected project folder.</li>
+                    <li>Risky actions require explicit approval.</li>
+                  </ul>
                 </div>
 
                 <div className="mt-4">{renderCoworkComposer('min-h-[90px]')}</div>
@@ -219,13 +242,17 @@ export function CoworkPage({
                 <Card
                   className="overflow-visible rounded-2xl border-amber-300/70 bg-amber-50/60 dark:border-amber-700/40 dark:bg-amber-950/20"
                   data-testid="pending-approvals-card"
+                  aria-labelledby={approvalsHeadingId}
                 >
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Action required: approvals ({pendingApprovals.length})</CardTitle>
+                    <CardTitle id={approvalsHeadingId} className="text-sm">
+                      Action required: approvals ({pendingApprovals.length})
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="grid gap-2 pt-0">
                     {pendingApprovals.map((approval) => {
                       const rejectReason = approvalRejectReasons[approval.id] || '';
+                      const rejectReasonId = `pending-approval-reason-field-${approval.id}`;
                       return (
                         <div key={approval.id} className="rounded-xl border border-border bg-card p-2.5" data-testid={`pending-approval-${approval.id}`}>
                           <div className="mb-1.5 flex items-center gap-2">
@@ -244,7 +271,11 @@ export function CoworkPage({
                               <p className="max-h-36 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[10px] text-muted-foreground">{approval.preview}</p>
                             </div>
                           ) : null}
+                          <label htmlFor={rejectReasonId} className="sr-only">
+                            Rejection reason for {approval.summary}
+                          </label>
                           <Input
+                            id={rejectReasonId}
                             data-testid={`pending-approval-reason-${approval.id}`}
                             value={rejectReason}
                             onChange={(event) =>
@@ -278,6 +309,9 @@ export function CoworkPage({
                               Reject
                             </Button>
                           </div>
+                          <p className="mt-1 font-sans text-[10px] text-muted-foreground">
+                            Reject requires a reason to keep the project audit trail clear.
+                          </p>
                         </div>
                       );
                     })}
@@ -302,7 +336,7 @@ export function CoworkPage({
                         message.role === 'user' ? 'text-right' : ''
                       }`}
                     >
-                      {message.role}
+                      {roleLabel(message.role)}
                     </p>
 
                     {inline.body ? (
@@ -330,6 +364,8 @@ export function CoworkPage({
                                 className={`group flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors hover:bg-muted ${toneClass}`}
                                 onClick={() => setExpandedInlineActivityId((current) => (current === card.id ? null : card.id))}
                                 title={card.details}
+                                aria-expanded={expandedInlineActivityId === card.id}
+                                aria-controls={`inline-activity-${card.id}`}
                               >
                                 <span className="flex h-5 w-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
                                   <FileText className="h-3 w-3" />
@@ -343,7 +379,7 @@ export function CoworkPage({
                               </button>
 
                               {expandedInlineActivityId === card.id ? (
-                                <div className="border-t border-border px-3 py-2">
+                                <div id={`inline-activity-${card.id}`} className="border-t border-border px-3 py-2">
                                   <div className="text-xs leading-5 text-muted-foreground">
                                     <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
                                       {card.details}
@@ -387,103 +423,163 @@ export function CoworkPage({
         }`}
       >
         <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto py-2 pr-1">
-          <Card className="overflow-visible rounded-2xl border-border bg-card/90" data-testid="cowork-instructions-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Project Instructions</CardTitle>
+          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card/95 shadow-sm" data-testid="cowork-instructions-card">
+            <CardHeader className="space-y-3 pb-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-sans text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Project</p>
+                  <CardTitle className="mt-1 truncate text-sm">{projectTitle || 'Cowork'}</CardTitle>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <Badge
+                    variant="outline"
+                    className={`rounded-full font-sans text-[10px] ${
+                      projectSelected
+                        ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                        : 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                    }`}
+                  >
+                    {projectSelected ? 'Project Selected' : 'Select Project'}
+                  </Badge>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-6 w-6 rounded-md"
+                    onClick={() => setWorkspaceCardCollapsed((current) => !current)}
+                    aria-expanded={!workspaceCardCollapsed}
+                    aria-controls={workspaceCardBodyId}
+                    aria-label={workspaceCardCollapsed ? 'Expand project card' : 'Minimize project card'}
+                  >
+                    <ChevronRight className={`h-3.5 w-3.5 transition-transform ${workspaceCardCollapsed ? '' : 'rotate-90'}`} />
+                  </Button>
+                </div>
+              </div>
+
+              {!workspaceCardCollapsed ? (
+                <div id={workspaceCardBodyId} className="grid grid-cols-2 gap-1.5">
+                  <div className="rounded-lg border border-border/70 bg-background/60 px-2 py-1.5">
+                    <p className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground">Recents</p>
+                    <p className="font-sans text-sm font-semibold text-foreground">{projectTasks.length}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-background/60 px-2 py-1.5">
+                    <p className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground">Artifacts</p>
+                    <p className="font-sans text-sm font-semibold text-foreground">{artifacts.length}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-background/60 px-2 py-1.5">
+                    <p className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground">Approvals</p>
+                    <p className="font-sans text-sm font-semibold text-foreground">{pendingApprovals.length}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-background/60 px-2 py-1.5">
+                    <p className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground">Scheduled</p>
+                    <p className="font-sans text-sm font-semibold text-foreground">{scheduledCount}</p>
+                  </div>
+                </div>
+              ) : null}
             </CardHeader>
-            <CardContent className="pt-0">
-              <p className="mb-1 font-sans text-[11px] text-muted-foreground">
-                Execution guidance used for cowork runs in this project.
-              </p>
-              <p className="font-sans text-xs text-foreground/90">
-                {projectInstructions.trim() || 'Add project instructions in Project Settings to define role, tone, constraints, and output format.'}
-              </p>
-            </CardContent>
+            {!workspaceCardCollapsed ? (
+              <CardContent className="space-y-2 border-t border-border/70 pt-3">
+                <p className="font-sans text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Project instructions</p>
+                <div className="rounded-xl border border-border/70 bg-background/60 px-2.5 py-2">
+                  <p className="font-sans text-xs leading-5 text-foreground/90">
+                    {projectInstructions.trim() || 'Add project instructions in Project Settings to define role, tone, constraints, and output format.'}
+                  </p>
+                </div>
+              </CardContent>
+            ) : null}
           </Card>
 
-          <Card className="overflow-visible rounded-2xl border-border bg-card/90" data-testid="cowork-scheduled-card">
+          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card/95 shadow-sm" data-testid="cowork-scheduled-card">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center justify-between gap-2 text-sm">
                 Scheduled
-                <Badge variant="outline" className="font-sans text-[10px]">{scheduledCount}</Badge>
+                <Badge variant="outline" className="rounded-full font-sans text-[10px]">{scheduledCount}</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-2 pt-0">
-              <p className="font-sans text-xs text-muted-foreground">Set recurring tasks for this project workflow.</p>
-              <Button type="button" size="sm" variant="outline" onClick={onScheduleRun}>Open schedule</Button>
+              <p className="font-sans text-xs text-muted-foreground">Plan recurring cowork runs for this project workflow.</p>
+              <Button type="button" size="sm" variant="outline" onClick={onScheduleRun} className="w-full">
+                Open schedule
+              </Button>
             </CardContent>
           </Card>
 
-          <Card className="overflow-visible rounded-2xl border-border bg-card/90" data-testid="cowork-artifacts-card">
+          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card/95 shadow-sm" data-testid="cowork-artifacts-card">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Artifacts ({artifacts.length})</CardTitle>
+              <CardTitle className="flex items-center justify-between gap-2 text-sm">
+                Artifacts
+                <Badge variant="outline" className="rounded-full font-sans text-[10px]">{artifacts.length}</Badge>
+              </CardTitle>
             </CardHeader>
-            <CardContent className="pt-0 max-h-56 overflow-y-auto pr-1">
+            <CardContent className="max-h-60 space-y-1.5 overflow-y-auto pt-0 pr-1">
               {artifacts.length === 0 ? (
-                <p className="font-sans text-xs text-muted-foreground">No artifacts yet for this run.</p>
-              ) : (
-                <div className="grid gap-1.5">
-                  {artifacts.map((artifact) => (
-                    <button
-                      key={artifact.id}
-                      type="button"
-                      onClick={() => onOpenArtifact(artifact)}
-                      className="rounded-lg border border-border bg-background p-2 text-left transition-colors hover:bg-muted/60"
-                      data-testid={`cowork-artifact-${artifact.id}`}
-                    >
-                      <div className="mb-1 flex items-center justify-between gap-2">
-                        <p className="truncate font-sans text-xs text-foreground">{artifact.label}</p>
-                        <div className="flex items-center gap-1">
-                          {artifact.source ? (
-                            <Badge variant="outline" className="rounded-full font-sans text-[10px] capitalize">
-                              {artifact.source.replace('_', ' ')}
-                            </Badge>
-                          ) : null}
-                          <Badge
-                            variant="outline"
-                            className={`rounded-full font-sans text-[10px] ${artifact.status === 'ok' ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-destructive/35 bg-destructive/10 text-destructive'}`}
-                          >
-                            {artifact.status}
-                          </Badge>
-                        </div>
-                      </div>
-                      <p className="break-all font-sans text-[10px] text-muted-foreground">{artifact.path}</p>
-                      <p className="mt-1 font-sans text-[10px] text-muted-foreground">Updated {new Date(artifact.updatedAt).toLocaleTimeString()}</p>
-                    </button>
-                  ))}
+                <div className="rounded-lg border border-dashed border-border px-2.5 py-2">
+                  <p className="font-sans text-xs text-muted-foreground">No artifacts yet for this run.</p>
                 </div>
+              ) : (
+                artifacts.map((artifact) => (
+                  <button
+                    key={artifact.id}
+                    type="button"
+                    onClick={() => onOpenArtifact(artifact)}
+                    className="w-full rounded-lg border border-border bg-background/70 p-2 text-left transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    data-testid={`cowork-artifact-${artifact.id}`}
+                  >
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <p className="truncate font-sans text-xs font-medium text-foreground">{artifact.label}</p>
+                      <div className="flex items-center gap-1">
+                        {artifact.source ? (
+                          <Badge variant="outline" className="rounded-full font-sans text-[10px] capitalize">
+                            {artifact.source.replace('_', ' ')}
+                          </Badge>
+                        ) : null}
+                        <Badge
+                          variant="outline"
+                          className={`rounded-full font-sans text-[10px] ${artifact.status === 'ok' ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-destructive/35 bg-destructive/10 text-destructive'}`}
+                        >
+                          {artifact.status}
+                        </Badge>
+                      </div>
+                    </div>
+                    <p className="break-all font-sans text-[10px] text-muted-foreground">{artifact.path}</p>
+                    <p className="mt-1 font-sans text-[10px] text-muted-foreground" title={String(artifact.updatedAt)}>
+                      Updated {formatTimestamp(artifact.updatedAt)}
+                    </p>
+                  </button>
+                ))
               )}
             </CardContent>
           </Card>
 
-          <Card className="overflow-hidden rounded-2xl border-border bg-card/90" data-testid="cowork-project-recents">
+          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card/95 shadow-sm" data-testid="cowork-project-recents">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center justify-between gap-2 text-sm">
                 Recents in this project
-                <Badge variant="outline" className="font-sans text-[10px]">{projectTasks.length}</Badge>
+                <Badge variant="outline" className="rounded-full font-sans text-[10px]">{projectTasks.length}</Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-0 max-h-44 overflow-y-auto pr-1">
+            <CardContent className="max-h-52 space-y-1.5 overflow-y-auto pt-0 pr-1">
               {projectTasks.length === 0 ? (
-                <p className="font-sans text-xs text-muted-foreground">No project recents yet.</p>
-              ) : (
-                <div className="grid gap-1.5">
-                  {projectTasks.map((task) => (
-                    <div key={`recent-${task.id}`} className="rounded-lg border border-border bg-background px-2.5 py-2">
-                      <div className="mb-1 flex items-center gap-2">
-                        <Badge variant="outline" className={`rounded-full font-sans text-[10px] capitalize ${taskStatusClasses(task.status)}`}>
-                          {taskStatusLabel(task.status)}
-                        </Badge>
-                      </div>
-                      <p className="truncate font-sans text-xs text-foreground">{task.prompt}</p>
-                      <p className="mt-1 font-sans text-[10px] text-muted-foreground">Updated {new Date(task.updatedAt).toLocaleTimeString()}</p>
-                    </div>
-                  ))}
+                <div className="rounded-lg border border-dashed border-border px-2.5 py-2">
+                  <p className="font-sans text-xs text-muted-foreground">No project recents yet.</p>
                 </div>
+              ) : (
+                projectTasks.map((task) => (
+                  <div key={`recent-${task.id}`} className="rounded-lg border border-border bg-background/70 px-2.5 py-2">
+                    <div className="mb-1 flex items-center gap-2">
+                      <Badge variant="outline" className={`rounded-full font-sans text-[10px] capitalize ${taskStatusClasses(task.status)}`}>
+                        {taskStatusLabel(task.status)}
+                      </Badge>
+                    </div>
+                    <p className="truncate font-sans text-xs font-medium text-foreground">{task.prompt}</p>
+                    <p className="mt-1 font-sans text-[10px] text-muted-foreground" title={String(task.updatedAt)}>
+                      Updated {formatTimestamp(task.updatedAt)}
+                    </p>
+                  </div>
+                ))
               )}
             </CardContent>
           </Card>
-
         </div>
       </aside>
     </section>

@@ -13,6 +13,7 @@ import type {
   CoworkProjectTaskStatus,
   CoworkProject,
   CoworkRunPhase,
+  GatewayConnectionProfile,
   HealthCheckResult,
   LocalActionReceipt,
   LocalFilePlanAction,
@@ -99,6 +100,7 @@ const ScheduledPage = lazy(() => import('./features/workspace/scheduled-page').t
 const DEFAULT_GATEWAY_URL = 'ws://127.0.0.1:18789';
 
 const LOCAL_CONFIG_KEY = 'relay.config';
+const GATEWAY_CONNECTIONS_STORAGE_KEY = 'relay.gateway.connections.v1';
 const COWORK_PROJECTS_STORAGE_KEY = 'relay.cowork.projects.v1';
 const COWORK_ACTIVE_PROJECT_STORAGE_KEY = 'relay.cowork.projects.active.v1';
 const COWORK_TASKS_STORAGE_KEY = 'relay.cowork.tasks.v1';
@@ -235,6 +237,58 @@ function loadCoworkProjects(): CoworkProject[] {
   }
 }
 
+function loadGatewayConnectionProfiles(): GatewayConnectionProfile[] {
+  try {
+    const raw = localStorage.getItem(GATEWAY_CONNECTIONS_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .map((entry): GatewayConnectionProfile | null => {
+        if (!entry || typeof entry !== 'object') {
+          return null;
+        }
+
+        const record = entry as Record<string, unknown>;
+        const id = typeof record.id === 'string' ? record.id.trim() : '';
+        const name = typeof record.name === 'string' ? record.name.trim() : '';
+        const gatewayUrl = typeof record.gatewayUrl === 'string' ? record.gatewayUrl.trim() : '';
+        const gatewayToken = typeof record.gatewayToken === 'string' ? record.gatewayToken : '';
+        const createdAt = typeof record.createdAt === 'number' ? record.createdAt : Date.now();
+        const updatedAt = typeof record.updatedAt === 'number' ? record.updatedAt : createdAt;
+        const lastUsedAt = typeof record.lastUsedAt === 'number' ? record.lastUsedAt : undefined;
+
+        if (!id || !name || !gatewayUrl) {
+          return null;
+        }
+
+        return {
+          id,
+          name,
+          gatewayUrl,
+          gatewayToken,
+          createdAt,
+          updatedAt,
+          lastUsedAt,
+        };
+      })
+      .filter((profile): profile is GatewayConnectionProfile => profile !== null)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  } catch {
+    return [];
+  }
+}
+
+function persistGatewayConnectionProfiles(profiles: GatewayConnectionProfile[]) {
+  localStorage.setItem(GATEWAY_CONNECTIONS_STORAGE_KEY, JSON.stringify(profiles));
+}
+
 function loadActiveCoworkProjectId(): string {
   try {
     const raw = localStorage.getItem(COWORK_ACTIVE_PROJECT_STORAGE_KEY);
@@ -344,6 +398,7 @@ export default function App() {
   const [configReady, setConfigReady] = useState(false);
   const [draftGatewayUrl, setDraftGatewayUrl] = useState(DEFAULT_GATEWAY_URL);
   const [draftGatewayToken, setDraftGatewayToken] = useState('');
+  const [gatewayConnections, setGatewayConnections] = useState<GatewayConnectionProfile[]>(() => loadGatewayConnectionProfiles());
   const [health, setHealth] = useState<HealthCheckResult | null>(null);
   const [status, setStatus] = useState('Loading configuration...');
   const { preferences, updatePreferences } = usePreferences();
@@ -461,6 +516,11 @@ export default function App() {
       .filter((approval) => approval.projectId === activeCoworkProjectId)
       .sort((a, b) => b.createdAt - a.createdAt);
   }, [activeCoworkProjectId, pendingApprovals]);
+  const selectedGatewayConnectionId = useMemo(() => {
+    const normalizedUrl = draftGatewayUrl.trim() || DEFAULT_GATEWAY_URL;
+    const normalizedToken = draftGatewayToken ?? '';
+    return gatewayConnections.find((profile) => profile.gatewayUrl === normalizedUrl && profile.gatewayToken === normalizedToken)?.id ?? null;
+  }, [draftGatewayToken, draftGatewayUrl, gatewayConnections]);
 
   const contextFolders = useMemo(() => {
     const folders = [activeCoworkProject?.workspaceFolder?.trim() || '', workingFolder.trim()].filter(Boolean);
@@ -1377,6 +1437,115 @@ export default function App() {
   const persistLocalConfig = (nextConfig: AppConfig) => {
     localStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(nextConfig));
   };
+
+  const updateGatewayConnections = useCallback((updater: (prev: GatewayConnectionProfile[]) => GatewayConnectionProfile[]) => {
+    setGatewayConnections((prev) => {
+      const next = updater(prev);
+      persistGatewayConnectionProfiles(next);
+      return next;
+    });
+  }, []);
+
+  const markGatewayConnectionLastUsed = useCallback((connectedConfig: AppConfig) => {
+    const gatewayUrl = connectedConfig.gatewayUrl.trim() || DEFAULT_GATEWAY_URL;
+    const gatewayToken = connectedConfig.gatewayToken ?? '';
+    const now = Date.now();
+
+    updateGatewayConnections((prev) =>
+      prev.map((profile) =>
+        profile.gatewayUrl === gatewayUrl && profile.gatewayToken === gatewayToken
+          ? { ...profile, lastUsedAt: now, updatedAt: now }
+          : profile,
+      ),
+    );
+  }, [updateGatewayConnections]);
+
+  const handleSelectGatewayConnection = useCallback((connectionId: string) => {
+    const profile = gatewayConnections.find((entry) => entry.id === connectionId);
+    if (!profile) {
+      return;
+    }
+
+    setDraftGatewayUrl(profile.gatewayUrl);
+    setDraftGatewayToken(profile.gatewayToken);
+    setStatus(`Loaded connection "${profile.name}". Click Save and connect to apply it.`);
+  }, [gatewayConnections]);
+
+  const handleSaveGatewayConnection = useCallback((name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setStatus('Connection name is required.');
+      return;
+    }
+
+    const normalizedUrl = draftGatewayUrl.trim() || DEFAULT_GATEWAY_URL;
+    const now = Date.now();
+
+    updateGatewayConnections((prev) => {
+      const duplicateByName = prev.find((entry) => entry.name.toLowerCase() === trimmedName.toLowerCase());
+      if (duplicateByName) {
+        return prev
+          .map((entry) =>
+            entry.id === duplicateByName.id
+              ? {
+                  ...entry,
+                  name: trimmedName,
+                  gatewayUrl: normalizedUrl,
+                  gatewayToken: draftGatewayToken,
+                  updatedAt: now,
+                }
+              : entry,
+          )
+          .sort((a, b) => b.updatedAt - a.updatedAt);
+      }
+
+      const id =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `conn-${now}-${Math.random().toString(36).slice(2, 9)}`;
+
+      return [
+        {
+          id,
+          name: trimmedName,
+          gatewayUrl: normalizedUrl,
+          gatewayToken: draftGatewayToken,
+          createdAt: now,
+          updatedAt: now,
+        },
+        ...prev,
+      ];
+    });
+
+    setStatus(`Saved connection "${trimmedName}".`);
+  }, [draftGatewayToken, draftGatewayUrl, updateGatewayConnections]);
+
+  const handleOverwriteGatewayConnection = useCallback((connectionId: string) => {
+    const normalizedUrl = draftGatewayUrl.trim() || DEFAULT_GATEWAY_URL;
+    const now = Date.now();
+
+    updateGatewayConnections((prev) =>
+      prev
+        .map((entry) =>
+          entry.id === connectionId
+            ? {
+                ...entry,
+                gatewayUrl: normalizedUrl,
+                gatewayToken: draftGatewayToken,
+                updatedAt: now,
+              }
+            : entry,
+        )
+        .sort((a, b) => b.updatedAt - a.updatedAt),
+    );
+
+    setStatus('Updated saved connection with current URL/token.');
+  }, [draftGatewayToken, draftGatewayUrl, updateGatewayConnections]);
+
+  const handleDeleteGatewayConnection = useCallback((connectionId: string) => {
+    updateGatewayConnections((prev) => prev.filter((entry) => entry.id !== connectionId));
+    setStatus('Deleted saved connection.');
+  }, [updateGatewayConnections]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -2602,6 +2771,7 @@ export default function App() {
       })
       .then(async () => {
         setHealth({ ok: true, message: `Connected to ${gatewayUrl}` });
+        markGatewayConnectionLastUsed({ gatewayUrl, gatewayToken });
         if (!onboardingComplete) {
           completeOnboarding();
         }
@@ -2625,7 +2795,7 @@ export default function App() {
           setStatus(offlineMessage);
         }
       });
-  }, [config.gatewayToken, config.gatewayUrl, onboardingComplete, configReady]);
+  }, [config.gatewayToken, config.gatewayUrl, onboardingComplete, configReady, markGatewayConnectionLastUsed]);
 
   useEffect(() => {
     if (activePage !== 'chat') {
@@ -2699,6 +2869,7 @@ export default function App() {
 
       setHealth({ ok: true, message: `Connected to ${nextConfig.gatewayUrl}` });
       setStatus('Configuration saved. Connected to Gateway.');
+      markGatewayConnectionLastUsed(nextConfig);
     } catch (error) {
       console.error('[Relay] connect error:', error);
       const info = readGatewayError(error);
@@ -4213,9 +4384,15 @@ export default function App() {
                         saving={saving}
                         pairingRequestId={pairingRequestId}
                         preferences={preferences}
+                        gatewayConnections={gatewayConnections}
+                        selectedGatewayConnectionId={selectedGatewayConnectionId}
                         onDraftGatewayUrlChange={setDraftGatewayUrl}
                         onDraftGatewayTokenChange={setDraftGatewayToken}
                         onSave={handleSave}
+                        onSelectGatewayConnection={handleSelectGatewayConnection}
+                        onSaveGatewayConnection={handleSaveGatewayConnection}
+                        onOverwriteGatewayConnection={handleOverwriteGatewayConnection}
+                        onDeleteGatewayConnection={handleDeleteGatewayConnection}
                         onResetPairing={handleResetPairing}
                         onUpdatePreferences={updatePreferences}
                       />

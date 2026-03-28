@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { Code2, Folder, Globe, KeyRound, Link2, Shield, Terminal } from 'lucide-react';
+import { Code2, Folder, Globe, KeyRound, Link2, Shield, Terminal, Trash2 } from 'lucide-react';
 
-import type { HealthCheckResult, UserPreferences } from '@/app-types';
+import type { GatewayConnectionProfile, HealthCheckResult, UserPreferences } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,9 +28,15 @@ type SettingsPageProps = {
   saving: boolean;
   pairingRequestId: string | null;
   preferences: UserPreferences;
+  gatewayConnections: GatewayConnectionProfile[];
+  selectedGatewayConnectionId: string | null;
   onDraftGatewayUrlChange: (value: string) => void;
   onDraftGatewayTokenChange: (value: string) => void;
   onSave: (event: FormEvent) => void;
+  onSelectGatewayConnection: (connectionId: string) => void;
+  onSaveGatewayConnection: (name: string) => void;
+  onOverwriteGatewayConnection: (connectionId: string) => void;
+  onDeleteGatewayConnection: (connectionId: string) => void;
   onResetPairing: () => void | Promise<void>;
   onUpdatePreferences: (patch: Partial<UserPreferences>) => void;
 };
@@ -72,152 +78,153 @@ const sectionDescriptions: Record<SettingsSection, { en: string; de: string }> =
 
 function StylePreview({ style, dark }: { style: StyleOption; dark: boolean }) {
   const isRelay = style === 'relay';
-  const id = isRelay ? 'relay' : 'claude';
-
   const colors = isRelay
     ? dark
       ? {
-          top: '#090909',
-          bottom: '#131313',
-          surface: '#121212',
-          surfaceBorder: '#2b2b2b',
-          lineStrong: '#fafafa',
-          lineSoft: '#a6a6a6',
-          panel: '#1a1a1a',
-          accentA: '#bbf451',
-          accentB: '#a8df44',
+          bg: '#0b0d0c',
+          surface: '#121514',
+          border: '#2b312e',
+          lineStrong: '#f1f5f3',
+          lineSoft: '#98a8a2',
+          lineMuted: '#6d7b75',
+          panel: '#1a1f1d',
+          accentStrong: '#bbf451',
+          accentSoft: '#3c4d1b',
         }
       : {
-          top: '#ffffff',
-          bottom: '#f4f8f1',
+          bg: '#f6f8f7',
           surface: '#ffffff',
-          surfaceBorder: '#e8e8e8',
-          lineStrong: '#070707',
-          lineSoft: '#666666',
-          panel: '#f6f6f6',
-          accentA: '#bbf451',
-          accentB: '#a8df44',
+          border: '#d8dfdb',
+          lineStrong: '#101513',
+          lineSoft: '#5f6f68',
+          lineMuted: '#8ea099',
+          panel: '#f2f6f4',
+          accentStrong: '#7b9f2f',
+          accentSoft: '#dcf0b3',
         }
-    : {
-        top: dark ? '#1c1b18' : '#fbf5ea',
-        bottom: dark ? '#2a2924' : '#f4e8d7',
-        surface: dark ? '#242320' : '#fff9f2',
-        surfaceBorder: dark ? '#3a3a36' : '#e4d4bd',
-        lineStrong: dark ? '#e8e6e0' : '#9b806f',
-        lineSoft: dark ? '#8a887e' : '#d8c3a7',
-        panel: dark ? '#2a2924' : '#f4ecdf',
-        accentA: '#df9a79',
-        accentB: '#c47a5c',
-      };
+    : dark
+      ? {
+          bg: '#1f1d1a',
+          surface: '#2a2723',
+          border: '#3b3732',
+          lineStrong: '#e4dacd',
+          lineSoft: '#a79a8b',
+          lineMuted: '#7f7569',
+          panel: '#302d29',
+          accentStrong: '#df9a79',
+          accentSoft: '#553f35',
+        }
+      : {
+          bg: '#f4f3ee',
+          surface: '#fff9f2',
+          border: '#ded3c2',
+          lineStrong: '#9b806f',
+          lineSoft: '#c7b19d',
+          lineMuted: '#dcc9b7',
+          panel: '#f0e5d7',
+          accentStrong: '#c47a5c',
+          accentSoft: '#edd4c7',
+        };
 
   return (
-    <svg
-      viewBox="0 0 320 140"
-      className="block h-full w-full"
-      preserveAspectRatio="xMidYMid slice"
-      role="img"
-      aria-label={`${isRelay ? 'Relay' : 'Claude'} style preview`}
-    >
-      <defs>
-        <linearGradient id={`${id}-bg`} x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0%" stopColor={colors.top} />
-          <stop offset="100%" stopColor={colors.bottom} />
-        </linearGradient>
-        <linearGradient id={`${id}-accent`} x1="0" x2="1" y1="0" y2="0">
-          <stop offset="0%" stopColor={colors.accentA} />
-          <stop offset="100%" stopColor={colors.accentB} />
-        </linearGradient>
-      </defs>
+    <svg viewBox="0 0 320 140" className="block h-full w-full" preserveAspectRatio="none" role="img" aria-label={`${isRelay ? 'Relay' : 'Claude'} style preview`}>
+      <rect x="0" y="0" width="320" height="140" fill={colors.bg} />
+      <rect x="10" y="10" width="98" height="120" rx="10" fill={colors.surface} stroke={colors.border} />
+      <rect x="22" y="22" width="48" height="8" rx="4" fill={colors.accentStrong} opacity="0.85" />
+      <rect x="22" y="36" width="34" height="5" rx="2.5" fill={colors.lineSoft} />
+      <rect x="22" y="46" width="40" height="5" rx="2.5" fill={colors.lineMuted} />
+      <rect x="22" y="58" width="74" height="24" rx="7" fill={colors.accentSoft} />
 
-      <rect x="0" y="0" width="320" height="140" fill={`url(#${id}-bg)`} />
-
-      <rect x="0" y="0" width="96" height="140" fill={colors.surface} stroke={colors.surfaceBorder} />
-      <rect x="12" y="16" width="64" height="8" rx="4" fill={colors.lineStrong} opacity="0.75" />
-      <rect x="12" y="32" width="54" height="6" rx="3" fill={colors.lineSoft} />
-      <rect x="12" y="44" width="60" height="6" rx="3" fill={colors.lineSoft} />
-      <rect x="12" y="60" width="52" height="24" rx="7" fill={`url(#${id}-accent)`} />
-      <rect x="12" y="92" width="72" height="18" rx="7" fill={colors.panel} stroke={colors.surfaceBorder} />
-
-      <rect x="96" y="0" width="224" height="140" fill={colors.surface} stroke={colors.surfaceBorder} />
-      <rect x="110" y="16" width="94" height="8" rx="4" fill={colors.lineStrong} opacity="0.72" />
-      <rect x="110" y="32" width="176" height="6" rx="3" fill={colors.lineSoft} />
-      <rect x="110" y="44" width="156" height="6" rx="3" fill={colors.lineSoft} />
-      <rect x="110" y="60" width="82" height="28" rx="8" fill={colors.panel} stroke={colors.surfaceBorder} />
-      <rect x="202" y="60" width="96" height="28" rx="8" fill={`url(#${id}-accent)`} opacity="0.18" />
-      <rect x="110" y="96" width="184" height="8" rx="4" fill={colors.lineSoft} />
+      <rect x="118" y="10" width="192" height="120" rx="10" fill={colors.surface} stroke={colors.border} />
+      <rect x="132" y="22" width="96" height="8" rx="4" fill={colors.lineStrong} />
+      <rect x="132" y="36" width="152" height="5" rx="2.5" fill={colors.lineSoft} />
+      <rect x="132" y="46" width="132" height="5" rx="2.5" fill={colors.lineMuted} />
+      <rect x="132" y="62" width="78" height="30" rx="8" fill={colors.panel} stroke={colors.border} />
+      <rect x="220" y="62" width="76" height="30" rx="8" fill={colors.accentSoft} />
     </svg>
   );
 }
 
-function ThemePreview({ mode }: { mode: ThemeOption }) {
-  if (mode === 'dark') {
-    return (
-      <svg viewBox="0 0 320 140" className="block h-full w-full" preserveAspectRatio="none" role="img" aria-label="Dark theme preview">
-        <rect x="0" y="0" width="320" height="140" fill="#1c1b18" />
-        <rect x="0" y="0" width="96" height="140" fill="#242320" stroke="#3a3a36" />
-        <rect x="12" y="16" width="58" height="8" rx="4" fill="#e8e6e0" opacity="0.8" />
-        <rect x="12" y="32" width="48" height="6" rx="3" fill="#8a887e" />
-        <rect x="12" y="44" width="56" height="6" rx="3" fill="#8a887e" />
-        <rect x="12" y="60" width="52" height="24" rx="7" fill="#4b4a45" />
-        <rect x="96" y="0" width="224" height="140" fill="#242320" stroke="#3a3a36" />
-        <rect x="110" y="16" width="92" height="8" rx="4" fill="#e8e6e0" opacity="0.76" />
-        <rect x="110" y="32" width="166" height="6" rx="3" fill="#8a887e" />
-        <rect x="110" y="44" width="148" height="6" rx="3" fill="#8a887e" />
-        <rect x="110" y="60" width="74" height="28" rx="8" fill="#2f2e2a" stroke="#3a3a36" />
-        <rect x="194" y="60" width="92" height="28" rx="8" fill="#e8e6e0" opacity="0.12" />
-      </svg>
-    );
-  }
+function ThemePreview({ mode, style }: { mode: ThemeOption; style: StyleOption }) {
+  const modeLabel = mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'Auto';
+  const isRelay = style === 'relay';
+  const light = isRelay
+    ? {
+        bg: '#f6f8f7',
+        surface: '#ffffff',
+        border: '#d8dfdb',
+        lineStrong: '#101513',
+        lineSoft: '#5f6f68',
+        lineMuted: '#8ea099',
+        panel: '#f2f6f4',
+      }
+    : {
+        bg: '#f4f3ee',
+        surface: '#fff9f2',
+        border: '#ded3c2',
+        lineStrong: '#9b806f',
+        lineSoft: '#c7b19d',
+        lineMuted: '#dcc9b7',
+        panel: '#f0e5d7',
+      };
+  const dark = isRelay
+    ? {
+        bg: '#0b0d0c',
+        surface: '#121514',
+        border: '#2b312e',
+        lineStrong: '#f1f5f3',
+        lineSoft: '#98a8a2',
+        lineMuted: '#6d7b75',
+        panel: '#1a1f1d',
+      }
+    : {
+        bg: '#1f1d1a',
+        surface: '#2a2723',
+        border: '#3b3732',
+        lineStrong: '#e4dacd',
+        lineSoft: '#a79a8b',
+        lineMuted: '#7f7569',
+        panel: '#302d29',
+      };
 
-  if (mode === 'auto') {
-    return (
-      <svg viewBox="0 0 320 140" className="block h-full w-full" preserveAspectRatio="none" role="img" aria-label="Auto theme preview">
-        <rect x="0" y="0" width="160" height="140" fill="#f4f3ee" />
-        <rect x="160" y="0" width="160" height="140" fill="#1c1b18" />
-
-        <rect x="12" y="14" width="64" height="112" rx="9" fill="#ffffff" stroke="#deddd4" />
-        <rect x="20" y="24" width="42" height="6" rx="3" fill="#1f1f1c" opacity="0.7" />
-        <rect x="20" y="37" width="34" height="5" rx="2.5" fill="#8d8b84" />
-        <rect x="20" y="48" width="38" height="5" rx="2.5" fill="#8d8b84" />
-        <rect x="20" y="61" width="36" height="18" rx="6" fill="#e5dfd2" />
-
-        <rect x="84" y="14" width="64" height="112" rx="9" fill="#ffffff" stroke="#deddd4" />
-        <rect x="92" y="24" width="42" height="6" rx="3" fill="#1f1f1c" opacity="0.7" />
-        <rect x="92" y="37" width="34" height="5" rx="2.5" fill="#8d8b84" />
-        <rect x="92" y="48" width="38" height="5" rx="2.5" fill="#8d8b84" />
-        <rect x="92" y="61" width="36" height="18" rx="6" fill="#e5dfd2" />
-
-        <rect x="172" y="14" width="64" height="112" rx="9" fill="#242320" stroke="#3a3a36" />
-        <rect x="180" y="24" width="42" height="6" rx="3" fill="#e8e6e0" opacity="0.8" />
-        <rect x="180" y="37" width="34" height="5" rx="2.5" fill="#8a887e" />
-        <rect x="180" y="48" width="38" height="5" rx="2.5" fill="#8a887e" />
-        <rect x="180" y="61" width="36" height="18" rx="6" fill="#34332f" />
-
-        <rect x="244" y="14" width="64" height="112" rx="9" fill="#242320" stroke="#3a3a36" />
-        <rect x="252" y="24" width="42" height="6" rx="3" fill="#e8e6e0" opacity="0.8" />
-        <rect x="252" y="37" width="34" height="5" rx="2.5" fill="#8a887e" />
-        <rect x="252" y="48" width="38" height="5" rx="2.5" fill="#8a887e" />
-        <rect x="252" y="61" width="36" height="18" rx="6" fill="#34332f" />
-
-        <line x1="160" y1="10" x2="160" y2="130" stroke="#9ca3af" strokeDasharray="4 4" />
-      </svg>
-    );
-  }
-
+  const active = mode === 'dark' ? dark : light;
   return (
-    <svg viewBox="0 0 320 140" className="block h-full w-full" preserveAspectRatio="none" role="img" aria-label="Light theme preview">
-      <rect x="0" y="0" width="320" height="140" fill="#f4f3ee" />
-      <rect x="0" y="0" width="96" height="140" fill="#ffffff" stroke="#deddd4" />
-      <rect x="12" y="16" width="58" height="8" rx="4" fill="#1f1f1c" opacity="0.72" />
-      <rect x="12" y="32" width="48" height="6" rx="3" fill="#8d8b84" />
-      <rect x="12" y="44" width="56" height="6" rx="3" fill="#8d8b84" />
-      <rect x="12" y="60" width="50" height="24" rx="7" fill="#e5dfd2" />
-      <rect x="96" y="0" width="224" height="140" fill="#ffffff" stroke="#deddd4" />
-      <rect x="110" y="16" width="92" height="8" rx="4" fill="#1f1f1c" opacity="0.68" />
-      <rect x="110" y="32" width="166" height="6" rx="3" fill="#8d8b84" />
-      <rect x="110" y="44" width="148" height="6" rx="3" fill="#8d8b84" />
-      <rect x="110" y="60" width="74" height="28" rx="8" fill="#f3efe6" stroke="#deddd4" />
-      <rect x="194" y="60" width="92" height="28" rx="8" fill="#111827" opacity="0.08" />
+    <svg viewBox="0 0 320 140" className="block h-full w-full" preserveAspectRatio="none" role="img" aria-label={`${modeLabel} theme preview`}>
+      <rect x="0" y="0" width="320" height="140" fill={mode === 'auto' ? light.bg : active.bg} />
+      {mode === 'auto' ? <rect x="160" y="0" width="160" height="140" fill={dark.bg} /> : null}
+      <rect
+        x="14"
+        y="14"
+        width={mode === 'auto' ? 140 : 292}
+        height="112"
+        rx="10"
+        fill={mode === 'auto' ? light.surface : active.surface}
+        stroke={mode === 'auto' ? light.border : active.border}
+      />
+      <rect
+        x={mode === 'auto' ? 166 : 26}
+        y="14"
+        width={mode === 'auto' ? 140 : 0}
+        height="112"
+        rx="10"
+        fill={mode === 'auto' ? dark.surface : active.surface}
+        stroke={mode === 'auto' ? dark.border : 'transparent'}
+      />
+
+      <rect x={mode === 'auto' ? 28 : 30} y="30" width="56" height="7" rx="3.5" fill={mode === 'auto' ? light.lineStrong : active.lineStrong} />
+      <rect x={mode === 'auto' ? 28 : 30} y="43" width="86" height="5" rx="2.5" fill={mode === 'auto' ? light.lineSoft : active.lineSoft} />
+      <rect x={mode === 'auto' ? 28 : 30} y="54" width="70" height="5" rx="2.5" fill={mode === 'auto' ? light.lineMuted : active.lineMuted} />
+      <rect x={mode === 'auto' ? 28 : 30} y="66" width="66" height="24" rx="7" fill={mode === 'auto' ? light.panel : active.panel} />
+
+      {mode === 'auto' ? (
+        <>
+          <rect x="180" y="30" width="56" height="7" rx="3.5" fill={dark.lineStrong} />
+          <rect x="180" y="43" width="86" height="5" rx="2.5" fill={dark.lineSoft} />
+          <rect x="180" y="54" width="70" height="5" rx="2.5" fill={dark.lineMuted} />
+          <rect x="180" y="66" width="66" height="24" rx="7" fill={dark.panel} />
+          <line x1="160" y1="14" x2="160" y2="126" stroke={dark.border} strokeDasharray="4 4" />
+        </>
+      ) : null}
     </svg>
   );
 }
@@ -231,15 +238,22 @@ export function SettingsPage({
   saving,
   pairingRequestId,
   preferences,
+  gatewayConnections,
+  selectedGatewayConnectionId,
   onDraftGatewayUrlChange,
   onDraftGatewayTokenChange,
   onSave,
+  onSelectGatewayConnection,
+  onSaveGatewayConnection,
+  onOverwriteGatewayConnection,
+  onDeleteGatewayConnection,
   onResetPairing,
   onUpdatePreferences,
 }: SettingsPageProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [copied, setCopied] = useState(false);
   const [prefersDarkSystem, setPrefersDarkSystem] = useState(false);
+  const [connectionNameDraft, setConnectionNameDraft] = useState('');
   const t = useCallback((en: string, de: string) => (preferences.language === 'de' ? de : en), [preferences.language]);
 
   useEffect(() => {
@@ -277,6 +291,13 @@ export function SettingsPage({
       setTimeout(() => setCopied(false), 2000);
     });
   }, [effectivePairingId]);
+
+  const handleSaveCurrentConnection = useCallback(() => {
+    const fallbackName = draftGatewayUrl.trim() || 'Gateway connection';
+    const nextName = connectionNameDraft.trim() || fallbackName;
+    onSaveGatewayConnection(nextName);
+    setConnectionNameDraft('');
+  }, [connectionNameDraft, draftGatewayUrl, onSaveGatewayConnection]);
 
   const renderPlaceholder = (icon: ReactNode, hint: string) => (
     <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/60 py-12 text-center">
@@ -356,13 +377,13 @@ export function SettingsPage({
                   onClick={() => onUpdatePreferences({ theme: value })}
                   className={`overflow-hidden rounded-xl border p-0 text-left transition-colors ${
                     preferences.theme === value
-                      ? 'border-[#d98765] bg-background text-foreground shadow-[0_0_0_1px_rgba(222,130,94,0.18)]'
+                      ? 'border-primary/50 bg-background text-foreground shadow-[0_0_0_1px_hsl(var(--primary)/0.2)]'
                       : 'border-border bg-background text-muted-foreground hover:border-border/80 hover:bg-muted/30'
                   }`}
                 >
                   <div className="relative h-36 w-full overflow-hidden border-b border-border/70">
                     <div className="absolute inset-0">
-                      <ThemePreview mode={value} />
+                      <ThemePreview mode={value} style={preferences.style} />
                     </div>
                   </div>
                   <div className="flex min-h-[92px] flex-col px-3 py-3">
@@ -519,7 +540,7 @@ export function SettingsPage({
                 variant="outline"
                 className={
                   health?.ok
-                    ? 'rounded-full border border-[rgba(47,122,88,0.35)] bg-[rgba(47,122,88,0.08)] font-sans text-[11px] text-[#2f7a58]'
+                    ? 'rounded-full border border-primary/35 bg-primary/10 font-sans text-[11px] text-primary'
                     : 'rounded-full font-sans text-[11px]'
                 }
               >
@@ -549,7 +570,7 @@ export function SettingsPage({
               </label>
 
               <Button
-                className="w-full border-0 bg-[linear-gradient(120deg,#ea9f7d,#de825e)] text-[#fffefb]"
+                className="w-full border-0 bg-primary text-primary-foreground hover:bg-primary/90"
                 type="submit"
                 disabled={saving}
               >
@@ -558,34 +579,34 @@ export function SettingsPage({
             </form>
 
             {effectivePairingId ? (
-              <div className="mt-3 rounded-lg border border-[rgba(222,130,94,0.35)] bg-[rgba(222,130,94,0.08)] p-3">
-                <p className="font-sans text-xs font-medium text-[#7a4a38]">{t('Device pairing required', 'Geraete-Pairing erforderlich')}</p>
-                <p className="mt-1 font-sans text-xs text-[#7a4a38]">
+              <div className="mt-3 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3">
+                <p className="font-sans text-xs font-medium text-amber-800 dark:text-amber-200">{t('Device pairing required', 'Geraete-Pairing erforderlich')}</p>
+                <p className="mt-1 font-sans text-xs text-amber-800 dark:text-amber-200">
                   {t('Run this command on your gateway host:', 'Fuehre diesen Befehl auf deinem Gateway-Host aus:')}
                 </p>
                 <div className="mt-1 flex items-center gap-1">
-                  <code className="flex-1 rounded bg-[rgba(0,0,0,0.05)] px-2 py-1 font-mono text-xs text-[#7a4a38] select-all">
+                  <code className="flex-1 rounded bg-background/70 px-2 py-1 font-mono text-xs text-amber-900 dark:text-amber-100 select-all">
                     openclaw devices approve {effectivePairingId}
                   </code>
                   <button
                     type="button"
-                    className="shrink-0 rounded bg-[rgba(0,0,0,0.05)] px-2 py-1 font-sans text-[10px] text-[#7a4a38] hover:bg-[rgba(0,0,0,0.1)]"
+                    className="shrink-0 rounded bg-background/70 px-2 py-1 font-sans text-[10px] text-amber-900 dark:text-amber-100 hover:bg-background"
                     onClick={copyCommand}
                   >
                     {copied ? t('Copied', 'Kopiert') : t('Copy', 'Kopieren')}
                   </button>
                 </div>
-                <p className="mt-2 font-sans text-xs text-[#7a4a38]/70">
+                <p className="mt-2 font-sans text-xs text-amber-900/80 dark:text-amber-100/80">
                   {t('Click Save and connect again afterwards.', 'Klicke danach erneut auf Speichern und verbinden.')}
                 </p>
               </div>
             ) : health && !health.ok ? (
-              <div className="mt-3 rounded-lg border border-[rgba(180,80,50,0.25)] bg-[rgba(180,80,50,0.06)] p-3">
-                <p className="font-sans text-xs font-medium text-[#7a4a38]">{t('Connection failed', 'Verbindung fehlgeschlagen')}</p>
-                <p className="mt-1 font-sans text-xs text-[#7a4a38]/80">{health.message}</p>
+              <div className="mt-3 rounded-lg border border-destructive/25 bg-destructive/10 p-3">
+                <p className="font-sans text-xs font-medium text-destructive">{t('Connection failed', 'Verbindung fehlgeschlagen')}</p>
+                <p className="mt-1 font-sans text-xs text-destructive/85">{health.message}</p>
               </div>
             ) : health?.ok ? (
-              <p className="mt-3 font-sans text-xs text-[#2f7a58]">{status}</p>
+              <p className="mt-3 font-sans text-xs text-primary">{status}</p>
             ) : status ? (
               <p className="mt-3 font-sans text-xs text-muted-foreground">{status}</p>
             ) : null}
@@ -595,38 +616,85 @@ export function SettingsPage({
 
           <section>
             <div className="mb-3">
-              <h2 className="text-base font-medium">Routing</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{t('Configure how Relay connects to the OpenClaw backend.', 'Konfiguriere, wie Relay sich mit dem OpenClaw-Backend verbindet.')}</p>
+              <h2 className="text-base font-medium">{t('Saved connections', 'Gespeicherte Verbindungen')}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t('Store multiple gateways and switch between them quickly.', 'Speichere mehrere Gateways und wechsle schnell zwischen ihnen.')}
+              </p>
             </div>
             <div className="grid gap-3">
-              <div className="flex flex-col gap-2">
-                {([
-                  [t('Local', 'Lokal'), 'ws://127.0.0.1:18789', t('Gateway running on this machine', 'Gateway laeuft auf diesem Rechner')],
-                  ['VPS / Remote', 'wss://gateway.example.com', t('Gateway on an external server', 'Gateway auf einem externen Server')],
-                  [t('Custom', 'Benutzerdefiniert'), '', t('Enter your own URL', 'Eigene URL eingeben')],
-                ] as const).map(([label, url, desc]) => {
-                  const isSelected = url
-                    ? draftGatewayUrl === url
-                    : draftGatewayUrl !== 'ws://127.0.0.1:18789' && draftGatewayUrl !== 'wss://gateway.example.com';
-                  return (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => { if (url) onDraftGatewayUrlChange(url); }}
-                      className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition ${
-                        isSelected
-                          ? 'border-[#d98765] bg-[rgba(222,130,94,0.08)]'
-                          : 'border-border hover:bg-muted'
-                      }`}
-                    >
-                      <div className={`mt-0.5 h-3 w-3 shrink-0 rounded-full border-2 ${isSelected ? 'border-[#d98765] bg-[#d98765]' : 'border-muted-foreground/40'}`} />
-                      <div>
-                        <p className="font-medium">{label}</p>
-                        <p className="text-xs text-muted-foreground">{desc}</p>
+              <div className="rounded-lg border border-border/70 bg-card p-3">
+                <p className="mb-2 font-sans text-xs text-muted-foreground">
+                  {t('Save the current URL/token as a reusable profile.', 'Speichere die aktuelle URL/den Token als wiederverwendbares Profil.')}
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    value={connectionNameDraft}
+                    onChange={(event) => setConnectionNameDraft(event.target.value)}
+                    placeholder={t('Connection name (e.g. Local dev)', 'Verbindungsname (z. B. Local dev)')}
+                    className="font-sans text-sm"
+                  />
+                  <Button type="button" variant="outline" onClick={handleSaveCurrentConnection}>
+                    {t('Save current', 'Aktuelle speichern')}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                {gatewayConnections.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border px-3 py-2.5">
+                    <p className="font-sans text-xs text-muted-foreground">
+                      {t('No saved connections yet.', 'Noch keine gespeicherten Verbindungen.')}
+                    </p>
+                  </div>
+                ) : (
+                  gatewayConnections.map((connection) => {
+                    const isSelected = selectedGatewayConnectionId === connection.id;
+                    return (
+                      <div
+                        key={connection.id}
+                        className={`rounded-lg border px-3 py-2.5 ${
+                          isSelected ? 'border-primary/45 bg-primary/10' : 'border-border bg-card'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{connection.name}</p>
+                            <p className="truncate font-mono text-[11px] text-muted-foreground">{connection.gatewayUrl}</p>
+                            <p className="mt-0.5 font-sans text-[11px] text-muted-foreground">
+                              {connection.gatewayToken ? t('Token saved', 'Token gespeichert') : t('No token', 'Kein Token')}
+                              {connection.lastUsedAt
+                                ? ` • ${t('Last used', 'Zuletzt verwendet')} ${new Date(connection.lastUsedAt).toLocaleString()}`
+                                : ''}
+                            </p>
+                          </div>
+                          {isSelected ? (
+                            <Badge variant="outline" className="rounded-full font-sans text-[10px]">
+                              {t('Selected', 'Ausgewaehlt')}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <Button type="button" size="sm" variant="outline" onClick={() => onSelectGatewayConnection(connection.id)}>
+                            {t('Use', 'Verwenden')}
+                          </Button>
+                          <Button type="button" size="sm" variant="outline" onClick={() => onOverwriteGatewayConnection(connection.id)}>
+                            {t('Update', 'Aktualisieren')}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => onDeleteGatewayConnection(connection.id)}
+                          >
+                            <Trash2 className="mr-1 h-3.5 w-3.5" />
+                            {t('Delete', 'Loeschen')}
+                          </Button>
+                        </div>
                       </div>
-                    </button>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
           </section>

@@ -3,6 +3,16 @@ export type AppConfig = {
   gatewayToken: string;
 };
 
+export type GatewayConnectionProfile = {
+  id: string;
+  name: string;
+  gatewayUrl: string;
+  gatewayToken: string;
+  createdAt: number;
+  updatedAt: number;
+  lastUsedAt?: number;
+};
+
 export type HealthCheckResult = {
   ok: boolean;
   status?: number;

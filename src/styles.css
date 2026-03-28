@@ -1,5 +1,24 @@
 @import "tailwindcss";
 
+html {
+  --app-primary: #c47a5c;
+  --app-primary-foreground: #fff9f2;
+  --app-primary-muted: #f4e8d7;
+  --app-accent: #9b806f;
+  --preview-bg: #f4f3ee;
+  --preview-bg-alt: #ece8de;
+  --preview-surface: #fff9f2;
+  --preview-border: #ded3c2;
+  --preview-line-strong: #9b806f;
+  --preview-line-soft: #c7b19d;
+  --preview-line-muted: #dcc9b7;
+  --preview-panel: #f0e5d7;
+  --preview-claude-accent-strong: #c47a5c;
+  --preview-claude-accent-soft: #edd4c7;
+  --preview-relay-accent-strong: #7b9f2f;
+  --preview-relay-accent-soft: #dcf0b3;
+}
+
 html,
 body,
 #root {
@@ -29,6 +48,19 @@ body {
     #f4f3ee;
 }
 
+html .bg-primary { background-color: var(--app-primary); }
+html .text-primary-foreground { color: var(--app-primary-foreground); }
+html .text-primary { color: var(--app-accent); }
+html .border-primary { border-color: var(--app-primary); }
+html .ring-ring { --tw-ring-color: color-mix(in srgb, var(--app-primary) 40%, transparent); }
+html :is(button.bg-primary, a.bg-primary) {
+  border-color: color-mix(in srgb, var(--app-primary) 80%, black 20%);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), 0 0 0 1px color-mix(in srgb, var(--app-primary) 22%, transparent) inset;
+}
+html :is(button.bg-primary:hover, a.bg-primary:hover) {
+  background-color: color-mix(in srgb, var(--app-primary) 88%, black 12%);
+}
+
 /* Dark theme */
 html.dark * {
   border-color: #3a3a36;
@@ -40,6 +72,25 @@ html.dark body {
     radial-gradient(circle at 20% -10%, #2a2924 0%, transparent 35%),
     radial-gradient(circle at 90% 0%, #242320 0%, transparent 24%),
     #1c1b18;
+}
+
+html.dark {
+  --app-primary: #df9a79;
+  --app-primary-foreground: #1c1b18;
+  --app-primary-muted: #2a2924;
+  --app-accent: #d8c3a7;
+  --preview-bg: #1f1d1a;
+  --preview-bg-alt: #171614;
+  --preview-surface: #2a2723;
+  --preview-border: #3b3732;
+  --preview-line-strong: #e4dacd;
+  --preview-line-soft: #a79a8b;
+  --preview-line-muted: #7f7569;
+  --preview-panel: #302d29;
+  --preview-claude-accent-strong: #df9a79;
+  --preview-claude-accent-soft: #553f35;
+  --preview-relay-accent-strong: #bbf451;
+  --preview-relay-accent-soft: #3c4d1b;
 }
 
 html.dark .bg-background { background-color: #1c1b18; }
@@ -56,6 +107,21 @@ html.relay-style body {
     radial-gradient(circle at 12% -10%, rgba(200, 214, 248, 0.2) 0%, transparent 30%),
     radial-gradient(circle at 92% 2%, rgba(208, 242, 224, 0.15) 0%, transparent 28%),
     #ffffff;
+}
+
+html.relay-style {
+  --app-primary: #bbf451;
+  --app-primary-foreground: #1f2b09;
+  --app-primary-muted: #f4f8f1;
+  --app-accent: #7b9f2f;
+  --preview-bg: #f6f8f7;
+  --preview-bg-alt: #eef2f0;
+  --preview-surface: #ffffff;
+  --preview-border: #d8dfdb;
+  --preview-line-strong: #101513;
+  --preview-line-soft: #5f6f68;
+  --preview-line-muted: #8ea099;
+  --preview-panel: #f2f6f4;
 }
 
 html.relay-style * {
@@ -155,6 +221,22 @@ html.dark.relay-style body {
     radial-gradient(circle at 14% -10%, rgba(141, 255, 194, 0.08) 0%, transparent 28%),
     radial-gradient(circle at 90% 3%, rgba(140, 169, 255, 0.09) 0%, transparent 24%),
     #090909;
+}
+
+html.relay-style.dark,
+html.dark.relay-style {
+  --app-primary: #bbf451;
+  --app-primary-foreground: #1f2b09;
+  --app-primary-muted: #1a1a1a;
+  --app-accent: #bbf451;
+  --preview-bg: #0b0d0c;
+  --preview-bg-alt: #060707;
+  --preview-surface: #121514;
+  --preview-border: #2b312e;
+  --preview-line-strong: #f1f5f3;
+  --preview-line-soft: #98a8a2;
+  --preview-line-muted: #6d7b75;
+  --preview-panel: #1a1f1d;
 }
 
 html.relay-style.dark *,
