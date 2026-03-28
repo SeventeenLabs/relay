@@ -102,6 +102,116 @@ export type OutcomePipelineRun = {
   error?: string;
 };
 
+export type OperatorKind = 'research_report';
+export type OperatorRunStatus = 'queued' | 'running' | 'needs_approval' | 'completed' | 'failed' | 'canceled';
+export type OperatorStepStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type OperatorStepExecutionMode = 'analysis' | 'gather' | 'synthesis' | 'validation' | 'publish';
+export type OperatorModelTier = 'fast' | 'reasoning' | 'verify';
+
+export type OperatorInputSchemaField = {
+  key: string;
+  label: string;
+  type: 'string' | 'enum';
+  required: boolean;
+  options?: string[];
+};
+
+export type OperatorOutputRequirement = {
+  key: string;
+  label: string;
+  type: 'markdown_section' | 'min_links' | 'min_length';
+  required: boolean;
+  value?: string | number;
+};
+
+export type OperatorRoutingPolicy = {
+  costAware: boolean;
+  fallbackTiers: OperatorModelTier[];
+  verifyWithSecondModel: boolean;
+};
+
+export type OperatorCompiledStep = {
+  id: string;
+  key: string;
+  label: string;
+  mode: OperatorStepExecutionMode;
+  modelTier: OperatorModelTier;
+  promptTemplate: string;
+  validates?: string[];
+};
+
+export type OperatorCompiledPlan = {
+  operatorId: string;
+  projectId: string;
+  kind: OperatorKind;
+  title: string;
+  createdAt: number;
+  input: {
+    topic: string;
+    depth: 'light' | 'standard' | 'deep';
+    deliverBy?: string;
+  };
+  steps: OperatorCompiledStep[];
+  successCriteria: string[];
+  routingPolicy: OperatorRoutingPolicy;
+};
+
+export type OperatorDefinition = {
+  id: string;
+  projectId: string;
+  kind: OperatorKind;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  inputSchema: OperatorInputSchemaField[];
+  outputRequirements: OperatorOutputRequirement[];
+  routingPolicy: OperatorRoutingPolicy;
+  successCriteria: string[];
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type OperatorRunStep = {
+  id: string;
+  key: string;
+  label: string;
+  status: OperatorStepStatus;
+  startedAt?: number;
+  finishedAt?: number;
+  details?: string;
+};
+
+export type OperatorArtifact = {
+  id: string;
+  runId: string;
+  name: string;
+  content: string;
+  kind: 'markdown' | 'json' | 'text';
+  createdAt: number;
+};
+
+export type OperatorRun = {
+  id: string;
+  operatorId: string;
+  projectId: string;
+  kind: OperatorKind;
+  status: OperatorRunStatus;
+  compiledPlan?: OperatorCompiledPlan;
+  input: {
+    topic: string;
+    depth: 'light' | 'standard' | 'deep';
+    deliverBy?: string;
+  };
+  steps: OperatorRunStep[];
+  summary?: string;
+  error?: string;
+  artifacts: OperatorArtifact[];
+  createdAt: number;
+  updatedAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+};
+
 export type LocalFilePlanAction = {
   id: string;
   fromPath: string;

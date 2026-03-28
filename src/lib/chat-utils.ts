@@ -385,7 +385,8 @@ export function readGatewayError(error: unknown): { message: string; code?: stri
 /* ── Relay file action parsing ───────────────────────────────────────────── */
 
 export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
-  const hasUnsafePathChars = (value: string): boolean => /[\u0000-\u001F]/.test(value);
+  const hasUnsafePathChars = (value: string): boolean =>
+    Array.from(value).some((char) => char.charCodeAt(0) < 32);
 
   const normalizeRelayActions = (value: unknown): RelayFileAction[] => {
     let rawActions: unknown = value;

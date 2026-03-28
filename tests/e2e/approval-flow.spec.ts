@@ -15,9 +15,11 @@ function pendingApprovalCards(page: Page) {
 }
 
 async function sendCoworkPrompt(page: Page, prompt: string) {
-  await page.getByPlaceholder('How can I help you today?').fill(prompt);
+  const promptInput = page.locator('[aria-label="Task prompt"]:visible').first();
+  await expect(promptInput).toBeVisible();
+  await promptInput.fill(prompt);
 
-  const sendButton = page.getByLabel('Send task');
+  const sendButton = page.locator('[aria-label="Send task"]:visible').first();
   if (await sendButton.isDisabled()) {
     const firstProject = page.locator('[data-testid^="project-select-"]').first();
     if (await firstProject.count()) {
@@ -41,32 +43,94 @@ async function waitForFirstApproval(page: Page, timeout = 20000) {
 
 async function ensureE2ESafetyPolicy(page: Page) {
   await page.evaluate(() => {
-    const raw = localStorage.getItem('relay.safety.scopes');
-    if (!raw) {
-      return;
-    }
+    const activeProjectId = (localStorage.getItem('relay.cowork.projects.active.v1') || '').trim();
+    const scopedKey = activeProjectId ? `relay.safety.scopes.project.${activeProjectId}` : '';
 
-    try {
-      const scopes = JSON.parse(raw) as Array<{
+    const parseScopes = (key: string) => {
+      const raw = localStorage.getItem(key);
+      if (!raw) {
+        return [] as Array<{
+          id: string;
+          name?: string;
+          description?: string;
+          riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+          enabled: boolean;
+          requiresApproval: boolean;
+        }>;
+      }
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        return Array.isArray(parsed)
+          ? (parsed as Array<{
+              id: string;
+              name?: string;
+              description?: string;
+              riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+              enabled: boolean;
+              requiresApproval: boolean;
+            }>)
+          : [];
+      } catch {
+        return [] as Array<{
+          id: string;
+          name?: string;
+          description?: string;
+          riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+          enabled: boolean;
+          requiresApproval: boolean;
+        }>;
+      }
+    };
+
+    const ensureFileApproval = (
+      input: Array<{
         id: string;
+        name?: string;
+        description?: string;
+        riskLevel?: 'low' | 'medium' | 'high' | 'critical';
         enabled: boolean;
         requiresApproval: boolean;
-      }>;
-
-      const next = scopes.map((scope) => {
-        if (scope.id === 'file-modify' || scope.id === 'file-create') {
-          return {
-            ...scope,
+      }>,
+    ) => {
+      let next = input.map((scope) =>
+        scope.id === 'file-modify' || scope.id === 'file-create'
+          ? { ...scope, enabled: true, requiresApproval: true }
+          : scope,
+      );
+      if (!next.some((scope) => scope.id === 'file-modify')) {
+        next = [
+          ...next,
+          {
+            id: 'file-modify',
+            name: 'Modify files',
+            description: 'Agent can modify existing files',
+            riskLevel: 'medium',
             enabled: true,
             requiresApproval: true,
-          };
-        }
-        return scope;
-      });
+          },
+        ];
+      }
+      if (!next.some((scope) => scope.id === 'file-create')) {
+        next = [
+          ...next,
+          {
+            id: 'file-create',
+            name: 'Create files',
+            description: 'Agent can create files',
+            riskLevel: 'medium',
+            enabled: true,
+            requiresApproval: true,
+          },
+        ];
+      }
+      return next;
+    };
 
-      localStorage.setItem('relay.safety.scopes', JSON.stringify(next));
-    } catch {
-      // Ignore malformed stored safety policy; app defaults will apply.
+    const globalScopes = ensureFileApproval(parseScopes('relay.safety.scopes'));
+    localStorage.setItem('relay.safety.scopes', JSON.stringify(globalScopes));
+    if (scopedKey) {
+      const projectScopes = ensureFileApproval(parseScopes(scopedKey));
+      localStorage.setItem(scopedKey, JSON.stringify(projectScopes));
     }
   });
 }
@@ -175,7 +239,7 @@ test.describe('Cowork approval flow', () => {
       await page.getByPlaceholder('How can I help you today?').fill(
         'Return ONLY one JSON code block with relay_actions containing exactly one append_file action for path relay-e2e/mock-approval.txt and content "line from real gateway". No prose.',
       );
-      await page.getByLabel('Send task').click();
+      await page.locator('[aria-label="Send task"]:visible').first().click();
 
       const { approvalCard, approvalId } = await waitForFirstApproval(page, 90000);
 
@@ -199,7 +263,7 @@ test.describe('Cowork approval flow', () => {
       await expect(rejectButton).toBeEnabled();
       await rejectButton.click();
       await expect(approvalCard).toHaveCount(0);
-      await expect(page.getByText(/Failed\.\s+append_file\s+.*mock-approval\.txt/i)).toBeVisible();
+      await expect(page.getByRole('button', { name: /Appended failed:\s+relay-e2e\/mock-approval\.txt/i })).toBeVisible();
 
       await sendCoworkPrompt(
         page,
@@ -209,7 +273,7 @@ test.describe('Cowork approval flow', () => {
       const { approvalCard: approvalCard2, approvalId: approvalId2 } = await waitForFirstApproval(page);
       await page.getByTestId(`pending-approval-approve-${approvalId2}`).click();
       await expect(approvalCard2).toHaveCount(0);
-      await expect(page.getByText(/Done\.\s+append_file\s+.*mock-approval\.txt/i)).toBeVisible();
+      await expect(page.getByRole('button', { name: /Appended:\s+.*mock-approval\.txt/i })).toBeVisible();
     });
 
     test('mock gateway: reject stays disabled until reason is provided and approved action writes file content', async () => {
@@ -224,7 +288,7 @@ test.describe('Cowork approval flow', () => {
 
       await page.getByTestId(`pending-approval-approve-${approvalId}`).click();
       await expect(approvalCard).toHaveCount(0);
-      await expect(page.getByText(/Done\.\s+append_file\s+.*mock-approval\.txt/i)).toBeVisible();
+      await expect(page.getByRole('button', { name: /Appended:\s+.*mock-approval\.txt/i })).toBeVisible();
 
       const fileContent = await page.evaluate(async () => {
         const bridge = window.relay;
@@ -291,7 +355,7 @@ test.describe('Cowork approval flow', () => {
       );
 
       await expect(pendingApprovalCards(page)).toHaveCount(0, { timeout: 12000 });
-      await expect(page.getByText(/Failed\.\s+append_file\s+.*mock-approval\.txt/i)).toBeVisible({ timeout: 20000 });
+      await expect(page.getByRole('button', { name: /Appended failed:\s+relay-e2e\/mock-approval\.txt/i })).toBeVisible({ timeout: 20000 });
     });
   }
 });

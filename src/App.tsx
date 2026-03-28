@@ -19,6 +19,8 @@ import type {
   LocalFilePlanAction,
   OutcomePipeline,
   OutcomePipelineRun,
+  OperatorDefinition,
+  OperatorRun,
   PendingApprovalAction,
   ProjectPathReference,
   ProjectKnowledgeItem,
@@ -53,6 +55,14 @@ import { OpenClawGatewayClient } from './lib/openclaw-gateway-client';
 import { createFileService, LocalFileService } from './lib/file-service';
 import { buildMemoryContext, loadMemoryEntries } from './lib/memory-context';
 import { accumulateTodayUsage, addUsage, loadTodayUsage, parseUsageFromPayload } from './lib/token-usage';
+import {
+  compileResearchOperatorPlan,
+  createDefaultResearchInputSchema,
+  createDefaultResearchOutputRequirements,
+  createDefaultResearchRoutingPolicy,
+  createDefaultResearchSuccessCriteria,
+  validateResearchOperatorInput,
+} from './lib/operator-compiler';
 import { loadSafetyScopes, resolveLocalActionPolicy } from './lib/safety-policy';
 import { registerConnector, hydrateConnectors } from './lib/connectors';
 import { createFilesystemConnector } from './lib/connectors/filesystem';
@@ -106,6 +116,7 @@ const DEFAULT_GATEWAY_URL = 'ws://127.0.0.1:18789';
 
 const LOCAL_CONFIG_KEY = 'relay.config';
 const GATEWAY_CONNECTIONS_STORAGE_KEY = 'relay.gateway.connections.v1';
+const DEFAULT_GATEWAY_CONNECTION_STORAGE_KEY = 'relay.gateway.connections.default.v1';
 const COWORK_PROJECTS_STORAGE_KEY = 'relay.cowork.projects.v1';
 const COWORK_ACTIVE_PROJECT_STORAGE_KEY = 'relay.cowork.projects.active.v1';
 const COWORK_TASKS_STORAGE_KEY = 'relay.cowork.tasks.v1';
@@ -116,6 +127,8 @@ const COWORK_DRAFT_STORAGE_KEY = 'relay.cowork.draft.v1';
 const SCHEDULED_JOB_PROJECT_LINKS_STORAGE_KEY = 'relay.scheduled.project-links.v1';
 const OUTCOME_PIPELINES_STORAGE_KEY = 'relay.outcome-pipelines.v1';
 const OUTCOME_PIPELINE_RUNS_STORAGE_KEY = 'relay.outcome-pipeline-runs.v1';
+const OPERATOR_DEFINITIONS_STORAGE_KEY = 'relay.operators.definitions.v1';
+const OPERATOR_RUNS_STORAGE_KEY = 'relay.operators.runs.v1';
 
 const defaultConfig: AppConfig = {
   gatewayUrl: DEFAULT_GATEWAY_URL,
@@ -126,6 +139,8 @@ type AppPage = 'chat' | 'cowork' | 'project' | 'files' | 'local-files' | 'activi
 type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Gateway' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 
 const COWORK_SEND_SPINNER_MS = 300;
+const COWORK_PREP_TIMEOUT_MS = 15_000;
+const COWORK_STREAM_WATCHDOG_MS = 45_000;
 const MAX_LOCAL_ACTIONS_PER_RUN = 20;
 const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000;
 const COWORK_CONTEXT_CONNECTORS = ['Web search', 'Desktop files', 'Gateway tools'];
@@ -185,7 +200,8 @@ function validateProjectRelativePath(inputPath: string, options?: { allowEmpty?:
   }
 
   const normalized = raw.replace(/\\/g, '/');
-  if (/[\u0000-\u001F]/.test(normalized)) {
+  const hasControlChars = Array.from(normalized).some((char) => char.charCodeAt(0) < 32);
+  if (hasControlChars) {
     return { ok: false, reason: 'Path contains invalid control characters.' };
   }
   if (normalized.startsWith('/') || normalized.startsWith('~/') || /^[a-zA-Z]:\//.test(normalized)) {
@@ -326,6 +342,24 @@ function loadGatewayConnectionProfiles(): GatewayConnectionProfile[] {
 
 function persistGatewayConnectionProfiles(profiles: GatewayConnectionProfile[]) {
   localStorage.setItem(GATEWAY_CONNECTIONS_STORAGE_KEY, JSON.stringify(profiles));
+}
+
+function loadDefaultGatewayConnectionId(): string {
+  try {
+    const raw = localStorage.getItem(DEFAULT_GATEWAY_CONNECTION_STORAGE_KEY);
+    return typeof raw === 'string' ? raw.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+function persistDefaultGatewayConnectionId(connectionId: string) {
+  const normalized = connectionId.trim();
+  if (!normalized) {
+    localStorage.removeItem(DEFAULT_GATEWAY_CONNECTION_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(DEFAULT_GATEWAY_CONNECTION_STORAGE_KEY, normalized);
 }
 
 function loadActiveCoworkProjectId(): string {
@@ -602,6 +636,163 @@ function loadOutcomePipelineRuns(): OutcomePipelineRun[] {
   }
 }
 
+function loadOperatorDefinitions(): OperatorDefinition[] {
+  try {
+    const raw = localStorage.getItem(OPERATOR_DEFINITIONS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((entry): OperatorDefinition | null => {
+        if (!entry || typeof entry !== 'object') return null;
+        const record = entry as Record<string, unknown>;
+        const id = typeof record.id === 'string' ? record.id.trim() : '';
+        const projectId = typeof record.projectId === 'string' ? record.projectId.trim() : '';
+        const name = typeof record.name === 'string' ? record.name.trim() : '';
+        const description = typeof record.description === 'string' ? record.description.trim() : '';
+        const kind = record.kind === 'research_report' ? 'research_report' : null;
+        const enabled = typeof record.enabled === 'boolean' ? record.enabled : true;
+        const inputSchema = Array.isArray(record.inputSchema)
+          ? (record.inputSchema as OperatorDefinition['inputSchema'])
+          : createDefaultResearchInputSchema();
+        const outputRequirements = Array.isArray(record.outputRequirements)
+          ? (record.outputRequirements as OperatorDefinition['outputRequirements'])
+          : createDefaultResearchOutputRequirements();
+        const routingPolicy =
+          record.routingPolicy && typeof record.routingPolicy === 'object'
+            ? (record.routingPolicy as OperatorDefinition['routingPolicy'])
+            : createDefaultResearchRoutingPolicy();
+        const successCriteria = Array.isArray(record.successCriteria)
+          ? (record.successCriteria as string[])
+          : createDefaultResearchSuccessCriteria();
+        const createdAt = typeof record.createdAt === 'number' ? record.createdAt : Date.now();
+        const updatedAt = typeof record.updatedAt === 'number' ? record.updatedAt : createdAt;
+        if (!id || !projectId || !name || !kind) return null;
+        return {
+          id,
+          projectId,
+          kind,
+          name,
+          description: description || undefined,
+          enabled,
+          inputSchema,
+          outputRequirements,
+          routingPolicy,
+          successCriteria,
+          createdAt,
+          updatedAt,
+        };
+      })
+      .filter((item): item is OperatorDefinition => item !== null)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  } catch {
+    return [];
+  }
+}
+
+function loadOperatorRuns(): OperatorRun[] {
+  try {
+    const raw = localStorage.getItem(OPERATOR_RUNS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((entry): OperatorRun | null => {
+        if (!entry || typeof entry !== 'object') return null;
+        const record = entry as Record<string, unknown>;
+        const id = typeof record.id === 'string' ? record.id.trim() : '';
+        const operatorId = typeof record.operatorId === 'string' ? record.operatorId.trim() : '';
+        const projectId = typeof record.projectId === 'string' ? record.projectId.trim() : '';
+        const kind = record.kind === 'research_report' ? 'research_report' : null;
+        const status =
+          record.status === 'queued' ||
+          record.status === 'running' ||
+          record.status === 'needs_approval' ||
+          record.status === 'completed' ||
+          record.status === 'failed' ||
+          record.status === 'canceled'
+            ? record.status
+            : 'queued';
+        const input = (record.input && typeof record.input === 'object' ? record.input : {}) as Record<string, unknown>;
+        const topic = typeof input.topic === 'string' ? input.topic.trim() : '';
+        const depth = input.depth === 'light' || input.depth === 'deep' ? input.depth : 'standard';
+        const deliverBy = typeof input.deliverBy === 'string' ? input.deliverBy : undefined;
+        const stepsRaw = Array.isArray(record.steps) ? record.steps : [];
+        const steps = stepsRaw
+          .map((step): OperatorRun['steps'][number] | null => {
+            if (!step || typeof step !== 'object') return null;
+            const stepRecord = step as Record<string, unknown>;
+            const stepId = typeof stepRecord.id === 'string' ? stepRecord.id : '';
+            const key = typeof stepRecord.key === 'string' ? stepRecord.key : '';
+            const label = typeof stepRecord.label === 'string' ? stepRecord.label : '';
+            const stepStatus =
+              stepRecord.status === 'pending' ||
+              stepRecord.status === 'running' ||
+              stepRecord.status === 'completed' ||
+              stepRecord.status === 'failed'
+                ? stepRecord.status
+                : 'pending';
+            if (!stepId || !key || !label) return null;
+            const output: OperatorRun['steps'][number] = {
+              id: stepId,
+              key,
+              label,
+              status: stepStatus,
+            };
+            if (typeof stepRecord.startedAt === 'number') output.startedAt = stepRecord.startedAt;
+            if (typeof stepRecord.finishedAt === 'number') output.finishedAt = stepRecord.finishedAt;
+            if (typeof stepRecord.details === 'string') output.details = stepRecord.details;
+            return output;
+          })
+          .filter((item): item is OperatorRun['steps'][number] => item !== null);
+        const artifactsRaw = Array.isArray(record.artifacts) ? record.artifacts : [];
+        const artifacts = artifactsRaw
+          .map((artifact) => {
+            if (!artifact || typeof artifact !== 'object') return null;
+            const artifactRecord = artifact as Record<string, unknown>;
+            const artifactId = typeof artifactRecord.id === 'string' ? artifactRecord.id : '';
+            const runId = typeof artifactRecord.runId === 'string' ? artifactRecord.runId : '';
+            const name = typeof artifactRecord.name === 'string' ? artifactRecord.name : '';
+            const content = typeof artifactRecord.content === 'string' ? artifactRecord.content : '';
+            const kind = artifactRecord.kind === 'json' || artifactRecord.kind === 'text' ? artifactRecord.kind : 'markdown';
+            const createdAt = typeof artifactRecord.createdAt === 'number' ? artifactRecord.createdAt : Date.now();
+            if (!artifactId || !runId || !name || !content) return null;
+            return { id: artifactId, runId, name, content, kind, createdAt };
+          })
+          .filter((item): item is OperatorRun['artifacts'][number] => item !== null);
+        const createdAt = typeof record.createdAt === 'number' ? record.createdAt : Date.now();
+        const updatedAt = typeof record.updatedAt === 'number' ? record.updatedAt : createdAt;
+        const compiledPlan =
+          record.compiledPlan && typeof record.compiledPlan === 'object'
+            ? (record.compiledPlan as OperatorRun['compiledPlan'])
+            : undefined;
+        if (!id || !operatorId || !projectId || !kind || !topic) return null;
+        return {
+          id,
+          operatorId,
+          projectId,
+          kind,
+          status,
+          compiledPlan,
+          input: { topic, depth, deliverBy },
+          steps,
+          summary: typeof record.summary === 'string' ? record.summary : undefined,
+          error: typeof record.error === 'string' ? record.error : undefined,
+          artifacts,
+          createdAt,
+          updatedAt,
+          startedAt: typeof record.startedAt === 'number' ? record.startedAt : undefined,
+          finishedAt: typeof record.finishedAt === 'number' ? record.finishedAt : undefined,
+        };
+      })
+      .filter((item): item is OperatorRun => item !== null)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 1000);
+  } catch {
+    return [];
+  }
+}
+
 declare global {
   interface Window {
     relayE2E?: RelayE2EBridge;
@@ -640,12 +831,14 @@ export default function App() {
   const pendingCoworkRunContextsRef = useRef<Map<string, CoworkRunProjectContext[]>>(new Map());
   const resolvedCoworkRunContextsRef = useRef<Map<string, CoworkRunProjectContext>>(new Map());
   const pendingCoworkTaskQueueRef = useRef<Map<string, CoworkTaskQueueEntry[]>>(new Map());
+  const coworkStreamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [config, setConfig] = useState<AppConfig>(defaultConfig);
   const [configReady, setConfigReady] = useState(false);
   const [draftGatewayUrl, setDraftGatewayUrl] = useState(DEFAULT_GATEWAY_URL);
   const [draftGatewayToken, setDraftGatewayToken] = useState('');
   const [gatewayConnections, setGatewayConnections] = useState<GatewayConnectionProfile[]>(() => loadGatewayConnectionProfiles());
+  const [defaultGatewayConnectionId, setDefaultGatewayConnectionId] = useState(() => loadDefaultGatewayConnectionId());
   const [health, setHealth] = useState<HealthCheckResult | null>(null);
   const [status, setStatus] = useState('Loading configuration...');
   const { preferences, updatePreferences } = usePreferences();
@@ -707,6 +900,8 @@ export default function App() {
   const [scheduledJobProjectLinks, setScheduledJobProjectLinks] = useState<Record<string, string>>(() => loadScheduledJobProjectLinks());
   const [outcomePipelines, setOutcomePipelines] = useState<OutcomePipeline[]>(() => loadOutcomePipelines());
   const [outcomePipelineRuns, setOutcomePipelineRuns] = useState<OutcomePipelineRun[]>(() => loadOutcomePipelineRuns());
+  const [operatorDefinitions, setOperatorDefinitions] = useState<OperatorDefinition[]>(() => loadOperatorDefinitions());
+  const [operatorRuns, setOperatorRuns] = useState<OperatorRun[]>(() => loadOperatorRuns());
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [recentRenameTarget, setRecentRenameTarget] = useState<RecentWorkspaceEntry | null>(null);
@@ -783,6 +978,23 @@ export default function App() {
       .filter((pipeline) => pipeline.projectId === activeCoworkProjectId)
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [activeCoworkProjectId, outcomePipelines]);
+  const visibleProjectOperators = useMemo(() => {
+    if (!activeCoworkProjectId) {
+      return [] as OperatorDefinition[];
+    }
+    return operatorDefinitions
+      .filter((item) => item.projectId === activeCoworkProjectId)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [activeCoworkProjectId, operatorDefinitions]);
+  const visibleProjectOperatorRuns = useMemo(() => {
+    if (!activeCoworkProjectId) {
+      return [] as OperatorRun[];
+    }
+    return operatorRuns
+      .filter((item) => item.projectId === activeCoworkProjectId)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 30);
+  }, [activeCoworkProjectId, operatorRuns]);
 
   const visiblePendingApprovals = useMemo(() => {
     if (!activeCoworkProjectId) {
@@ -1069,6 +1281,13 @@ export default function App() {
     coworkSessionKeyRef.current = normalized;
     setCoworkSessionKey(normalized);
     return normalized;
+  };
+
+  const clearCoworkStreamWatchdog = () => {
+    if (coworkStreamWatchdogRef.current) {
+      clearTimeout(coworkStreamWatchdogRef.current);
+      coworkStreamWatchdogRef.current = null;
+    }
   };
 
   const upsertChatThread = (sessionKey: string, options?: { title?: string; touchedAt?: number }) => {
@@ -1471,6 +1690,22 @@ export default function App() {
 
   useEffect(() => {
     try {
+      localStorage.setItem(OPERATOR_DEFINITIONS_STORAGE_KEY, JSON.stringify(operatorDefinitions.slice(0, 500)));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [operatorDefinitions]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(OPERATOR_RUNS_STORAGE_KEY, JSON.stringify(operatorRuns.slice(0, 1000)));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [operatorRuns]);
+
+  useEffect(() => {
+    try {
       if (activeCoworkProjectId) {
         localStorage.setItem(COWORK_ACTIVE_PROJECT_STORAGE_KEY, activeCoworkProjectId);
       } else {
@@ -1502,6 +1737,44 @@ export default function App() {
 
     const validProjectIds = new Set(coworkProjects.map((project) => project.id));
     setCoworkTasks((current) => current.filter((task) => validProjectIds.has(task.projectId)));
+  }, [coworkProjects]);
+
+  useEffect(() => {
+    if (coworkProjects.length === 0) {
+      return;
+    }
+
+    const projectIds = new Set(coworkProjects.map((project) => project.id));
+    setOperatorDefinitions((current) => {
+      const filtered = current.filter((item) => projectIds.has(item.projectId));
+      const now = Date.now();
+      const withDefaults = [...filtered];
+      for (const project of coworkProjects) {
+        const exists = withDefaults.some((item) => item.projectId === project.id && item.kind === 'research_report');
+        if (!exists) {
+          const id =
+            typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+              ? crypto.randomUUID()
+              : `operator-${now}-${Math.random().toString(16).slice(2)}`;
+          withDefaults.unshift({
+            id,
+            projectId: project.id,
+            kind: 'research_report',
+            name: 'Research Report',
+            description: 'Produces a structured report with key findings, sources, and next actions.',
+            enabled: true,
+            inputSchema: createDefaultResearchInputSchema(),
+            outputRequirements: createDefaultResearchOutputRequirements(),
+            routingPolicy: createDefaultResearchRoutingPolicy(),
+            successCriteria: createDefaultResearchSuccessCriteria(),
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+      return withDefaults.slice(0, 500);
+    });
+    setOperatorRuns((current) => current.filter((item) => projectIds.has(item.projectId)));
   }, [coworkProjects]);
 
   useEffect(() => {
@@ -1878,19 +2151,32 @@ export default function App() {
     });
   }, []);
 
+  const setGatewayDefaultConnection = useCallback((connectionId: string) => {
+    const normalized = connectionId.trim();
+    setDefaultGatewayConnectionId(normalized);
+    persistDefaultGatewayConnectionId(normalized);
+  }, []);
+
   const markGatewayConnectionLastUsed = useCallback((connectedConfig: AppConfig) => {
     const gatewayUrl = connectedConfig.gatewayUrl.trim() || DEFAULT_GATEWAY_URL;
     const gatewayToken = connectedConfig.gatewayToken ?? '';
     const now = Date.now();
+    let matchedConnectionId = '';
 
     updateGatewayConnections((prev) =>
-      prev.map((profile) =>
-        profile.gatewayUrl === gatewayUrl && profile.gatewayToken === gatewayToken
-          ? { ...profile, lastUsedAt: now, updatedAt: now }
-          : profile,
-      ),
+      prev.map((profile) => {
+        if (profile.gatewayUrl === gatewayUrl && profile.gatewayToken === gatewayToken) {
+          matchedConnectionId = profile.id;
+          return { ...profile, lastUsedAt: now, updatedAt: now };
+        }
+        return profile;
+      }),
     );
-  }, [updateGatewayConnections]);
+
+    if (matchedConnectionId) {
+      setGatewayDefaultConnection(matchedConnectionId);
+    }
+  }, [setGatewayDefaultConnection, updateGatewayConnections]);
 
   const handleSelectGatewayConnection = useCallback((connectionId: string) => {
     const profile = gatewayConnections.find((entry) => entry.id === connectionId);
@@ -1912,10 +2198,12 @@ export default function App() {
 
     const normalizedUrl = draftGatewayUrl.trim() || DEFAULT_GATEWAY_URL;
     const now = Date.now();
+    let savedConnectionId = '';
 
     updateGatewayConnections((prev) => {
       const duplicateByName = prev.find((entry) => entry.name.toLowerCase() === trimmedName.toLowerCase());
       if (duplicateByName) {
+        savedConnectionId = duplicateByName.id;
         return prev
           .map((entry) =>
             entry.id === duplicateByName.id
@@ -1935,6 +2223,7 @@ export default function App() {
         typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()
           : `conn-${now}-${Math.random().toString(36).slice(2, 9)}`;
+      savedConnectionId = id;
 
       return [
         {
@@ -1949,8 +2238,12 @@ export default function App() {
       ];
     });
 
+    if (savedConnectionId) {
+      setGatewayDefaultConnection(savedConnectionId);
+    }
+
     setStatus(`Saved connection "${trimmedName}".`);
-  }, [draftGatewayToken, draftGatewayUrl, updateGatewayConnections]);
+  }, [draftGatewayToken, draftGatewayUrl, setGatewayDefaultConnection, updateGatewayConnections]);
 
   const handleOverwriteGatewayConnection = useCallback((connectionId: string) => {
     const normalizedUrl = draftGatewayUrl.trim() || DEFAULT_GATEWAY_URL;
@@ -1970,14 +2263,41 @@ export default function App() {
         )
         .sort((a, b) => b.updatedAt - a.updatedAt),
     );
+    setGatewayDefaultConnection(connectionId);
 
     setStatus('Updated saved connection with current URL/token.');
-  }, [draftGatewayToken, draftGatewayUrl, updateGatewayConnections]);
+  }, [draftGatewayToken, draftGatewayUrl, setGatewayDefaultConnection, updateGatewayConnections]);
 
   const handleDeleteGatewayConnection = useCallback((connectionId: string) => {
     updateGatewayConnections((prev) => prev.filter((entry) => entry.id !== connectionId));
+    if (defaultGatewayConnectionId === connectionId) {
+      setGatewayDefaultConnection('');
+    }
     setStatus('Deleted saved connection.');
-  }, [updateGatewayConnections]);
+  }, [defaultGatewayConnectionId, setGatewayDefaultConnection, updateGatewayConnections]);
+
+  const appendGatewayDiscoveryHint = useCallback(
+    async (baseMessage: string): Promise<string> => {
+      const fallback = baseMessage.trim() || 'Gateway is offline or unreachable.';
+      if (!bridge?.discoverGateway) {
+        return fallback;
+      }
+      try {
+        const discovery = await bridge.discoverGateway();
+        if (discovery.found && discovery.gatewayUrl) {
+          return `${fallback} Discovered local gateway at ${discovery.gatewayUrl}.`;
+        }
+        if (discovery.binaryFound) {
+          const binaryHint = discovery.binaryPath ? ` (${discovery.binaryPath})` : '';
+          return `${fallback} OpenClaw binary detected${binaryHint}, but no running gateway was found.`;
+        }
+        return `${fallback} No local OpenClaw gateway was detected.`;
+      } catch {
+        return fallback;
+      }
+    },
+    [bridge],
+  );
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -2036,12 +2356,26 @@ export default function App() {
 
 
   useEffect(() => {
+    const defaultProfile =
+      defaultGatewayConnectionId.trim()
+        ? gatewayConnections.find((profile) => profile.id === defaultGatewayConnectionId.trim())
+        : undefined;
+
     if (!bridge) {
       const localConfig = loadLocalConfig();
-      if (localConfig) {
-        setConfig(localConfig);
-        setDraftGatewayUrl(localConfig.gatewayUrl);
-        setDraftGatewayToken(localConfig.gatewayToken);
+      const resolvedConfig =
+        localConfig?.gatewayUrl?.trim()
+          ? localConfig
+          : defaultProfile
+            ? {
+                gatewayUrl: defaultProfile.gatewayUrl,
+                gatewayToken: defaultProfile.gatewayToken,
+              }
+            : localConfig;
+      if (resolvedConfig) {
+        setConfig(resolvedConfig);
+        setDraftGatewayUrl(resolvedConfig.gatewayUrl);
+        setDraftGatewayToken(resolvedConfig.gatewayToken);
         setStatus('Loaded local configuration (bridge unavailable).');
       } else {
         setStatus('Electron bridge unavailable. Configuration will be saved locally for this browser profile.');
@@ -2059,9 +2393,19 @@ export default function App() {
           return;
         }
 
-        setConfig(storedConfig);
-        setDraftGatewayUrl(storedConfig.gatewayUrl);
-        setDraftGatewayToken(storedConfig.gatewayToken);
+        const resolvedConfig =
+          storedConfig?.gatewayUrl?.trim()
+            ? storedConfig
+            : defaultProfile
+              ? {
+                  gatewayUrl: defaultProfile.gatewayUrl,
+                  gatewayToken: defaultProfile.gatewayToken,
+                }
+              : storedConfig;
+
+        setConfig(resolvedConfig);
+        setDraftGatewayUrl(resolvedConfig.gatewayUrl);
+        setDraftGatewayToken(resolvedConfig.gatewayToken);
         setStatus('Configuration loaded.');
         setConfigReady(true);
       })
@@ -2071,10 +2415,19 @@ export default function App() {
         }
 
         const localConfig = loadLocalConfig();
-        if (localConfig) {
-          setConfig(localConfig);
-          setDraftGatewayUrl(localConfig.gatewayUrl);
-          setDraftGatewayToken(localConfig.gatewayToken);
+        const resolvedConfig =
+          localConfig?.gatewayUrl?.trim()
+            ? localConfig
+            : defaultProfile
+              ? {
+                  gatewayUrl: defaultProfile.gatewayUrl,
+                  gatewayToken: defaultProfile.gatewayToken,
+                }
+              : localConfig;
+        if (resolvedConfig) {
+          setConfig(resolvedConfig);
+          setDraftGatewayUrl(resolvedConfig.gatewayUrl);
+          setDraftGatewayToken(resolvedConfig.gatewayToken);
           setStatus('Loaded local fallback configuration.');
         } else {
           setStatus('Unable to load config. Using defaults.');
@@ -2085,7 +2438,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [bridge]);
+  }, [bridge, defaultGatewayConnectionId, gatewayConnections]);
 
   useEffect(() => {
     if (!bridge?.isWindowMaximized) {
@@ -2155,6 +2508,7 @@ export default function App() {
 
         if (isCoworkEvent) {
           if (state === 'error') {
+            clearCoworkStreamWatchdog();
             setCoworkAwaitingStream(false);
             setCoworkRunPhase('error');
             const errorMessage =
@@ -2180,6 +2534,7 @@ export default function App() {
           }
 
           if (state === 'delta' && text) {
+            clearCoworkStreamWatchdog();
             setCoworkAwaitingStream(false);
             setCoworkRunPhase('streaming');
             setCoworkRunStatus('Cowork is streaming a response.');
@@ -2218,6 +2573,7 @@ export default function App() {
           }
 
           if (state === 'final' || state === 'aborted') {
+            clearCoworkStreamWatchdog();
             setCoworkAwaitingStream(false);
             setCoworkRunPhase('completed');
             setCoworkRunStatus(state === 'aborted' ? 'Cowork run ended early.' : 'Cowork run completed.');
@@ -3184,6 +3540,7 @@ export default function App() {
 
     gatewayClientRef.current = client;
     return () => {
+      clearCoworkStreamWatchdog();
       for (const entry of approvalResolversRef.current.values()) {
         clearTimeout(entry.timeoutId);
       }
@@ -3233,11 +3590,13 @@ export default function App() {
           setStatus(`Pairing required.${approvalHint}`);
         } else {
           const offlineMessage = info.message || 'Gateway is offline or unreachable.';
-          setHealth({ ok: false, message: offlineMessage });
-          setStatus(offlineMessage);
+          void appendGatewayDiscoveryHint(offlineMessage).then((nextMessage) => {
+            setHealth({ ok: false, message: nextMessage });
+            setStatus(nextMessage);
+          });
         }
       });
-  }, [config.gatewayToken, config.gatewayUrl, onboardingComplete, configReady, markGatewayConnectionLastUsed]);
+  }, [appendGatewayDiscoveryHint, config.gatewayToken, config.gatewayUrl, onboardingComplete, configReady, markGatewayConnectionLastUsed]);
 
   useEffect(() => {
     if (activePage !== 'chat') {
@@ -3326,8 +3685,10 @@ export default function App() {
         setHealth({ ok: false, message: `Pairing required.${approvalHint}` });
         setStatus(`Configuration saved. Pairing required.${approvalHint}`);
       } else {
-        setHealth({ ok: false, message: info.message || 'Gateway connection failed.' });
-        setStatus(`Configuration saved. ${info.message || 'Gateway connection failed.'}`);
+        const failureMessage = info.message || 'Gateway connection failed.';
+        const hinted = await appendGatewayDiscoveryHint(failureMessage);
+        setHealth({ ok: false, message: hinted });
+        setStatus(`Configuration saved. ${hinted}`);
       }
     } finally {
       setSaving(false);
@@ -3391,6 +3752,7 @@ export default function App() {
 
   const handlePlanTask = async (event: FormEvent) => {
     event.preventDefault();
+    clearCoworkStreamWatchdog();
     if (!gatewayConnected) {
       setStatus('Gateway disconnected. Connect in Settings > Gateway to run cowork tasks.');
       setCoworkAwaitingStream(false);
@@ -3407,7 +3769,7 @@ export default function App() {
     setCoworkRunStatus('Sending cowork task...');
     resetCoworkProgress('Interpreting goal and building a task plan.');
 
-    const text = chatDraftPrompt.trim();
+    const text = coworkDraftPrompt.trim();
     if (!text) {
       setStatus('Describe the outcome first so OpenClaw can plan the work.');
       setCoworkSending(false);
@@ -3415,7 +3777,7 @@ export default function App() {
     }
 
     // Clear the composer immediately so submit feedback matches user expectation.
-    handleChatPromptChange('');
+    handleCoworkPromptChange('');
 
     const client = gatewayClientRef.current;
     if (!client) {
@@ -3425,11 +3787,23 @@ export default function App() {
     }
 
     try {
-      await ensureConnectedClient(client);
+      const withTimeout = async <T,>(promise: Promise<T>, label: string, timeoutMs = COWORK_PREP_TIMEOUT_MS): Promise<T> => {
+        const timeoutPromise = new Promise<T>((_, reject) => {
+          const timer = setTimeout(() => {
+            reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s.`));
+          }, timeoutMs);
+          promise.finally(() => clearTimeout(timer)).catch(() => {
+            // Swallow here because caller handles the final rejection.
+          });
+        });
+        return Promise.race([promise, timeoutPromise]);
+      };
+
+      await withTimeout(ensureConnectedClient(client), 'Gateway connect');
 
       let sessionKey = normalizeSessionKey(coworkSessionKeyRef.current);
       if (!sessionKey) {
-        sessionKey = normalizeSessionKey(await client.createCoworkSession());
+        sessionKey = normalizeSessionKey(await withTimeout(client.createCoworkSession(), 'Cowork session creation'));
         if (!sessionKey) {
           throw new Error('No cowork session key returned from Gateway.');
         }
@@ -3474,7 +3848,7 @@ export default function App() {
       });
 
       if (coworkModel.trim()) {
-        await client.setSessionModel(sessionKey, coworkModel.trim());
+        await withTimeout(client.setSessionModel(sessionKey, coworkModel.trim()), 'Session model update');
       }
 
       const folderContext = workingFolderRef.current;
@@ -3594,9 +3968,34 @@ export default function App() {
         details: 'Splitting work into substeps and selecting tools.',
       });
       setStatus('Cowork message sent. Waiting for stream...');
-      await client.sendChat(sessionKey, outboundMessage);
+      await withTimeout(client.sendChat(sessionKey, outboundMessage), 'Cowork request send');
+      coworkStreamWatchdogRef.current = setTimeout(() => {
+        setCoworkAwaitingStream(false);
+        setCoworkRunPhase('error');
+        const watchdogMessage = 'Gateway accepted the task but no cowork stream was received. Reconnect gateway and retry.';
+        setCoworkRunStatus(watchdogMessage);
+        setCoworkProgressStage('planning', {
+          blocked: true,
+          details: watchdogMessage,
+        });
+        setStatus(watchdogMessage);
+        setCoworkTasks((current) =>
+          current.map((task) =>
+            task.id === queuedTaskId
+              ? {
+                  ...task,
+                  status: 'failed',
+                  summary: watchdogMessage,
+                  outcome: watchdogMessage,
+                  updatedAt: Date.now(),
+                }
+              : task,
+          ),
+        );
+      }, COWORK_STREAM_WATCHDOG_MS);
       await new Promise((resolve) => setTimeout(resolve, COWORK_SEND_SPINNER_MS));
     } catch (error) {
+      clearCoworkStreamWatchdog();
       setCoworkAwaitingStream(false);
       setCoworkRunPhase('error');
       const message = error instanceof Error ? error.message : 'Failed to send cowork task.';
@@ -4095,6 +4494,301 @@ export default function App() {
     setStatus('Knowledge entry deleted.');
   };
 
+  const handleToggleOperatorDefinition = useCallback((operatorId: string, enabled: boolean) => {
+    const normalizedOperatorId = operatorId.trim();
+    if (!normalizedOperatorId) {
+      return;
+    }
+    setOperatorDefinitions((current) =>
+      current.map((item) =>
+        item.id === normalizedOperatorId
+          ? {
+              ...item,
+              enabled,
+              updatedAt: Date.now(),
+            }
+          : item,
+      ),
+    );
+    setStatus(enabled ? 'Operator enabled.' : 'Operator paused.');
+  }, []);
+
+  const handleRunResearchOperator = useCallback(
+    async (input: { operatorId: string; topic: string; depth: 'light' | 'standard' | 'deep'; deliverBy?: string }) => {
+      const operator = operatorDefinitions.find((item) => item.id === input.operatorId);
+      if (!operator) {
+        setStatus('Operator not found.');
+        return;
+      }
+      if (!operator.enabled) {
+        setStatus('Operator is paused. Enable it first.');
+        return;
+      }
+      const topic = input.topic.trim();
+      const validationError = validateResearchOperatorInput({
+        topic,
+        depth: input.depth,
+        deliverBy: input.deliverBy,
+      });
+      if (validationError) {
+        setStatus(validationError);
+        return;
+      }
+
+      const compiledPlan = compileResearchOperatorPlan(operator, {
+        topic,
+        depth: input.depth,
+        deliverBy: input.deliverBy,
+      });
+
+      const now = Date.now();
+      const makeId = () =>
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `run-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+      const runId = makeId();
+      const stepDefs = compiledPlan.steps.map((step) => ({ key: step.key, label: step.label }));
+
+      const nextRun: OperatorRun = {
+        id: runId,
+        operatorId: operator.id,
+        projectId: operator.projectId,
+        kind: operator.kind,
+        status: 'queued',
+        compiledPlan,
+        input: {
+          topic,
+          depth: input.depth,
+          deliverBy: input.deliverBy?.trim() || undefined,
+        },
+        steps: stepDefs.map((step) => ({
+          id: makeId(),
+          key: step.key,
+          label: step.label,
+          status: 'pending',
+        })),
+        artifacts: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      setOperatorRuns((current) => [nextRun, ...current].slice(0, 1000));
+
+      const setStepRunning = (index: number, details: string) => {
+        setOperatorRuns((current) =>
+          current.map((run) => {
+            if (run.id !== runId) return run;
+            return {
+              ...run,
+              status: 'running',
+              startedAt: run.startedAt ?? Date.now(),
+              updatedAt: Date.now(),
+              steps: run.steps.map((step, stepIndex) => {
+                if (stepIndex < index) return step;
+                if (stepIndex === index) {
+                  return {
+                    ...step,
+                    status: 'running',
+                    startedAt: step.startedAt ?? Date.now(),
+                    details,
+                  };
+                }
+                return step;
+              }),
+            };
+          }),
+        );
+      };
+
+      const completeStep = (index: number, details?: string) => {
+        setOperatorRuns((current) =>
+          current.map((run) => {
+            if (run.id !== runId) return run;
+            return {
+              ...run,
+              updatedAt: Date.now(),
+              steps: run.steps.map((step, stepIndex) =>
+                stepIndex === index
+                  ? {
+                      ...step,
+                      status: 'completed',
+                      details: details ?? step.details,
+                      finishedAt: Date.now(),
+                    }
+                  : step,
+              ),
+            };
+          }),
+        );
+      };
+
+      try {
+        const client = gatewayClientRef.current;
+        if (!client) {
+          throw new Error('Gateway client not initialized.');
+        }
+        await ensureConnectedClient(client);
+
+        let sessionKey = normalizeSessionKey(coworkSessionKeyRef.current);
+        if (!sessionKey) {
+          sessionKey = normalizeSessionKey(await client.createCoworkSession());
+          if (!sessionKey) {
+            throw new Error('Unable to create operator session.');
+          }
+          commitCoworkSessionKey(sessionKey);
+        }
+        const waitForAssistantResponse = async (knownIds: Set<string>): Promise<string> => {
+          for (let attempt = 0; attempt < 20; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 900));
+            const historyNow = await client.getHistory(sessionKey, 120);
+            const freshAssistant = [...historyNow]
+              .reverse()
+              .find((message) => message.role === 'assistant' && !knownIds.has(message.id) && message.text.trim().length > 0);
+            if (freshAssistant) {
+              return freshAssistant.text.trim();
+            }
+          }
+          return '';
+        };
+
+        const resolveTierChain = (primary: 'fast' | 'reasoning' | 'verify') => {
+          const merged = [primary, ...compiledPlan.routingPolicy.fallbackTiers];
+          return merged.filter((entry, index) => merged.indexOf(entry) === index);
+        };
+
+        const stepOutputs: Record<string, string> = {};
+        const renderTemplate = (template: string) => {
+          const previous = Object.entries(stepOutputs)
+            .map(([key, value]) => `Step ${key}: ${value.slice(0, 800)}`)
+            .join('\n\n');
+          return [
+            template.replaceAll('{{topic}}', topic),
+            `Depth: ${input.depth}`,
+            input.deliverBy?.trim() ? `Requested deadline: ${input.deliverBy.trim()}` : '',
+            previous ? `\nPrevious step context:\n${previous}` : '',
+            '\nRespond in markdown.',
+          ]
+            .filter(Boolean)
+            .join('\n');
+        };
+
+        for (let stepIndex = 0; stepIndex < compiledPlan.steps.length; stepIndex += 1) {
+          const step = compiledPlan.steps[stepIndex];
+          const tierChain = resolveTierChain(step.modelTier);
+          let stepOutput = '';
+          let completionNote = '';
+
+          for (let tierIndex = 0; tierIndex < tierChain.length; tierIndex += 1) {
+            const tier = tierChain[tierIndex];
+            try {
+              setStepRunning(stepIndex, `Running ${step.label} on ${tier} tier (${tierIndex + 1}/${tierChain.length}).`);
+              const historyBefore = await client.getHistory(sessionKey, 100);
+              const knownIds = new Set(historyBefore.map((message) => message.id));
+              const stepPrompt = [
+                `[Operator: ${operator.name}]`,
+                `Step: ${step.label}`,
+                `Mode: ${step.mode}`,
+                `Model tier: ${tier}`,
+                '',
+                renderTemplate(step.promptTemplate),
+              ].join('\n');
+
+              await client.sendChat(sessionKey, stepPrompt);
+              const response = await waitForAssistantResponse(knownIds);
+              if (!response) {
+                throw new Error(`No assistant output for tier ${tier}.`);
+              }
+
+              stepOutput = response;
+              completionNote = `Completed on ${tier} tier.`;
+              break;
+            } catch (tierError) {
+              const message = tierError instanceof Error ? tierError.message : 'Step attempt failed.';
+              if (tierIndex === tierChain.length - 1) {
+                throw new Error(`Step "${step.label}" failed. ${message}`);
+              }
+            }
+          }
+
+          if (!stepOutput) {
+            throw new Error(`Step "${step.label}" produced no output.`);
+          }
+
+          stepOutputs[step.key] = stepOutput;
+          completeStep(stepIndex, completionNote);
+        }
+
+        const assistantReport =
+          stepOutputs.draft ||
+          stepOutputs[compiledPlan.steps[compiledPlan.steps.length - 1]?.key ?? ''] ||
+          '';
+        if (!assistantReport.trim()) {
+          throw new Error('Compiled plan finished but produced no report output.');
+        }
+
+        const linkCount = (assistantReport.match(/https?:\/\//gi) ?? []).length;
+        const hasMinimumLength = assistantReport.length >= 400;
+        const hasSummaryHeading = /#+\s*executive summary/i.test(assistantReport);
+        const hasFindingsHeading = /#+\s*key findings/i.test(assistantReport);
+        const validationWarnings = [
+          !hasMinimumLength ? `short output (${assistantReport.length} chars)` : '',
+          !hasSummaryHeading ? 'missing Executive Summary heading' : '',
+          !hasFindingsHeading ? 'missing Key Findings heading' : '',
+          linkCount < 2 ? `few links (${linkCount})` : '',
+        ].filter(Boolean);
+        const validationNote =
+          validationWarnings.length === 0
+            ? `Validation passed. Sources detected: ${linkCount}.`
+            : `Validation warnings: ${validationWarnings.join('; ')}.`;
+
+        const finishedAt = Date.now();
+        const report = assistantReport;
+
+        setOperatorRuns((current) =>
+          current.map((run) =>
+            run.id === runId
+              ? {
+                  ...run,
+                  status: 'completed',
+                  summary: `Research report completed for "${topic}" via gateway. ${validationNote}`,
+                  updatedAt: finishedAt,
+                  finishedAt,
+                  artifacts: [
+                    {
+                      id: makeId(),
+                      runId,
+                      name: `${topic.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'research-report'}.md`,
+                      content: report,
+                      kind: 'markdown',
+                      createdAt: finishedAt,
+                    },
+                  ],
+                }
+              : run,
+          ),
+        );
+        setStatus(`Operator completed: ${topic}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Operator run failed.';
+        setOperatorRuns((current) =>
+          current.map((run) =>
+            run.id === runId
+              ? {
+                  ...run,
+                  status: 'failed',
+                  error: message,
+                  updatedAt: Date.now(),
+                  finishedAt: Date.now(),
+                }
+              : run,
+          ),
+        );
+        setStatus(message);
+      }
+    },
+    [operatorDefinitions],
+  );
+
   const handleCreateOutcomePipeline = useCallback(
     (
       projectId: string,
@@ -4264,6 +4958,8 @@ export default function App() {
     setProjectKnowledgeItems((current) => current.filter((item) => item.projectId !== normalizedProjectId));
     setOutcomePipelines((current) => current.filter((item) => item.projectId !== normalizedProjectId));
     setOutcomePipelineRuns((current) => current.filter((item) => item.projectId !== normalizedProjectId));
+    setOperatorDefinitions((current) => current.filter((item) => item.projectId !== normalizedProjectId));
+    setOperatorRuns((current) => current.filter((item) => item.projectId !== normalizedProjectId));
 
     if (activeCoworkProjectId === normalizedProjectId) {
       setActiveCoworkProjectId('');
@@ -4399,7 +5095,7 @@ export default function App() {
       return;
     }
 
-    const text = coworkDraftPrompt.trim();
+    const text = chatDraftPrompt.trim();
     if (!text) {
       setStatus('Type a message before sending.');
       return;
@@ -4413,7 +5109,7 @@ export default function App() {
 
     setSendingChat(true);
     setAwaitingChatStream(false);
-    handleCoworkPromptChange('');
+    handleChatPromptChange('');
 
     try {
       const shouldCreateFreshSession = chatMessages.length === 0;
@@ -5143,6 +5839,8 @@ export default function App() {
                   scheduledCount={scheduledJobs.length}
                   pipelineCount={visibleProjectPipelines.length}
                   pipelines={visibleProjectPipelines}
+                  operators={visibleProjectOperators}
+                  operatorRuns={visibleProjectOperatorRuns}
                   pendingApprovalsCount={visiblePendingApprovals.length}
                   artifacts={visibleProjectArtifacts}
                   projectKnowledge={visibleProjectKnowledge}
@@ -5153,6 +5851,8 @@ export default function App() {
                   onUpdatePipeline={handleUpdateOutcomePipeline}
                   onTogglePipeline={handleToggleOutcomePipeline}
                   onDeletePipeline={handleDeleteOutcomePipeline}
+                  onToggleOperator={handleToggleOperatorDefinition}
+                  onRunResearchOperator={handleRunResearchOperator}
                   onOpenArtifact={handleOpenCoworkArtifact}
                   onAddKnowledge={handleAddProjectKnowledge}
                   onDeleteKnowledge={handleDeleteProjectKnowledge}
