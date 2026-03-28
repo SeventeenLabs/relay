@@ -64,6 +64,44 @@ export type ScheduledJob = {
   lastRunAt: string | null;
 };
 
+export type OutcomePipelineTriggerKind = 'cron' | 'hook';
+export type OutcomePipelineStepKind = 'session_spawn' | 'session_send';
+export type OutcomePipelineDelivery = 'none' | 'announce' | 'webhook';
+export type OutcomePipelineRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'canceled';
+
+export type OutcomePipeline = {
+  id: string;
+  projectId: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  triggerKind: OutcomePipelineTriggerKind;
+  triggerValue: string;
+  sessionTarget: 'main' | 'current' | 'isolated' | 'custom';
+  delivery: OutcomePipelineDelivery;
+  webhookUrl?: string;
+  agentId?: string;
+  steps: Array<{
+    id: string;
+    kind: OutcomePipelineStepKind;
+    prompt: string;
+    targetSessionKey?: string;
+  }>;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type OutcomePipelineRun = {
+  id: string;
+  pipelineId: string;
+  projectId: string;
+  status: OutcomePipelineRunStatus;
+  startedAt: number;
+  finishedAt?: number;
+  summary?: string;
+  error?: string;
+};
+
 export type LocalFilePlanAction = {
   id: string;
   fromPath: string;

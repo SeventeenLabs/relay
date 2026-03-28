@@ -27,6 +27,23 @@ export type GatewayCronJob = {
   lastRunAt: string | null;
 };
 
+export type GatewayCreateCronJobInput = {
+  name: string;
+  schedule: string;
+  prompt: string;
+  projectId?: string;
+  sessionKey?: string;
+  enabled?: boolean;
+};
+
+export type GatewayUpdateCronJobInput = {
+  id: string;
+  name?: string;
+  schedule?: string;
+  prompt?: string;
+  enabled?: boolean;
+};
+
 export type GatewaySessionSummary = {
   key: string;
   kind: string;
@@ -913,6 +930,120 @@ export class OpenClawGatewayClient {
       .filter((entry): entry is GatewayCronJob => Boolean(entry));
 
     return jobs;
+  }
+
+  async createCronJob(input: GatewayCreateCronJobInput): Promise<string | null> {
+    const name = input.name.trim();
+    const schedule = input.schedule.trim();
+    const prompt = input.prompt.trim();
+    if (!name) {
+      throw new Error('Cron job name is required.');
+    }
+    if (!schedule) {
+      throw new Error('Cron schedule is required.');
+    }
+    if (!prompt) {
+      throw new Error('Cron prompt is required.');
+    }
+
+    const result = await this.tryCronMutation([
+      { method: 'cron.create', params: { name, schedule, prompt, enabled: input.enabled ?? true, projectId: input.projectId, sessionKey: input.sessionKey } },
+      { method: 'cron.create', params: { name, cron: schedule, prompt, enabled: input.enabled ?? true, projectId: input.projectId, sessionKey: input.sessionKey } },
+      { method: 'cron.create', params: { job: { name, schedule, prompt, enabled: input.enabled ?? true, projectId: input.projectId, sessionKey: input.sessionKey } } },
+      { method: 'cron.add', params: { name, schedule, prompt, enabled: input.enabled ?? true, projectId: input.projectId, sessionKey: input.sessionKey } },
+      { method: 'scheduler.create', params: { name, schedule, prompt, enabled: input.enabled ?? true, projectId: input.projectId, sessionKey: input.sessionKey } },
+    ]);
+
+    if (!result || typeof result !== 'object') {
+      return null;
+    }
+    const payload = result as Record<string, unknown>;
+    const idCandidates = [payload.id, payload.key, payload.jobId];
+    const id = idCandidates.find((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+    return id?.trim() ?? null;
+  }
+
+  async updateCronJob(input: GatewayUpdateCronJobInput): Promise<void> {
+    const id = input.id.trim();
+    if (!id) {
+      throw new Error('Cron job id is required.');
+    }
+
+    const payload: Record<string, unknown> = { id };
+    if (typeof input.name === 'string') payload.name = input.name.trim();
+    if (typeof input.schedule === 'string') payload.schedule = input.schedule.trim();
+    if (typeof input.prompt === 'string') payload.prompt = input.prompt.trim();
+    if (typeof input.enabled === 'boolean') payload.enabled = input.enabled;
+
+    await this.tryCronMutation([
+      { method: 'cron.update', params: payload },
+      { method: 'cron.patch', params: payload },
+      { method: 'cron.set', params: payload },
+      { method: 'cron.update', params: { ...payload, key: id } },
+      { method: 'scheduler.update', params: payload },
+    ]);
+  }
+
+  async deleteCronJob(idInput: string): Promise<void> {
+    const id = idInput.trim();
+    if (!id) {
+      throw new Error('Cron job id is required.');
+    }
+
+    await this.tryCronMutation([
+      { method: 'cron.delete', params: { id } },
+      { method: 'cron.remove', params: { id } },
+      { method: 'cron.delete', params: { key: id } },
+      { method: 'scheduler.delete', params: { id } },
+    ]);
+  }
+
+  private async tryCronMutation(attempts: Array<{ method: string; params: Record<string, unknown> }>): Promise<unknown> {
+    let lastError: unknown = null;
+    for (const attempt of attempts) {
+      try {
+        return await this.call(attempt.method, attempt.params);
+      } catch (error) {
+        lastError = error;
+        if (!this.shouldRetryCronFallback(error)) {
+          throw error;
+        }
+      }
+    }
+
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
+    throw new Error('Gateway does not support cron mutation RPCs.');
+  }
+
+  private shouldRetryCronFallback(error: unknown): boolean {
+    if (error instanceof GatewayRequestError) {
+      const code = (error.code ?? '').toLowerCase();
+      const detailsCode = (error.details?.code ?? '').toLowerCase();
+      const message = (error.message ?? '').toLowerCase();
+      if (code.includes('method_not_found') || detailsCode.includes('method_not_found')) {
+        return true;
+      }
+      if (message.includes('unknown method') || message.includes('method not found')) {
+        return true;
+      }
+      if (code.includes('invalid_params') || detailsCode.includes('invalid_params')) {
+        return true;
+      }
+      if (message.includes('invalid param') || message.includes('missing')) {
+        return true;
+      }
+      return false;
+    }
+
+    if (error instanceof Error) {
+      const message = error.message.toLowerCase();
+      if (message.includes('unknown method') || message.includes('method not found')) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /* ═══════════════════════════════════ Tools Catalog ═══════════════════════════════════ */

@@ -17,6 +17,8 @@ import type {
   HealthCheckResult,
   LocalActionReceipt,
   LocalFilePlanAction,
+  OutcomePipeline,
+  OutcomePipelineRun,
   PendingApprovalAction,
   ProjectPathReference,
   ProjectKnowledgeItem,
@@ -111,6 +113,9 @@ const COWORK_PROJECT_KNOWLEDGE_STORAGE_KEY = 'relay.cowork.project.knowledge.v1'
 const COWORK_WEB_SEARCH_MODE_STORAGE_KEY = 'relay.cowork.websearch.v1';
 const CHAT_DRAFT_STORAGE_KEY = 'relay.chat.draft.v1';
 const COWORK_DRAFT_STORAGE_KEY = 'relay.cowork.draft.v1';
+const SCHEDULED_JOB_PROJECT_LINKS_STORAGE_KEY = 'relay.scheduled.project-links.v1';
+const OUTCOME_PIPELINES_STORAGE_KEY = 'relay.outcome-pipelines.v1';
+const OUTCOME_PIPELINE_RUNS_STORAGE_KEY = 'relay.outcome-pipeline-runs.v1';
 
 const defaultConfig: AppConfig = {
   gatewayUrl: DEFAULT_GATEWAY_URL,
@@ -398,6 +403,28 @@ function loadDraft(storageKey: string): string {
   }
 }
 
+function loadScheduledJobProjectLinks(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(SCHEDULED_JOB_PROJECT_LINKS_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') {
+      return {};
+    }
+    const output: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof key === 'string' && key.trim() && typeof value === 'string' && value.trim()) {
+        output[key] = value;
+      }
+    }
+    return output;
+  } catch {
+    return {};
+  }
+}
+
 function loadProjectKnowledgeItems(): ProjectKnowledgeItem[] {
   try {
     const raw = localStorage.getItem(COWORK_PROJECT_KNOWLEDGE_STORAGE_KEY);
@@ -436,6 +463,140 @@ function loadProjectKnowledgeItems(): ProjectKnowledgeItem[] {
       })
       .filter((item): item is ProjectKnowledgeItem => item !== null)
       .sort((a, b) => b.updatedAt - a.updatedAt);
+  } catch {
+    return [];
+  }
+}
+
+function loadOutcomePipelines(): OutcomePipeline[] {
+  try {
+    const raw = localStorage.getItem(OUTCOME_PIPELINES_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .map((entry): OutcomePipeline | null => {
+        if (!entry || typeof entry !== 'object') {
+          return null;
+        }
+        const record = entry as Record<string, unknown>;
+        const id = typeof record.id === 'string' ? record.id.trim() : '';
+        const projectId = typeof record.projectId === 'string' ? record.projectId.trim() : '';
+        const name = typeof record.name === 'string' ? record.name.trim() : '';
+        const triggerKind = record.triggerKind === 'hook' ? 'hook' : record.triggerKind === 'cron' ? 'cron' : null;
+        const triggerValue = typeof record.triggerValue === 'string' ? record.triggerValue.trim() : '';
+        const delivery =
+          record.delivery === 'announce' || record.delivery === 'webhook' || record.delivery === 'none'
+            ? record.delivery
+            : 'none';
+        const sessionTarget =
+          record.sessionTarget === 'main' ||
+          record.sessionTarget === 'current' ||
+          record.sessionTarget === 'isolated' ||
+          record.sessionTarget === 'custom'
+            ? record.sessionTarget
+            : 'current';
+        const enabled = typeof record.enabled === 'boolean' ? record.enabled : true;
+        const description = typeof record.description === 'string' ? record.description.trim() : '';
+        const webhookUrl = typeof record.webhookUrl === 'string' ? record.webhookUrl.trim() : '';
+        const agentId = typeof record.agentId === 'string' ? record.agentId.trim() : '';
+        const createdAt = typeof record.createdAt === 'number' ? record.createdAt : Date.now();
+        const updatedAt = typeof record.updatedAt === 'number' ? record.updatedAt : createdAt;
+        if (!id || !projectId || !name || !triggerKind || !triggerValue) {
+          return null;
+        }
+
+        const rawSteps = Array.isArray(record.steps) ? record.steps : [];
+        const steps = rawSteps
+          .map((step): OutcomePipeline['steps'][number] | null => {
+            if (!step || typeof step !== 'object') {
+              return null;
+            }
+            const stepRecord = step as Record<string, unknown>;
+            const stepId = typeof stepRecord.id === 'string' ? stepRecord.id.trim() : '';
+            const kind =
+              stepRecord.kind === 'session_spawn' || stepRecord.kind === 'session_send'
+                ? stepRecord.kind
+                : null;
+            const prompt = typeof stepRecord.prompt === 'string' ? stepRecord.prompt.trim() : '';
+            const targetSessionKey =
+              typeof stepRecord.targetSessionKey === 'string' && stepRecord.targetSessionKey.trim()
+                ? stepRecord.targetSessionKey.trim()
+                : undefined;
+            if (!stepId || !kind || !prompt) {
+              return null;
+            }
+            return { id: stepId, kind, prompt, targetSessionKey };
+          })
+          .filter((step): step is OutcomePipeline['steps'][number] => step !== null);
+
+        return {
+          id,
+          projectId,
+          name,
+          description: description || undefined,
+          enabled,
+          triggerKind,
+          triggerValue,
+          sessionTarget,
+          delivery,
+          webhookUrl: webhookUrl || undefined,
+          agentId: agentId || undefined,
+          steps,
+          createdAt,
+          updatedAt,
+        };
+      })
+      .filter((item): item is OutcomePipeline => item !== null)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  } catch {
+    return [];
+  }
+}
+
+function loadOutcomePipelineRuns(): OutcomePipelineRun[] {
+  try {
+    const raw = localStorage.getItem(OUTCOME_PIPELINE_RUNS_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .map((entry): OutcomePipelineRun | null => {
+        if (!entry || typeof entry !== 'object') {
+          return null;
+        }
+        const record = entry as Record<string, unknown>;
+        const id = typeof record.id === 'string' ? record.id.trim() : '';
+        const pipelineId = typeof record.pipelineId === 'string' ? record.pipelineId.trim() : '';
+        const projectId = typeof record.projectId === 'string' ? record.projectId.trim() : '';
+        const status =
+          record.status === 'queued' ||
+          record.status === 'running' ||
+          record.status === 'completed' ||
+          record.status === 'failed' ||
+          record.status === 'canceled'
+            ? record.status
+            : 'queued';
+        const startedAt = typeof record.startedAt === 'number' ? record.startedAt : Date.now();
+        const finishedAt = typeof record.finishedAt === 'number' ? record.finishedAt : undefined;
+        const summary = typeof record.summary === 'string' ? record.summary : undefined;
+        const error = typeof record.error === 'string' ? record.error : undefined;
+        if (!id || !pipelineId || !projectId) {
+          return null;
+        }
+        return { id, pipelineId, projectId, status, startedAt, finishedAt, summary, error };
+      })
+      .filter((item): item is OutcomePipelineRun => item !== null)
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .slice(0, 1000);
   } catch {
     return [];
   }
@@ -543,6 +704,9 @@ export default function App() {
   const [changingCoworkModel, setChangingCoworkModel] = useState(false);
   const [scheduledJobs, setScheduledJobs] = useState<ScheduledJob[]>([]);
   const [scheduledLoading, setScheduledLoading] = useState(false);
+  const [scheduledJobProjectLinks, setScheduledJobProjectLinks] = useState<Record<string, string>>(() => loadScheduledJobProjectLinks());
+  const [outcomePipelines, setOutcomePipelines] = useState<OutcomePipeline[]>(() => loadOutcomePipelines());
+  const [outcomePipelineRuns, setOutcomePipelineRuns] = useState<OutcomePipelineRun[]>(() => loadOutcomePipelineRuns());
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [recentRenameTarget, setRecentRenameTarget] = useState<RecentWorkspaceEntry | null>(null);
@@ -611,6 +775,14 @@ export default function App() {
       .slice(0, 25);
   }, [activeCoworkProjectId, coworkTasks]);
   const latestVisibleCoworkTaskPrompt = visibleCoworkTasks[0]?.prompt?.trim() ?? '';
+  const visibleProjectPipelines = useMemo(() => {
+    if (!activeCoworkProjectId) {
+      return [] as OutcomePipeline[];
+    }
+    return outcomePipelines
+      .filter((pipeline) => pipeline.projectId === activeCoworkProjectId)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [activeCoworkProjectId, outcomePipelines]);
 
   const visiblePendingApprovals = useMemo(() => {
     if (!activeCoworkProjectId) {
@@ -1272,6 +1444,30 @@ export default function App() {
       // ignore persistence failures
     }
   }, [coworkDraftPrompt]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SCHEDULED_JOB_PROJECT_LINKS_STORAGE_KEY, JSON.stringify(scheduledJobProjectLinks));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [scheduledJobProjectLinks]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(OUTCOME_PIPELINES_STORAGE_KEY, JSON.stringify(outcomePipelines.slice(0, 500)));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [outcomePipelines]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(OUTCOME_PIPELINE_RUNS_STORAGE_KEY, JSON.stringify(outcomePipelineRuns.slice(0, 1000)));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [outcomePipelineRuns]);
 
   useEffect(() => {
     try {
@@ -3574,8 +3770,110 @@ export default function App() {
     }
 
     setActivePage('scheduled');
-    setStatus('Opened Schedule. Create a cron job for this task prompt from your gateway scheduler.');
+    setStatus(
+      activeCoworkProject?.name
+        ? `Opened Schedule for project "${activeCoworkProject.name}".`
+        : 'Opened Schedule. Create a cron job for this task prompt from your gateway scheduler.',
+    );
   };
+
+  const handleAssignScheduledJobToProject = useCallback((jobId: string, projectId?: string | null) => {
+    const normalizedJobId = (jobId ?? '').trim();
+    if (!normalizedJobId) {
+      return;
+    }
+    const normalizedProjectId = (projectId ?? '').trim();
+    setScheduledJobProjectLinks((current) => {
+      if (!normalizedProjectId) {
+        const { [normalizedJobId]: _removed, ...rest } = current;
+        return rest;
+      }
+      return {
+        ...current,
+        [normalizedJobId]: normalizedProjectId,
+      };
+    });
+  }, []);
+
+  const handleCreateScheduledJob = useCallback(
+    async (input: { name: string; schedule: string; prompt: string; projectId?: string }) => {
+      const client = gatewayClientRef.current;
+      if (!client) {
+        setStatus('Gateway client not initialized.');
+        return;
+      }
+
+      try {
+        await ensureConnectedClient(client);
+        const createdId = await client.createCronJob({
+          name: input.name,
+          schedule: input.schedule,
+          prompt: input.prompt,
+          projectId: input.projectId,
+          sessionKey: normalizeSessionKey(coworkSessionKeyRef.current) || undefined,
+          enabled: true,
+        });
+        const refreshedJobs = await client.listCronJobs();
+        setScheduledJobs(refreshedJobs);
+
+        const normalizedProjectId = input.projectId?.trim() ?? '';
+        if (createdId && normalizedProjectId) {
+          handleAssignScheduledJobToProject(createdId, normalizedProjectId);
+        }
+
+        setStatus(`Scheduled task "${input.name}" created.`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to create scheduled task.';
+        setStatus(message);
+      }
+    },
+    [handleAssignScheduledJobToProject],
+  );
+
+  const handleUpdateScheduledJob = useCallback(
+    async (input: { id: string; name?: string; schedule?: string; prompt?: string; enabled?: boolean }) => {
+      const client = gatewayClientRef.current;
+      if (!client) {
+        setStatus('Gateway client not initialized.');
+        return;
+      }
+
+      try {
+        await ensureConnectedClient(client);
+        await client.updateCronJob(input);
+        const refreshedJobs = await client.listCronJobs();
+        setScheduledJobs(refreshedJobs);
+        setStatus('Scheduled task updated.');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to update scheduled task.';
+        setStatus(message);
+      }
+    },
+    [],
+  );
+
+  const handleDeleteScheduledJob = useCallback(
+    async (jobId: string) => {
+      const client = gatewayClientRef.current;
+      if (!client) {
+        setStatus('Gateway client not initialized.');
+        return;
+      }
+
+      try {
+        await ensureConnectedClient(client);
+        await client.deleteCronJob(jobId);
+        handleAssignScheduledJobToProject(jobId, null);
+        const refreshedJobs = await client.listCronJobs();
+        setScheduledJobs(refreshedJobs);
+        setStatus('Scheduled task deleted.');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to delete scheduled task.';
+        setStatus(message);
+      }
+    },
+    [handleAssignScheduledJobToProject],
+  );
 
   const handlePickWorkingFolderForProject = async (): Promise<string | undefined> => {
     const selected = await handlePickWorkingFolder();
@@ -3797,6 +4095,158 @@ export default function App() {
     setStatus('Knowledge entry deleted.');
   };
 
+  const handleCreateOutcomePipeline = useCallback(
+    (
+      projectId: string,
+      input: {
+        name: string;
+        description?: string;
+        triggerKind?: OutcomePipeline['triggerKind'];
+        triggerValue?: string;
+        sessionTarget?: OutcomePipeline['sessionTarget'];
+        delivery?: OutcomePipeline['delivery'];
+        webhookUrl?: string;
+        agentId?: string;
+        prompt: string;
+      },
+    ) => {
+      const normalizedProjectId = projectId.trim();
+      const normalizedName = input.name.trim();
+      const normalizedPrompt = input.prompt.trim();
+      if (!normalizedProjectId || !normalizedName || !normalizedPrompt) {
+        setStatus('Pipeline name and prompt are required.');
+        return;
+      }
+
+      const now = Date.now();
+      const makeId = () =>
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `pipeline-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+      const nextPipeline: OutcomePipeline = {
+        id: makeId(),
+        projectId: normalizedProjectId,
+        name: normalizedName,
+        description: input.description?.trim() || undefined,
+        enabled: true,
+        triggerKind: input.triggerKind ?? 'cron',
+        triggerValue: input.triggerValue?.trim() || '0 9 * * *',
+        sessionTarget: input.sessionTarget ?? 'current',
+        delivery: input.delivery ?? 'none',
+        webhookUrl: input.webhookUrl?.trim() || undefined,
+        agentId: input.agentId?.trim() || undefined,
+        steps: [
+          {
+            id: makeId(),
+            kind: 'session_send',
+            prompt: normalizedPrompt,
+          },
+        ],
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      setOutcomePipelines((current) => [nextPipeline, ...current].slice(0, 500));
+      setStatus(`Pipeline created: ${normalizedName}`);
+    },
+    [],
+  );
+
+  const handleUpdateOutcomePipeline = useCallback(
+    (
+      pipelineId: string,
+      input: {
+        name?: string;
+        description?: string;
+        triggerKind?: OutcomePipeline['triggerKind'];
+        triggerValue?: string;
+        sessionTarget?: OutcomePipeline['sessionTarget'];
+        delivery?: OutcomePipeline['delivery'];
+        webhookUrl?: string;
+        agentId?: string;
+        prompt?: string;
+      },
+    ) => {
+      const normalizedPipelineId = pipelineId.trim();
+      if (!normalizedPipelineId) {
+        return;
+      }
+      let updatedName = '';
+      let changed = false;
+      setOutcomePipelines((current) =>
+        current.map((pipeline) => {
+          if (pipeline.id !== normalizedPipelineId) {
+            return pipeline;
+          }
+          changed = true;
+          updatedName = input.name?.trim() || pipeline.name;
+          const nextPrompt = input.prompt?.trim();
+          return {
+            ...pipeline,
+            name: updatedName,
+            description: input.description !== undefined ? input.description.trim() || undefined : pipeline.description,
+            triggerKind: input.triggerKind ?? pipeline.triggerKind,
+            triggerValue: input.triggerValue !== undefined ? input.triggerValue.trim() || pipeline.triggerValue : pipeline.triggerValue,
+            sessionTarget: input.sessionTarget ?? pipeline.sessionTarget,
+            delivery: input.delivery ?? pipeline.delivery,
+            webhookUrl: input.webhookUrl !== undefined ? input.webhookUrl.trim() || undefined : pipeline.webhookUrl,
+            agentId: input.agentId !== undefined ? input.agentId.trim() || undefined : pipeline.agentId,
+            steps:
+              nextPrompt !== undefined
+                ? pipeline.steps.length > 0
+                  ? pipeline.steps.map((step, index) => (index === 0 ? { ...step, prompt: nextPrompt || step.prompt } : step))
+                  : [
+                      {
+                        id:
+                          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                            ? crypto.randomUUID()
+                            : `pipeline-step-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                        kind: 'session_send' as const,
+                        prompt: nextPrompt,
+                      },
+                    ]
+                : pipeline.steps,
+            updatedAt: Date.now(),
+          };
+        }),
+      );
+      if (changed) {
+        setStatus(updatedName ? `Pipeline updated: ${updatedName}` : 'Pipeline updated.');
+      }
+    },
+    [],
+  );
+
+  const handleToggleOutcomePipeline = useCallback((pipelineId: string, enabled: boolean) => {
+    const normalizedPipelineId = pipelineId.trim();
+    if (!normalizedPipelineId) {
+      return;
+    }
+    setOutcomePipelines((current) =>
+      current.map((pipeline) =>
+        pipeline.id === normalizedPipelineId
+          ? {
+              ...pipeline,
+              enabled,
+              updatedAt: Date.now(),
+            }
+          : pipeline,
+      ),
+    );
+    setStatus(enabled ? 'Pipeline enabled.' : 'Pipeline paused.');
+  }, []);
+
+  const handleDeleteOutcomePipeline = useCallback((pipelineId: string) => {
+    const normalizedPipelineId = pipelineId.trim();
+    if (!normalizedPipelineId) {
+      return;
+    }
+    setOutcomePipelines((current) => current.filter((pipeline) => pipeline.id !== normalizedPipelineId));
+    setOutcomePipelineRuns((current) => current.filter((run) => run.pipelineId !== normalizedPipelineId));
+    setStatus('Pipeline deleted.');
+  }, []);
+
   const handleDeleteCoworkProject = (projectId: string) => {
     const normalizedProjectId = projectId.trim();
     if (!normalizedProjectId) {
@@ -3812,6 +4262,8 @@ export default function App() {
       return current.filter((project) => project.id !== normalizedProjectId);
     });
     setProjectKnowledgeItems((current) => current.filter((item) => item.projectId !== normalizedProjectId));
+    setOutcomePipelines((current) => current.filter((item) => item.projectId !== normalizedProjectId));
+    setOutcomePipelineRuns((current) => current.filter((item) => item.projectId !== normalizedProjectId));
 
     if (activeCoworkProjectId === normalizedProjectId) {
       setActiveCoworkProjectId('');
@@ -4689,12 +5141,18 @@ export default function App() {
                   project={activeCoworkProject}
                   tasks={visibleCoworkTasks}
                   scheduledCount={scheduledJobs.length}
+                  pipelineCount={visibleProjectPipelines.length}
+                  pipelines={visibleProjectPipelines}
                   pendingApprovalsCount={visiblePendingApprovals.length}
                   artifacts={visibleProjectArtifacts}
                   projectKnowledge={visibleProjectKnowledge}
                   webSearchEnabled={coworkWebSearchEnabled}
                   onPickFolder={handlePickWorkingFolderForProject}
                   onUpdateProject={handleUpdateCoworkProject}
+                  onCreatePipeline={handleCreateOutcomePipeline}
+                  onUpdatePipeline={handleUpdateOutcomePipeline}
+                  onTogglePipeline={handleToggleOutcomePipeline}
+                  onDeletePipeline={handleDeleteOutcomePipeline}
                   onOpenArtifact={handleOpenCoworkArtifact}
                   onAddKnowledge={handleAddProjectKnowledge}
                   onDeleteKnowledge={handleDeleteProjectKnowledge}
@@ -4800,8 +5258,16 @@ export default function App() {
                     {activePage === 'scheduled' && (
                       <ScheduledPage
                         jobs={scheduledJobs}
+                        projectId={activeCoworkProject?.id}
+                        projectTitle={activeCoworkProject?.name}
+                        draftPrompt={[...coworkMessages].reverse().find((message) => message.role === 'user')?.text?.trim() || coworkDraftPrompt.trim()}
+                        jobProjectLinks={scheduledJobProjectLinks}
                         loading={scheduledLoading}
                         status={status}
+                        onAssignJobToProject={handleAssignScheduledJobToProject}
+                        onCreateJob={handleCreateScheduledJob}
+                        onUpdateJob={handleUpdateScheduledJob}
+                        onDeleteJob={handleDeleteScheduledJob}
                         onRefresh={loadScheduledJobs}
                       />
                     )}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Brain, CalendarClock, CheckCircle2, Clock3, FileText, FolderOpen, ListChecks, Pencil, Play, Search, Shield, Sparkles, Trash2, XCircle, Zap } from 'lucide-react';
 
-import type { CoworkArtifact, CoworkProject, CoworkProjectTask, ProjectKnowledgeItem } from '@/app-types';
+import type { CoworkArtifact, CoworkProject, CoworkProjectTask, OutcomePipeline, ProjectKnowledgeItem } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,12 +13,44 @@ type ProjectPageProps = {
   project: CoworkProject | null;
   tasks: CoworkProjectTask[];
   scheduledCount: number;
+  pipelineCount: number;
+  pipelines: OutcomePipeline[];
   pendingApprovalsCount: number;
   artifacts: CoworkArtifact[];
   projectKnowledge: ProjectKnowledgeItem[];
   webSearchEnabled: boolean;
   onPickFolder: () => Promise<string | undefined>;
   onUpdateProject: (projectId: string, name: string, workspaceFolder: string, description?: string, instructions?: string) => void;
+  onCreatePipeline: (
+    projectId: string,
+    input: {
+      name: string;
+      description?: string;
+      triggerKind?: OutcomePipeline['triggerKind'];
+      triggerValue?: string;
+      sessionTarget?: OutcomePipeline['sessionTarget'];
+      delivery?: OutcomePipeline['delivery'];
+      webhookUrl?: string;
+      agentId?: string;
+      prompt: string;
+    },
+  ) => void;
+  onUpdatePipeline: (
+    pipelineId: string,
+    input: {
+      name?: string;
+      description?: string;
+      triggerKind?: OutcomePipeline['triggerKind'];
+      triggerValue?: string;
+      sessionTarget?: OutcomePipeline['sessionTarget'];
+      delivery?: OutcomePipeline['delivery'];
+      webhookUrl?: string;
+      agentId?: string;
+      prompt?: string;
+    },
+  ) => void;
+  onTogglePipeline: (pipelineId: string, enabled: boolean) => void;
+  onDeletePipeline: (pipelineId: string) => void;
   onOpenArtifact: (artifact: CoworkArtifact) => void;
   onAddKnowledge: (projectId: string, title: string, content: string) => void;
   onDeleteKnowledge: (knowledgeId: string) => void;
@@ -94,12 +126,18 @@ export function ProjectPage({
   project,
   tasks,
   scheduledCount,
+  pipelineCount,
+  pipelines,
   pendingApprovalsCount,
   artifacts,
   projectKnowledge,
   webSearchEnabled,
   onPickFolder,
   onUpdateProject,
+  onCreatePipeline,
+  onUpdatePipeline,
+  onTogglePipeline,
+  onDeletePipeline,
   onOpenArtifact,
   onAddKnowledge,
   onDeleteKnowledge,
@@ -114,6 +152,16 @@ export function ProjectPage({
   const [folderBrowsing, setFolderBrowsing] = useState(false);
   const [knowledgeTitle, setKnowledgeTitle] = useState('');
   const [knowledgeContent, setKnowledgeContent] = useState('');
+  const [editingPipelineId, setEditingPipelineId] = useState('');
+  const [pipelineName, setPipelineName] = useState('');
+  const [pipelineDescription, setPipelineDescription] = useState('');
+  const [pipelineTriggerKind, setPipelineTriggerKind] = useState<OutcomePipeline['triggerKind']>('cron');
+  const [pipelineTriggerValue, setPipelineTriggerValue] = useState('0 9 * * *');
+  const [pipelineSessionTarget, setPipelineSessionTarget] = useState<OutcomePipeline['sessionTarget']>('current');
+  const [pipelineDelivery, setPipelineDelivery] = useState<OutcomePipeline['delivery']>('none');
+  const [pipelineWebhookUrl, setPipelineWebhookUrl] = useState('');
+  const [pipelineAgentId, setPipelineAgentId] = useState('');
+  const [pipelinePrompt, setPipelinePrompt] = useState('');
 
   useEffect(() => {
     if (!project) {
@@ -199,6 +247,64 @@ export function ProjectPage({
     onAddKnowledge(project.id, knowledgeTitle, knowledgeContent);
     setKnowledgeTitle('');
     setKnowledgeContent('');
+  };
+
+  const resetPipelineForm = () => {
+    setEditingPipelineId('');
+    setPipelineName('');
+    setPipelineDescription('');
+    setPipelineTriggerKind('cron');
+    setPipelineTriggerValue('0 9 * * *');
+    setPipelineSessionTarget('current');
+    setPipelineDelivery('none');
+    setPipelineWebhookUrl('');
+    setPipelineAgentId('');
+    setPipelinePrompt('');
+  };
+
+  const handleSubmitPipeline = () => {
+    if (!project || !pipelineName.trim() || !pipelinePrompt.trim()) {
+      return;
+    }
+    if (editingPipelineId) {
+      onUpdatePipeline(editingPipelineId, {
+        name: pipelineName,
+        description: pipelineDescription || undefined,
+        triggerKind: pipelineTriggerKind,
+        triggerValue: pipelineTriggerValue,
+        sessionTarget: pipelineSessionTarget,
+        delivery: pipelineDelivery,
+        webhookUrl: pipelineWebhookUrl || undefined,
+        agentId: pipelineAgentId || undefined,
+        prompt: pipelinePrompt,
+      });
+    } else {
+      onCreatePipeline(project.id, {
+        name: pipelineName,
+        description: pipelineDescription || undefined,
+        triggerKind: pipelineTriggerKind,
+        triggerValue: pipelineTriggerValue,
+        sessionTarget: pipelineSessionTarget,
+        delivery: pipelineDelivery,
+        webhookUrl: pipelineWebhookUrl || undefined,
+        agentId: pipelineAgentId || undefined,
+        prompt: pipelinePrompt,
+      });
+    }
+    resetPipelineForm();
+  };
+
+  const handleEditPipeline = (pipeline: OutcomePipeline) => {
+    setEditingPipelineId(pipeline.id);
+    setPipelineName(pipeline.name);
+    setPipelineDescription(pipeline.description ?? '');
+    setPipelineTriggerKind(pipeline.triggerKind);
+    setPipelineTriggerValue(pipeline.triggerValue);
+    setPipelineSessionTarget(pipeline.sessionTarget);
+    setPipelineDelivery(pipeline.delivery);
+    setPipelineWebhookUrl(pipeline.webhookUrl ?? '');
+    setPipelineAgentId(pipeline.agentId ?? '');
+    setPipelinePrompt(pipeline.steps[0]?.prompt ?? '');
   };
 
   const artifactDisplayName = (artifact: CoworkArtifact) => {
@@ -311,7 +417,7 @@ export function ProjectPage({
         </div>
       </header>
 
-      <div className="grid gap-2 md:grid-cols-6">
+      <div className="grid gap-2 md:grid-cols-7">
         <div className="rounded-xl border border-border/60 bg-card px-3 py-2.5">
           <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Tasks</p>
           <p className="mt-1 text-lg font-semibold">{tasks.length}</p>
@@ -331,6 +437,10 @@ export function ProjectPage({
         <div className="rounded-xl border border-border/60 bg-card px-3 py-2.5">
           <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Completed</p>
           <p className="mt-1 text-lg font-semibold">{completedTasks}</p>
+        </div>
+        <div className="rounded-xl border border-border/60 bg-card px-3 py-2.5">
+          <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Pipelines</p>
+          <p className="mt-1 text-lg font-semibold">{pipelineCount}</p>
         </div>
         <div className="rounded-xl border border-border/60 bg-card px-3 py-2.5">
           <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Readiness</p>
@@ -449,6 +559,147 @@ export function ProjectPage({
               )}
             </div>
           </div>
+
+          <div className="rounded-2xl border border-border/60 bg-card p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold">Outcome Pipelines</h2>
+              </div>
+              {editingPipelineId ? (
+                <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={resetPipelineForm}>
+                  Cancel edit
+                </Button>
+              ) : null}
+            </div>
+            <div className="grid gap-2">
+              <Input
+                value={pipelineName}
+                onChange={(event) => setPipelineName(event.target.value)}
+                placeholder="Pipeline name"
+              />
+              <Input
+                value={pipelineDescription}
+                onChange={(event) => setPipelineDescription(event.target.value)}
+                placeholder="Description (optional)"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={pipelineTriggerKind}
+                  onChange={(event) => setPipelineTriggerKind(event.target.value as OutcomePipeline['triggerKind'])}
+                  className="h-9 rounded-lg border border-input bg-background px-2.5 text-xs text-foreground outline-none"
+                >
+                  <option value="cron">Cron trigger</option>
+                  <option value="hook">Hook trigger</option>
+                </select>
+                <Input
+                  value={pipelineTriggerValue}
+                  onChange={(event) => setPipelineTriggerValue(event.target.value)}
+                  placeholder={pipelineTriggerKind === 'cron' ? '0 9 * * *' : 'command:new'}
+                  className="h-9"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={pipelineSessionTarget}
+                  onChange={(event) => setPipelineSessionTarget(event.target.value as OutcomePipeline['sessionTarget'])}
+                  className="h-9 rounded-lg border border-input bg-background px-2.5 text-xs text-foreground outline-none"
+                >
+                  <option value="current">Current session</option>
+                  <option value="main">Main session</option>
+                  <option value="isolated">Isolated session</option>
+                  <option value="custom">Custom session</option>
+                </select>
+                <select
+                  value={pipelineDelivery}
+                  onChange={(event) => setPipelineDelivery(event.target.value as OutcomePipeline['delivery'])}
+                  className="h-9 rounded-lg border border-input bg-background px-2.5 text-xs text-foreground outline-none"
+                >
+                  <option value="none">No delivery</option>
+                  <option value="announce">Announce</option>
+                  <option value="webhook">Webhook</option>
+                </select>
+              </div>
+              {pipelineDelivery === 'webhook' ? (
+                <Input
+                  value={pipelineWebhookUrl}
+                  onChange={(event) => setPipelineWebhookUrl(event.target.value)}
+                  placeholder="Webhook URL"
+                />
+              ) : null}
+              <Input
+                value={pipelineAgentId}
+                onChange={(event) => setPipelineAgentId(event.target.value)}
+                placeholder="Agent ID (optional)"
+              />
+              <Textarea
+                value={pipelinePrompt}
+                onChange={(event) => setPipelinePrompt(event.target.value)}
+                placeholder="Prompt for pipeline step 1"
+                rows={3}
+              />
+              <div className="flex justify-end gap-2">
+                <Button type="button" onClick={handleSubmitPipeline} disabled={!pipelineName.trim() || !pipelinePrompt.trim()}>
+                  {editingPipelineId ? 'Update Pipeline' : 'Create Pipeline'}
+                </Button>
+              </div>
+            </div>
+            {pipelines.length === 0 ? (
+              <p className="mt-3 rounded-lg border border-dashed border-border/70 bg-muted/30 px-3 py-3 font-sans text-xs text-muted-foreground">
+                No pipelines yet. Create one to automate project outcomes.
+              </p>
+            ) : (
+              <div className="mt-3 grid gap-2">
+                {pipelines.map((pipeline) => (
+                  <div key={pipeline.id} className="rounded-lg border border-border/60 bg-background px-2.5 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold">{pipeline.name}</p>
+                        <p className="mt-0.5 font-sans text-[11px] text-muted-foreground">
+                          {pipeline.triggerKind === 'cron' ? 'Cron' : 'Hook'}: {pipeline.triggerValue}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className={pipeline.enabled ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : ''}>
+                        {pipeline.enabled ? 'Enabled' : 'Paused'}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap font-sans text-[11px] text-muted-foreground">
+                      {pipeline.description || pipeline.steps[0]?.prompt || 'No description'}
+                    </p>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[11px]"
+                        onClick={() => onTogglePipeline(pipeline.id, !pipeline.enabled)}
+                      >
+                        {pipeline.enabled ? 'Pause' : 'Enable'}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[11px]"
+                        onClick={() => handleEditPipeline(pipeline)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="ml-auto h-7 text-[11px]"
+                        onClick={() => onDeletePipeline(pipeline.id)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <aside className="grid min-h-0 gap-3">
@@ -465,6 +716,10 @@ export function ProjectPage({
               <div className="rounded-lg border border-border/60 bg-background px-2.5 py-2">
                 <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Schedule</p>
                 <p className="mt-1 text-sm font-semibold">{scheduledCount} configured job{scheduledCount === 1 ? '' : 's'}</p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-background px-2.5 py-2">
+                <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Pipelines</p>
+                <p className="mt-1 text-sm font-semibold">{pipelineCount} configured</p>
               </div>
               <div className="rounded-lg border border-border/60 bg-background px-2.5 py-2">
                 <p className="font-sans text-[11px] uppercase tracking-wide text-muted-foreground">Failures</p>
