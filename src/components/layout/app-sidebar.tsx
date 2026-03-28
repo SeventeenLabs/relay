@@ -83,7 +83,6 @@ type AppSidebarProps = {
   activeCoworkSessionKey: string;
   userEmail: string;
   guestMode: boolean;
-  gatewayConnected: boolean;
   language: AppLanguage;
   settingsSection: SettingsSection;
   recentItems: RecentSidebarItem[];
@@ -156,7 +155,6 @@ export function AppSidebar({
   activeCoworkSessionKey,
   userEmail,
   guestMode,
-  gatewayConnected,
   language,
   settingsSection,
   recentItems,
@@ -912,14 +910,6 @@ export function AppSidebar({
             </span>
           </div>
         )}
-        <div className={`flex items-center gap-2 px-3 py-1 ${compact ? 'justify-center' : ''}`}>
-          <span className={`inline-block h-2 w-2 rounded-full ${gatewayConnected ? 'bg-[#2f7a58]' : 'bg-[#b42318]'}`} />
-          {!compact && (
-            <span className="font-sans text-[11px] text-muted-foreground">
-              {gatewayConnected ? t('Gateway connected', 'Gateway verbunden') : t('Gateway disconnected', 'Gateway getrennt')}
-            </span>
-          )}
-        </div>
         <div className="relative" ref={profileMenuRef}>
           {profileMenuOpen && (
             <div className={`absolute z-50 ${profilePopupWidthClass} rounded-2xl border border-border bg-popover p-1.5 shadow-2xl backdrop-blur-sm ${profilePopupPositionClass}`}>

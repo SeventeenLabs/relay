@@ -15,6 +15,7 @@ type AppTitlebarProps = {
   coworkRightPanelOpen?: boolean;
   isMaximized: boolean;
   usageModeLabel: string;
+  gatewayConnected: boolean;
   coworkRunPhase?: CoworkRunPhase;
   coworkRunStatus?: string;
   coworkProgressSteps?: CoworkProgressStep[];
@@ -30,6 +31,7 @@ type AppTitlebarProps = {
   onToggleMaximize: () => void | Promise<void>;
   onClose: () => void | Promise<void>;
   onShowSystemMenu: (x: number, y: number) => void | Promise<void>;
+  onOpenGatewaySettings: () => void;
 };
 
 const modeOptions = ['chat', 'cowork'] as const;
@@ -40,6 +42,7 @@ export function AppTitlebar({
   coworkRightPanelOpen = true,
   isMaximized,
   usageModeLabel,
+  gatewayConnected,
   coworkRunPhase = 'idle',
   coworkRunStatus = 'Ready for a new task.',
   coworkProgressSteps = [],
@@ -55,6 +58,7 @@ export function AppTitlebar({
   onToggleMaximize,
   onClose,
   onShowSystemMenu,
+  onOpenGatewaySettings,
 }: AppTitlebarProps) {
   const [progressPopupOpen, setProgressPopupOpen] = useState(false);
   const progressPopupRef = useRef<HTMLDivElement | null>(null);
@@ -347,6 +351,24 @@ export function AppTitlebar({
               </div>
             ) : null}
           </div>
+        ) : null}
+        {!minimal ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={`mr-2 h-7 rounded-full px-2 text-[10px] ${
+              gatewayConnected
+                ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300'
+                : 'border-destructive/35 bg-destructive/10 text-destructive hover:bg-destructive/15'
+            }`}
+            title={`${gatewayConnected ? 'Gateway connected' : 'Gateway disconnected'} - Open Gateway settings`}
+            onClick={onOpenGatewaySettings}
+            data-testid="titlebar-gateway-badge"
+          >
+            <Circle className="mr-1 size-2.5 fill-current" />
+            {gatewayConnected ? 'Connected' : 'Disconnected'}
+          </Button>
         ) : null}
 
         {!minimal && activePage === 'cowork' && onToggleCoworkRightPanel ? (

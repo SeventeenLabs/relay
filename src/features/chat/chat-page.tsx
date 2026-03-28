@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, FormEvent, KeyboardEvent } from 'react';
 
-import { ArrowUp, ChevronDown, Code2, Download, FolderPlus, Loader2, Paperclip, PanelRightClose, PanelRightOpen, Pencil, Star, Trash2, X } from 'lucide-react';
+import { ArrowUp, ChevronDown, Code2, Download, FolderPlus, Loader2, Paperclip, PanelRightClose, PanelRightOpen, Pencil, Star, Trash2, WifiOff, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -23,6 +23,7 @@ type ChatPageProps = {
   selectedModel: string;
   modelsLoading: boolean;
   changingModel: boolean;
+  gatewayConnected: boolean;
   status: string;
   onTaskPromptChange: (value: string) => void;
   onModelChange: (value: string) => void;
@@ -31,6 +32,7 @@ type ChatPageProps = {
   onNewChat?: () => void;
   onClearChat?: () => void;
   onOpenSettings?: () => void;
+  onOpenGatewaySettings?: () => void;
 };
 
 const MAX_ATTACHMENTS = 5;
@@ -54,6 +56,7 @@ export function ChatPage({
   selectedModel,
   modelsLoading,
   changingModel,
+  gatewayConnected,
   status,
   onTaskPromptChange,
   onModelChange,
@@ -62,6 +65,7 @@ export function ChatPage({
   onNewChat,
   onClearChat,
   onOpenSettings,
+  onOpenGatewaySettings,
 }: ChatPageProps) {
   const trimmedStatus = status.trim();
   const isInitial = messages.length === 0;
@@ -82,7 +86,7 @@ export function ChatPage({
   const [greetingNow, setGreetingNow] = useState(() => new Date());
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [composerDockHeight, setComposerDockHeight] = useState(170);
-  const canSend = (taskPrompt.trim().length > 0 || attachedFiles.length > 0) && !sending;
+  const canSend = (taskPrompt.trim().length > 0 || attachedFiles.length > 0) && !sending && gatewayConnected;
   const composerBottomInset = composerDockHeight + COMPOSER_EXTRA_BOTTOM_SPACE;
 
   const scrollMessagesToBottom = (behavior: ScrollBehavior = 'auto') => {
@@ -215,6 +219,25 @@ export function ChatPage({
     }
     onSubmit(event);
   };
+
+  if (!gatewayConnected) {
+    return (
+      <section className="grid h-full w-full place-items-center p-6">
+        <div className="w-full max-w-xl rounded-2xl border border-border bg-card p-6 text-center">
+          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-muted">
+            <WifiOff className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <h2 className="text-lg font-semibold">Chat is offline</h2>
+          <p className="mt-2 font-sans text-sm text-muted-foreground">
+            Connect the gateway to continue chatting.
+          </p>
+          <Button type="button" className="mt-4" onClick={() => (onOpenGatewaySettings ?? onOpenSettings)?.()}>
+            Open Gateway Settings
+          </Button>
+        </div>
+      </section>
+    );
+  }
 
   useEffect(() => {
     if (!headerMenuOpen) {
@@ -655,7 +678,7 @@ export function ChatPage({
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
             <p className="font-sans text-[11px] text-muted-foreground">
-              Press Enter to send, Shift+Enter for a new line
+              {gatewayConnected ? 'Press Enter to send, Shift+Enter for a new line' : 'Connect the gateway to enable chat'}
             </p>
             <div className="ml-auto flex items-center gap-2">
               <select
@@ -684,7 +707,9 @@ export function ChatPage({
           </div>
         </form>
 
-        <p className="mt-2 text-center font-sans text-[11px] text-muted-foreground" aria-live="polite">{trimmedStatus || 'Claude is an AI and can make mistakes. Please verify cited sources.'}</p>
+        <p className="mt-2 text-center font-sans text-[11px] text-muted-foreground" aria-live="polite">
+          {trimmedStatus || (gatewayConnected ? 'Claude is an AI and can make mistakes. Please verify cited sources.' : 'Gateway disconnected. Chat is paused.')}
+        </p>
         </div>
       </div>
     </section>

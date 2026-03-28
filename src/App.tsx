@@ -3157,6 +3157,14 @@ export default function App() {
 
   const handlePlanTask = async (event: FormEvent) => {
     event.preventDefault();
+    if (!gatewayConnected) {
+      setStatus('Gateway disconnected. Connect in Settings > Gateway to run cowork tasks.');
+      setCoworkAwaitingStream(false);
+      setCoworkSending(false);
+      setCoworkRunPhase('error');
+      setCoworkRunStatus('Gateway disconnected.');
+      return;
+    }
     workingFolderRef.current = workingFolder.trim();
     setCoworkSending(true);
     setCoworkAwaitingStream(false);
@@ -3894,6 +3902,12 @@ export default function App() {
 
   const handleSendChat = async (event: FormEvent) => {
     event.preventDefault();
+    if (!gatewayConnected) {
+      setStatus('Gateway disconnected. Connect in Settings > Gateway to send chat messages.');
+      setAwaitingChatStream(false);
+      setSendingChat(false);
+      return;
+    }
 
     const text = taskPrompt.trim();
     if (!text) {
@@ -4390,6 +4404,7 @@ export default function App() {
         coworkRightPanelOpen={coworkRightPanelOpen}
         isMaximized={isMaximized}
         usageModeLabel={usageModeLabel}
+        gatewayConnected={gatewayConnected}
         coworkRunPhase={coworkRunPhase}
         coworkRunStatus={coworkRunStatus}
         coworkProgressSteps={coworkProgressSteps}
@@ -4405,6 +4420,10 @@ export default function App() {
         onToggleMaximize={handleToggleMaximize}
         onClose={handleClose}
         onShowSystemMenu={handleShowSystemMenu}
+        onOpenGatewaySettings={() => {
+          setActivePage('settings');
+          setSettingsSection('Gateway');
+        }}
       />
 
       {needsOnboarding ? (
@@ -4433,7 +4452,6 @@ export default function App() {
             activeCoworkSessionKey={coworkSessionKey}
             userEmail={userIdentityLabel}
             guestMode={guestMode}
-            gatewayConnected={gatewayConnected}
             language={preferences.language}
             settingsSection={settingsSection}
             recentItems={recentItems}
@@ -4602,8 +4620,13 @@ export default function App() {
                   pendingApprovals={visiblePendingApprovals}
                   projectTasks={visibleCoworkTasks}
                   sending={coworkSending}
+                  gatewayConnected={gatewayConnected}
                   webSearchEnabled={coworkWebSearchEnabled}
                   projectPathReferences={coworkProjectPathReferences}
+                  onOpenGatewaySettings={() => {
+                    setActivePage('settings');
+                    setSettingsSection('Gateway');
+                  }}
                   onTaskPromptChange={setTaskPrompt}
                   onModelChange={handleCoworkModelChange}
                   onWebSearchEnabledChange={setCoworkWebSearchEnabled}
@@ -4629,25 +4652,53 @@ export default function App() {
                   onSelectPage={(page) => setActivePage(page)}
                 />
               ) : activePage === 'files' ? (
-                <FilesPage
-                  workingFolder={workingFolder}
-                  desktopBridgeAvailable={Boolean(bridge)}
-                  onPickFolder={handlePickWorkingFolder}
-                  fileService={fileService}
-                  localFileService={localFileService}
-                  gatewayUrl={draftGatewayUrl}
-                  root="workspace"
-                />
+                gatewayConnected ? (
+                  <FilesPage
+                    workingFolder={workingFolder}
+                    desktopBridgeAvailable={Boolean(bridge)}
+                    onPickFolder={handlePickWorkingFolder}
+                    fileService={fileService}
+                    localFileService={localFileService}
+                    gatewayUrl={draftGatewayUrl}
+                    root="workspace"
+                  />
+                ) : (
+                  <section className="grid h-full place-items-center p-6">
+                    <div className="w-full max-w-xl rounded-2xl border border-border bg-card p-6 text-center">
+                      <h2 className="text-lg font-semibold">Gateway disconnected</h2>
+                      <p className="mt-2 font-sans text-sm text-muted-foreground">
+                        Connect the gateway to view workspace contents.
+                      </p>
+                      <Button type="button" className="mt-4" onClick={() => setActivePage('settings')}>
+                        Open Gateway Settings
+                      </Button>
+                    </div>
+                  </section>
+                )
               ) : activePage === 'local-files' ? (
-                <FilesPage
-                  workingFolder={workingFolder}
-                  desktopBridgeAvailable={Boolean(bridge)}
-                  onPickFolder={handlePickWorkingFolder}
-                  fileService={fileService}
-                  localFileService={localFileService}
-                  gatewayUrl={draftGatewayUrl}
-                  root="working-folder"
-                />
+                gatewayConnected ? (
+                  <FilesPage
+                    workingFolder={workingFolder}
+                    desktopBridgeAvailable={Boolean(bridge)}
+                    onPickFolder={handlePickWorkingFolder}
+                    fileService={fileService}
+                    localFileService={localFileService}
+                    gatewayUrl={draftGatewayUrl}
+                    root="working-folder"
+                  />
+                ) : (
+                  <section className="grid h-full place-items-center p-6">
+                    <div className="w-full max-w-xl rounded-2xl border border-border bg-card p-6 text-center">
+                      <h2 className="text-lg font-semibold">Gateway disconnected</h2>
+                      <p className="mt-2 font-sans text-sm text-muted-foreground">
+                        Connect the gateway to view project folder contents.
+                      </p>
+                      <Button type="button" className="mt-4" onClick={() => setActivePage('settings')}>
+                        Open Gateway Settings
+                      </Button>
+                    </div>
+                  </section>
+                )
               ) : (
                 <>
                 {activePage === 'chat' && (
@@ -4662,6 +4713,7 @@ export default function App() {
                     selectedModel={selectedModel}
                     modelsLoading={modelsLoading}
                     changingModel={changingModel}
+                    gatewayConnected={gatewayConnected}
                     status={status}
                     onTaskPromptChange={setTaskPrompt}
                     onModelChange={handleModelChange}
@@ -4670,6 +4722,10 @@ export default function App() {
                     onNewChat={handleStartNewChat}
                     onClearChat={() => setChatMessages([])}
                     onOpenSettings={() => setActivePage('settings')}
+                    onOpenGatewaySettings={() => {
+                      setActivePage('settings');
+                      setSettingsSection('Gateway');
+                    }}
                   />
                 )}
 
