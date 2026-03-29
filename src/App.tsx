@@ -5933,6 +5933,9 @@ export default function App() {
                   changingModel={changingCoworkModel}
                   pendingApprovals={visiblePendingApprovals}
                   projectTasks={visibleCoworkTasks}
+                  runPhase={coworkRunPhase}
+                  runStatus={coworkRunStatus}
+                  progressSteps={coworkProgressSteps}
                   sending={coworkSending}
                   gatewayConnected={gatewayConnected}
                   webSearchEnabled={coworkWebSearchEnabled}

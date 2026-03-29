@@ -8,7 +8,9 @@ import type {
   ChatMessage,
   ChatModelOption,
   CoworkArtifact,
+  CoworkProgressStep,
   CoworkProjectTask,
+  CoworkRunPhase,
   PendingApprovalAction,
   ProjectPathReference,
 } from '@/app-types';
@@ -47,6 +49,9 @@ type CoworkPageProps = {
   changingModel: boolean;
   pendingApprovals: PendingApprovalAction[];
   projectTasks: CoworkProjectTask[];
+  runPhase: CoworkRunPhase;
+  runStatus: string;
+  progressSteps: CoworkProgressStep[];
   sending: boolean;
   gatewayConnected: boolean;
   webSearchEnabled: boolean;
@@ -104,6 +109,9 @@ export function CoworkPage({
   changingModel,
   pendingApprovals,
   projectTasks,
+  runPhase,
+  runStatus,
+  progressSteps,
   sending,
   gatewayConnected,
   webSearchEnabled,
@@ -122,6 +130,8 @@ export function CoworkPage({
 }: CoworkPageProps) {
   const formRef = useRef<HTMLFormElement | null>(null);
   const composerEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const scrollHostRef = useRef<HTMLDivElement | null>(null);
+  const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const taskPromptId = useId();
   const approvalsHeadingId = useId();
   const workspaceCardBodyId = useId();
@@ -131,12 +141,16 @@ export function CoworkPage({
   const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
   const [mentionMenuIndex, setMentionMenuIndex] = useState(0);
   const [composerText, setComposerText] = useState(taskPrompt);
+  const [liveRunLines, setLiveRunLines] = useState<string[]>([]);
   const [openDropdown, setOpenDropdown] = useState<'model' | 'effort' | 'approvals' | null>(null);
   const [effortLevel, setEffortLevel] = useState<'low' | 'medium' | 'high'>('medium');
+  const liveRunLineSetRef = useRef<Set<string>>(new Set());
+  const shouldAutoScrollRef = useRef(true);
   const canSend = composerText.trim().length > 0 && !sending && gatewayConnected;
   const visibleMessages = useMemo(() => messages.filter((message) => !isSystemLikeMessage(message)), [messages]);
   const isInitialWorkspace = visibleMessages.length === 0;
-  const showRightPanel = rightPanelOpen && (!isInitialWorkspace || projectSelected);
+  const showRightPanel = rightPanelOpen && projectSelected;
+  const isRunActive = runPhase === 'sending' || runPhase === 'streaming' || sending || awaitingStream;
   const safeContextWindowTotalTokens = Math.max(1, contextWindowTotalTokens);
   const contextWindowUsagePercent = Math.max(0, Math.min(100, Math.round((contextWindowUsedTokens / safeContextWindowTotalTokens) * 100)));
   const contextWindowUsedTokensLabel = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(
@@ -164,13 +178,6 @@ export function CoworkPage({
     return dateTimeFormatter.format(parsed);
   };
 
-  const roleLabel = (role: ChatMessage['role']) => {
-    if (role === 'user') return 'You';
-    if (role === 'assistant') return 'Cowork';
-    if (role === 'system') return 'System';
-    return role;
-  };
-
   const artifactDisplayName = (artifact: CoworkArtifact) => {
     const normalizedPath = artifact.path.replace(/\\/g, '/');
     const fileName = normalizedPath.split('/').filter(Boolean).pop();
@@ -185,6 +192,44 @@ export function CoworkPage({
   }, [taskPrompt]);
 
   useEffect(() => {
+    if (!isRunActive) {
+      liveRunLineSetRef.current.clear();
+      setLiveRunLines([]);
+      return;
+    }
+
+    const candidateLines: string[] = [];
+    const statusLine = runStatus.trim();
+    if (statusLine) {
+      candidateLines.push(statusLine);
+    }
+    for (const step of progressSteps) {
+      if (!step.details?.trim()) {
+        continue;
+      }
+      if (step.status === 'active' || step.status === 'completed' || step.status === 'blocked') {
+        candidateLines.push(`${step.label}: ${step.details.trim()}`);
+      }
+    }
+
+    if (candidateLines.length === 0) {
+      candidateLines.push('Starting cowork run...');
+    }
+
+    const nextUnique: string[] = [];
+    for (const line of candidateLines) {
+      if (!liveRunLineSetRef.current.has(line)) {
+        liveRunLineSetRef.current.add(line);
+        nextUnique.push(line);
+      }
+    }
+
+    if (nextUnique.length > 0) {
+      setLiveRunLines((current) => [...current, ...nextUnique].slice(-14));
+    }
+  }, [isRunActive, progressSteps, runStatus]);
+
+  useEffect(() => {
     const editor = composerEditorRef.current;
     if (!editor) {
       return;
@@ -192,6 +237,50 @@ export function CoworkPage({
     editor.style.height = 'auto';
     editor.style.height = `${editor.scrollHeight}px`;
   }, [composerText]);
+
+  useEffect(() => {
+    const host = scrollHostRef.current;
+    if (!host) {
+      return;
+    }
+    const viewport = host.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]');
+    if (!viewport) {
+      return;
+    }
+
+    const handleScroll = () => {
+      const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+      shouldAutoScrollRef.current = distanceFromBottom <= 28;
+    };
+
+    handleScroll();
+    viewport.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      viewport.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isInitialWorkspace) {
+      return;
+    }
+    if (!shouldAutoScrollRef.current) {
+      return;
+    }
+    const node = chatBottomRef.current;
+    if (!node) {
+      return;
+    }
+    requestAnimationFrame(() => {
+      node.scrollIntoView({ block: 'end' });
+    });
+  }, [awaitingStream, isInitialWorkspace, liveRunLines, progressSteps, runStatus, visibleMessages.length]);
+
+  useEffect(() => {
+    if (sending || awaitingStream) {
+      shouldAutoScrollRef.current = true;
+    }
+  }, [awaitingStream, sending]);
 
   const mentionQuery = useMemo(() => {
     const match = composerText.match(/(^|\s)@([^\s]*)$/);
@@ -687,6 +776,30 @@ export function CoworkPage({
     );
   };
 
+  const renderLiveRunPanel = () => {
+    if (!isRunActive) {
+      return null;
+    }
+    const lines = liveRunLines.length > 0 ? liveRunLines : ['Starting cowork run...'];
+
+    return (
+      <article className="mx-auto w-full max-w-[720px] px-2 py-0 font-sans text-sm text-foreground">
+        <p className="mb-2 font-sans text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cowork</p>
+        <div className="space-y-1.5">
+          {lines.map((line, index) => (
+            <p key={`${line}-${index}`} className="font-mono text-[12px] leading-5 text-foreground/90">
+              {line}
+            </p>
+          ))}
+          <p className="font-mono text-[12px] leading-5 text-muted-foreground">
+            <Loader2 className="mr-1 inline h-3 w-3 animate-spin align-middle" />
+            Running...
+          </p>
+        </div>
+      </article>
+    );
+  };
+
   return (
     !gatewayConnected ? (
       <section className="grid h-full w-full place-items-center p-6">
@@ -717,6 +830,7 @@ export function CoworkPage({
           isInitialWorkspace ? 'grid-rows-[minmax(0,1fr)]' : 'grid-rows-[minmax(0,1fr)_auto]'
         }`}
       >
+        <div ref={scrollHostRef} className="h-full">
         <ScrollArea className="h-full px-2">
           {isInitialWorkspace ? (
             <div className="mx-auto grid h-full w-full max-w-[920px] place-items-center px-4">
@@ -745,29 +859,24 @@ export function CoworkPage({
               </div>
             </div>
           ) : (
-            <div className="mx-auto grid w-full max-w-[860px] gap-3 px-4" role="log" aria-live="polite" aria-relevant="additions">
+            <div className="mx-auto grid w-full max-w-[860px] gap-3 px-4 py-6" role="log" aria-live="polite" aria-relevant="additions">
               {visibleMessages.map((message) => {
                 const inline = extractInlineActivityCards(message);
+                const isUser = message.role === 'user';
 
                 return (
                   <article
                     key={message.id}
-                    className={
-                      message.role === 'user'
-                        ? 'ml-auto w-[min(92%,720px)] px-2 py-0 text-right font-sans text-sm text-foreground'
-                        : 'w-[min(95%,720px)] px-2 py-0 font-sans text-sm text-foreground'
-                    }
+                    className="mx-auto w-full max-w-[720px] px-2 py-0 font-sans text-sm text-foreground"
                   >
-                    <p
-                      className={`mb-2 font-sans text-xs font-semibold uppercase tracking-wide text-muted-foreground ${
-                        message.role === 'user' ? 'text-right' : ''
-                      }`}
-                    >
-                      {roleLabel(message.role)}
-                    </p>
-
                     {inline.body ? (
-                      <div className="font-sans text-sm leading-6 text-foreground">
+                      <div
+                        className={
+                          isUser
+                            ? 'ml-auto w-fit max-w-[92%] rounded-2xl bg-muted px-3 py-2 font-sans text-sm leading-6 text-foreground'
+                            : 'font-sans text-sm leading-6 text-foreground'
+                        }
+                      >
                         <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
                           {inline.body}
                         </ReactMarkdown>
@@ -777,18 +886,30 @@ export function CoworkPage({
                     {inline.cards.length > 0 ? (
                       <div className="mt-2 grid gap-1.5">
                         {inline.cards.map((card) => {
+                          const compactLabel = (() => {
+                            const raw = card.label.trim();
+                            const colonIndex = raw.indexOf(':');
+                            if (colonIndex <= 0 || colonIndex >= raw.length - 1) {
+                              return raw;
+                            }
+                            const verb = raw.slice(0, colonIndex).trim();
+                            const pathPart = raw.slice(colonIndex + 1).trim();
+                            const normalized = pathPart.replace(/\\/g, '/');
+                            const fileName = normalized.split('/').filter(Boolean).pop();
+                            return fileName ? `${verb}: ${fileName}` : raw;
+                          })();
                           const toneClass =
                             card.tone === 'danger'
-                              ? 'border-destructive/30 bg-destructive/10'
+                              ? 'bg-destructive/5'
                               : card.tone === 'success'
-                                ? 'border-emerald-500/35 bg-emerald-500/10'
-                                : 'border-border bg-muted';
+                                ? 'bg-emerald-500/5'
+                                : 'bg-card';
 
                           return (
-                            <div key={card.id} className="rounded-xl border border-border bg-card">
+                            <div key={card.id} className="rounded-xl border border-border/80 bg-card">
                               <button
                                 type="button"
-                                className={`group flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors hover:bg-muted ${toneClass}`}
+                                className={`group flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-colors hover:bg-muted/60 ${toneClass}`}
                                 onClick={() => setExpandedInlineActivityId((current) => (current === card.id ? null : card.id))}
                                 title={card.details}
                                 aria-expanded={expandedInlineActivityId === card.id}
@@ -797,7 +918,9 @@ export function CoworkPage({
                                 <span className="flex h-5 w-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
                                   <FileText className="h-3 w-3" />
                                 </span>
-                                <span className="min-w-0 flex-1 truncate font-sans text-xs text-foreground/90">{card.label}</span>
+                                <span className="min-w-0 flex-1 truncate font-sans text-xs text-foreground/90" title={card.label}>
+                                  {compactLabel}
+                                </span>
                                 <ChevronRight
                                   className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${
                                     expandedInlineActivityId === card.id ? 'rotate-90' : 'group-hover:translate-x-0.5'
@@ -806,8 +929,8 @@ export function CoworkPage({
                               </button>
 
                               {expandedInlineActivityId === card.id ? (
-                                <div id={`inline-activity-${card.id}`} className="border-t border-border px-3 py-2">
-                                  <div className="text-xs leading-5 text-muted-foreground">
+                                <div id={`inline-activity-${card.id}`} className="px-3 py-2">
+                                  <div className="break-words text-xs leading-5 text-muted-foreground">
                                     <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
                                       {card.details}
                                     </ReactMarkdown>
@@ -822,21 +945,15 @@ export function CoworkPage({
                   </article>
                 );
               })}
-
-              {(sending || awaitingStream) && (
-                <article className="w-[min(95%,720px)] px-2 py-0 font-sans text-sm text-muted-foreground">
-                  <div className="inline-flex items-center gap-2 rounded-xl bg-muted px-3 py-2">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Working...
-                  </div>
-                </article>
-              )}
+              {renderLiveRunPanel()}
+              <div ref={chatBottomRef} aria-hidden className="h-0.5 w-full" />
             </div>
           )}
         </ScrollArea>
+        </div>
 
         {!isInitialWorkspace ? (
-          <div className="px-2">
+          <div className="px-2 pb-3 pt-1">
             <div className="mx-auto grid w-full max-w-[920px] gap-2 px-4">
               {renderPendingApprovalsPanel()}
               {renderCoworkComposer('min-h-[38px]')}
