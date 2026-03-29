@@ -14,7 +14,6 @@ type AppTitlebarProps = {
   coworkRightPanelOpen?: boolean;
   isMaximized: boolean;
   usageModeLabel: string;
-  gatewayConnected: boolean;
   coworkRunPhase?: CoworkRunPhase;
   coworkRunStatus?: string;
   coworkProgressSteps?: CoworkProgressStep[];
@@ -30,7 +29,6 @@ type AppTitlebarProps = {
   onToggleMaximize: () => void | Promise<void>;
   onClose: () => void | Promise<void>;
   onShowSystemMenu: (x: number, y: number) => void | Promise<void>;
-  onOpenGatewaySettings: () => void;
 };
 
 export function AppTitlebar({
@@ -39,7 +37,6 @@ export function AppTitlebar({
   coworkRightPanelOpen = true,
   isMaximized,
   usageModeLabel,
-  gatewayConnected,
   coworkRunPhase = 'idle',
   coworkRunStatus = 'Ready for a new task.',
   coworkProgressSteps = [],
@@ -55,7 +52,6 @@ export function AppTitlebar({
   onToggleMaximize,
   onClose,
   onShowSystemMenu,
-  onOpenGatewaySettings,
 }: AppTitlebarProps) {
   const [progressPopupOpen, setProgressPopupOpen] = useState(false);
   const progressPopupRef = useRef<HTMLDivElement | null>(null);
@@ -66,9 +62,8 @@ export function AppTitlebar({
   const isSettingsPage = activePage === 'settings';
   const showBackButton = isWorkspacePage || isSettingsPage;
   const windowControlBaseClass =
-    'inline-flex h-[44px] w-[46px] items-center justify-center border-0 bg-transparent text-muted-foreground transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40';
-  const neutralWindowControlClass =
-    'hover:bg-muted hover:text-foreground active:bg-muted/80';
+    'inline-flex h-[44px] w-[46px] items-center justify-center rounded-none border-0 bg-transparent text-muted-foreground transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40';
+  const neutralWindowControlClass = 'window-control-neutral';
   const coworkProgressSummary = useMemo(() => {
     const total = coworkProgressSteps.length;
     const completed = coworkProgressSteps.filter((step) => step.status === 'completed').length;
@@ -323,25 +318,6 @@ export function AppTitlebar({
             ) : null}
           </div>
         ) : null}
-        {!minimal ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className={`mr-2 h-7 rounded-full px-2 text-[10px] ${
-              gatewayConnected
-                ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300'
-                : 'border-destructive/35 bg-destructive/10 text-destructive hover:bg-destructive/15'
-            }`}
-            title={`${gatewayConnected ? 'Gateway connected' : 'Gateway disconnected'} - Open Gateway settings`}
-            onClick={onOpenGatewaySettings}
-            data-testid="titlebar-gateway-badge"
-          >
-            <Circle className="mr-1 size-2.5 fill-current" />
-            {gatewayConnected ? 'Connected' : 'Disconnected'}
-          </Button>
-        ) : null}
-
         {!minimal && activePage === 'cowork' && onToggleCoworkRightPanel ? (
           <Button
             type="button"
@@ -358,7 +334,7 @@ export function AppTitlebar({
         ) : null}
         <button
           type="button"
-          className={`${windowControlBaseClass} ${neutralWindowControlClass}`}
+          className={`window-control-btn ${windowControlBaseClass} ${neutralWindowControlClass}`}
           style={noDragStyle}
           onMouseDown={preventTitlebarDragCapture}
           onClick={() => void onMinimize()}
@@ -369,7 +345,7 @@ export function AppTitlebar({
         </button>
         <button
           type="button"
-          className={`${windowControlBaseClass} ${neutralWindowControlClass}`}
+          className={`window-control-btn ${windowControlBaseClass} ${neutralWindowControlClass}`}
           style={noDragStyle}
           onMouseDown={preventTitlebarDragCapture}
           onClick={() => void onToggleMaximize()}
@@ -380,7 +356,7 @@ export function AppTitlebar({
         </button>
         <button
           type="button"
-          className={`${windowControlBaseClass} hover:bg-[#d45d4e] hover:text-white active:bg-[#bf4e41] focus-visible:ring-[#d45d4e]/40`}
+            className={`window-control-btn ${windowControlBaseClass} hover:bg-[#d45d4e] hover:text-white active:bg-[#bf4e41] focus-visible:ring-[#d45d4e]/40`}
           style={noDragStyle}
           onMouseDown={preventTitlebarDragCapture}
           onClick={() => void onClose()}

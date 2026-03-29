@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 
-import { ArrowUp, ChevronRight, FileText, FolderOpen, Loader2, WifiOff } from 'lucide-react';
+import { ArrowUp, ChevronDown, ChevronRight, FileText, FolderOpen, Loader2, Plus, Shield, WifiOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type {
@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Menu, MenuGroup, MenuItem } from '@/components/ui/menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { chatMarkdownComponents } from '@/lib/chat-markdown';
 import {
@@ -197,10 +198,18 @@ export function CoworkPage({
   const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
   const [mentionMenuIndex, setMentionMenuIndex] = useState(0);
   const [composerText, setComposerText] = useState(taskPrompt);
+  const [openDropdown, setOpenDropdown] = useState<'model' | 'effort' | 'scope' | 'approvals' | null>(null);
+  const [effortLevel, setEffortLevel] = useState<'low' | 'medium' | 'high'>('medium');
+  const [scopeMode, setScopeMode] = useState<'local' | 'project' | 'workspace'>('local');
   const canSend = composerText.trim().length > 0 && !sending && gatewayConnected;
   const visibleMessages = useMemo(() => messages.filter((message) => !isSystemLikeMessage(message)), [messages]);
   const isInitialWorkspace = visibleMessages.length === 0;
   const showRightPanel = rightPanelOpen && (!isInitialWorkspace || projectSelected);
+  const contextWindowUsagePercent = 60;
+  const contextWindowUsedTokens = '155k';
+  const contextWindowTotalTokens = '258k';
+  const composerDropdownItemClass =
+    'h-7 rounded-md px-2 text-[11px] text-foreground/80 hover:bg-muted hover:text-foreground data-[active=true]:bg-primary/12 data-[active=true]:text-foreground data-[active=true]:ring-1 data-[active=true]:ring-primary/30';
   const dateTimeFormatter = useMemo(
     () =>
       new Intl.DateTimeFormat(undefined, {
@@ -280,6 +289,36 @@ export function CoworkPage({
     setMentionMenuOpen(Boolean(projectSelected && mentionQuery !== null && mentionCommands.length > 0));
     setMentionMenuIndex(0);
   }, [mentionCommands.length, mentionQuery, projectSelected]);
+
+  useEffect(() => {
+    if (!openDropdown) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) {
+        return;
+      }
+      if (target.closest('.composer-dropdown')) {
+        return;
+      }
+      setOpenDropdown(null);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpenDropdown(null);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [openDropdown]);
 
   const executeMentionCommand = (index: number) => {
     const command = mentionCommands[index];
@@ -399,102 +438,261 @@ export function CoworkPage({
   };
 
   const renderCoworkComposer = (textareaMinHeightClass: string) => (
-    <form
-      className="relative rounded-[26px] border border-border bg-card px-4 py-3.5 shadow-[0_14px_34px_rgba(24,23,20,0.10)]"
-      onSubmit={onSubmit}
-      ref={formRef}
-      aria-busy={sending || awaitingStream}
+    <div className="space-y-2">
+      <form
+        className="relative rounded-[18px] border border-border/75 bg-card shadow-[0_1px_2px_rgba(16,16,14,0.08)]"
+        onSubmit={onSubmit}
+        ref={formRef}
+        aria-busy={sending || awaitingStream}
       >
         {renderMentionMenu()}
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <Badge
-          variant="outline"
-          className={`rounded-full font-sans text-[10px] ${
-            projectSelected
-              ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-              : 'border-border bg-muted text-muted-foreground'
-          }`}
-        >
-          {projectSelected ? `Project: ${projectTitle}` : 'No project context'}
-        </Badge>
-        {!gatewayConnected ? (
-          <span className="font-sans text-[11px] text-muted-foreground">
-            Connect the gateway to run cowork tasks.
-          </span>
-        ) : null}
-      </div>
-      <div className="relative">
-        {!composerText ? (
-          <span className="pointer-events-none absolute left-0 top-1.5 font-sans text-base text-muted-foreground">
-            How can I help you today?
-          </span>
-        ) : null}
-        <div
-          id={taskPromptId}
-          ref={composerEditorRef}
-          role="textbox"
-          aria-label="Task prompt"
-          aria-multiline="true"
-          aria-describedby={taskPromptHelpId}
-          contentEditable
-          suppressContentEditableWarning
-          onInput={handleEditorInput}
-          onKeyDown={handleComposerKeyDown}
-          className={`${textareaMinHeightClass} max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-0 py-1.5 font-sans text-base leading-6 text-foreground outline-none`}
-        />
-      </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-        <p id={taskPromptHelpId} className="font-sans text-xs text-muted-foreground">
-          {gatewayConnected
-            ? projectSelected
-              ? 'Type @ to reference project files/folders. Enter sends, Shift+Enter new line.'
-              : 'Enter sends, Shift+Enter new line. Select a project if you want file-aware context.'
-            : 'Gateway disconnected. Connect to enable sending.'}
-        </p>
+        <div className="relative px-4 pt-3">
+          {!composerText ? (
+            <span className="pointer-events-none absolute left-4 top-3.5 font-sans text-[16px] leading-none text-muted-foreground/35">
+              Ask follow-up changes
+            </span>
+          ) : null}
+          <div
+            id={taskPromptId}
+            ref={composerEditorRef}
+            role="textbox"
+            aria-label="Task prompt"
+            aria-multiline="true"
+            aria-describedby={taskPromptHelpId}
+            contentEditable
+            suppressContentEditableWarning
+            onInput={handleEditorInput}
+            onKeyDown={handleComposerKeyDown}
+            className={`${textareaMinHeightClass} max-h-[26vh] overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-0 pb-1.5 pt-1 font-sans text-[13px] leading-5 text-foreground outline-none`}
+          />
+        </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            type="button"
-            variant={webSearchEnabled ? 'default' : 'outline'}
-            className="h-9 rounded-xl px-2.5 font-sans text-[11px]"
-            onClick={() => onWebSearchEnabledChange(!webSearchEnabled)}
-          >
-            Web Search {webSearchEnabled ? 'On' : 'Off'}
-          </Button>
-          <label htmlFor={modelSelectId} className="sr-only">Model</label>
-          <select
-            id={modelSelectId}
-            value={selectedModel}
-            onChange={(event) => onModelChange(event.target.value)}
-            disabled={modelsLoading || changingModel || models.length === 0}
-            className="h-9 max-w-[260px] rounded-xl border border-border bg-background px-3 font-sans text-xs text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="Model"
-          >
-            <option value="">{COWORK_DEFAULT_MODEL_LABEL}</option>
-            {models.map((model) => (
-              <option key={model.value} value={model.value}>
-                {model.label}
-              </option>
-            ))}
-          </select>
+        <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+          <div className="flex min-w-0 items-center gap-1">
+            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted/70">
+              <Plus className="h-4 w-4" />
+            </Button>
 
-          <Button
-            type="submit"
-            size="icon"
-            aria-label={sending ? 'Sending' : 'Send task'}
-            disabled={!canSend}
-            className="h-9 w-9 rounded-xl border-0 bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
-          </Button>
+            <div className="composer-dropdown relative">
+              <button
+                type="button"
+                className={`inline-flex h-6 max-w-[210px] items-center gap-1 rounded-md px-1.5 font-sans text-[11px] transition ${
+                  openDropdown === 'model'
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                }`}
+                onClick={() => setOpenDropdown((current) => (current === 'model' ? null : 'model'))}
+              >
+                <span className="truncate">
+                  {selectedModel ? models.find((m) => m.value === selectedModel)?.label ?? selectedModel : COWORK_DEFAULT_MODEL_LABEL}
+                </span>
+                <ChevronDown className="h-3 w-3 opacity-80" />
+              </button>
+              {openDropdown === 'model' ? (
+                <div className="absolute bottom-[calc(100%+0.3rem)] left-0 z-30 w-[230px] rounded-lg border border-border bg-popover p-1 shadow-xl">
+                  <Menu>
+                    <MenuGroup>
+                      <MenuItem
+                        className={composerDropdownItemClass}
+                        active={selectedModel === ''}
+                        onClick={() => {
+                          onModelChange('');
+                          setOpenDropdown(null);
+                        }}
+                      >
+                        {COWORK_DEFAULT_MODEL_LABEL}
+                      </MenuItem>
+                      {models.map((model) => (
+                        <MenuItem
+                          key={model.value}
+                          className={composerDropdownItemClass}
+                          active={selectedModel === model.value}
+                          onClick={() => {
+                            onModelChange(model.value);
+                            setOpenDropdown(null);
+                          }}
+                        >
+                          {model.label}
+                        </MenuItem>
+                      ))}
+                    </MenuGroup>
+                  </Menu>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="composer-dropdown relative">
+              <button
+                type="button"
+                className={`inline-flex h-6 items-center gap-1 rounded-md px-1.5 font-sans text-[11px] transition ${
+                  openDropdown === 'effort'
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                }`}
+                onClick={() => setOpenDropdown((current) => (current === 'effort' ? null : 'effort'))}
+              >
+                <span>{effortLevel === 'low' ? 'Low' : effortLevel === 'medium' ? 'Mittel' : 'High'}</span>
+                <ChevronDown className="h-3 w-3 opacity-80" />
+              </button>
+              {openDropdown === 'effort' ? (
+                <div className="absolute bottom-[calc(100%+0.3rem)] left-0 z-30 w-[136px] rounded-lg border border-border bg-popover p-1 shadow-xl">
+                  <Menu>
+                    <MenuGroup>
+                      {(['low', 'medium', 'high'] as const).map((value) => (
+                        <MenuItem
+                          key={value}
+                          className={composerDropdownItemClass}
+                          active={effortLevel === value}
+                          onClick={() => {
+                            setEffortLevel(value);
+                            setOpenDropdown(null);
+                          }}
+                        >
+                          {value === 'low' ? 'Low' : value === 'medium' ? 'Mittel' : 'High'}
+                        </MenuItem>
+                      ))}
+                    </MenuGroup>
+                  </Menu>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="submit"
+              size="icon"
+              aria-label={sending ? 'Sending' : 'Send task'}
+              disabled={!canSend}
+              className="h-8 w-8 rounded-full border border-border/70 bg-muted text-foreground hover:bg-muted/90 disabled:text-muted-foreground"
+            >
+              {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+        </div>
+      </form>
+
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-1 font-sans text-[12px] text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div className="composer-dropdown relative inline-flex items-center">
+            <button
+              type="button"
+              className={`inline-flex h-6 items-center gap-1 rounded-md px-1.5 font-sans text-[11px] transition ${
+                openDropdown === 'scope'
+                  ? 'bg-muted text-foreground'
+                  : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+              }`}
+              onClick={() => setOpenDropdown((current) => (current === 'scope' ? null : 'scope'))}
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+              <span>{scopeMode === 'local' ? 'Local' : scopeMode === 'project' ? 'Project' : 'Workspace'}</span>
+              <ChevronDown className="h-3 w-3 opacity-80" />
+            </button>
+            {openDropdown === 'scope' ? (
+              <div className="absolute bottom-[calc(100%+0.3rem)] left-0 z-30 w-[138px] rounded-lg border border-border bg-popover p-1 shadow-xl">
+                <Menu>
+                  <MenuGroup>
+                    {(['local', 'project', 'workspace'] as const).map((value) => (
+                      <MenuItem
+                        key={value}
+                        className={composerDropdownItemClass}
+                        active={scopeMode === value}
+                        onClick={() => {
+                          setScopeMode(value);
+                          setOpenDropdown(null);
+                        }}
+                      >
+                        {value === 'local' ? 'Local' : value === 'project' ? 'Project' : 'Workspace'}
+                      </MenuItem>
+                    ))}
+                  </MenuGroup>
+                </Menu>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="composer-dropdown relative inline-flex items-center">
+            <button
+              type="button"
+              className={`inline-flex h-6 items-center gap-1 rounded-md px-1.5 font-sans text-[11px] transition ${
+                openDropdown === 'approvals'
+                  ? 'bg-muted text-foreground'
+                  : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+              }`}
+              onClick={() => setOpenDropdown((current) => (current === 'approvals' ? null : 'approvals'))}
+            >
+              <Shield className="h-3.5 w-3.5" />
+              <span>{webSearchEnabled ? 'Standard approvals' : 'Strict approvals'}</span>
+              <ChevronDown className="h-3 w-3 opacity-80" />
+            </button>
+            {openDropdown === 'approvals' ? (
+              <div className="absolute bottom-[calc(100%+0.3rem)] left-0 z-30 w-[176px] rounded-lg border border-border bg-popover p-1 shadow-xl">
+                <Menu>
+                  <MenuGroup>
+                    <MenuItem
+                      className={composerDropdownItemClass}
+                      active={webSearchEnabled}
+                      onClick={() => {
+                        onWebSearchEnabledChange(true);
+                        setOpenDropdown(null);
+                      }}
+                    >
+                      Standard approvals
+                    </MenuItem>
+                    <MenuItem
+                      className={composerDropdownItemClass}
+                      active={!webSearchEnabled}
+                      onClick={() => {
+                        onWebSearchEnabledChange(false);
+                        setOpenDropdown(null);
+                      }}
+                    >
+                      Strict approvals
+                    </MenuItem>
+                  </MenuGroup>
+                </Menu>
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span id={taskPromptHelpId} className="text-[11px]">
+            Enter sends
+          </span>
+          <div className="group relative">
+            <button
+              type="button"
+              className={`inline-flex h-5 w-5 items-center justify-center rounded-full transition hover:bg-muted/70 ${
+                gatewayConnected ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-300'
+              }`}
+              aria-label="Context window usage"
+            >
+              <span
+                className="relative inline-block h-3.5 w-3.5 rounded-full"
+                style={{
+                  background: `conic-gradient(currentColor ${contextWindowUsagePercent * 3.6}deg, color-mix(in srgb, currentColor 22%, transparent) 0deg)`,
+                }}
+              >
+                <span className="absolute inset-[2px] rounded-full bg-background" />
+              </span>
+            </button>
+            <div className="pointer-events-none absolute bottom-[calc(100%+0.45rem)] right-0 z-20 hidden w-[170px] rounded-xl border border-border bg-popover px-3 py-2 text-center shadow-xl group-hover:block">
+              <p className="font-sans text-[11px] text-muted-foreground">Context window:</p>
+              <p className="font-sans text-[11px] text-muted-foreground">{contextWindowUsagePercent}% full</p>
+              <p className="mt-1 font-sans text-[11px] text-foreground">{contextWindowUsedTokens} / {contextWindowTotalTokens} Tokens</p>
+              <p className="font-sans text-[11px] text-foreground">used</p>
+              <p className="mt-1 font-sans text-[11px] text-foreground/90">Relay compacts context automatically.</p>
+            </div>
+          </div>
         </div>
       </div>
+
       {(modelsLoading || changingModel) && (
-        <p className="mt-2 font-sans text-[11px] text-muted-foreground">
+        <p className="px-1 font-sans text-[11px] text-muted-foreground">
           {modelsLoading ? 'Loading models...' : 'Switching model...'}
         </p>
       )}
-    </form>
+    </div>
   );
 
   const renderPendingApprovalsPanel = () => {
@@ -599,7 +797,8 @@ export function CoworkPage({
         </div>
       </section>
     ) : (
-        <section
+      <section
+      data-slot="cowork-surface"
       className={`grid h-full w-full min-h-0 overflow-hidden transition-[grid-template-columns,gap] duration-200 ${
         showRightPanel
           ? 'gap-4 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_420px]'
@@ -618,7 +817,7 @@ export function CoworkPage({
                 <p className="mb-3 text-[clamp(1.6rem,2.4vw,2.2rem)] tracking-tight text-foreground">Let's knock something off your list</p>
                 <div className="mt-4 grid gap-2">
                   {renderPendingApprovalsPanel()}
-                  {renderCoworkComposer('min-h-[90px]')}
+                  {renderCoworkComposer('min-h-[40px]')}
                 </div>
               </div>
             </div>
@@ -660,7 +859,7 @@ export function CoworkPage({
                               ? 'border-destructive/30 bg-destructive/10'
                               : card.tone === 'success'
                                 ? 'border-emerald-500/35 bg-emerald-500/10'
-                                : 'border-border bg-muted/60';
+                                : 'border-border bg-muted';
 
                           return (
                             <div key={card.id} className="rounded-xl border border-border bg-card">
@@ -717,7 +916,7 @@ export function CoworkPage({
           <div className="px-2">
             <div className="mx-auto grid w-full max-w-[920px] gap-2 px-4">
               {renderPendingApprovalsPanel()}
-              {renderCoworkComposer('min-h-[84px]')}
+              {renderCoworkComposer('min-h-[38px]')}
             </div>
           </div>
         ) : null}
@@ -729,7 +928,7 @@ export function CoworkPage({
         }`}
       >
         <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto py-2 pr-1">
-          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card/95 shadow-sm" data-testid="cowork-instructions-card">
+          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card shadow-sm" data-testid="cowork-instructions-card">
             <CardHeader className="space-y-3 pb-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -764,19 +963,19 @@ export function CoworkPage({
 
               {!workspaceCardCollapsed ? (
                 <div id={workspaceCardBodyId} className="grid grid-cols-2 gap-1.5">
-                  <div className="rounded-lg border border-border/70 bg-background/60 px-2 py-1.5">
+                  <div className="rounded-lg border border-border/70 bg-background px-2 py-1.5">
                     <p className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground">Recents</p>
                     <p className="font-sans text-sm font-semibold text-foreground">{projectTasks.length}</p>
                   </div>
-                  <div className="rounded-lg border border-border/70 bg-background/60 px-2 py-1.5">
+                  <div className="rounded-lg border border-border/70 bg-background px-2 py-1.5">
                     <p className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground">Artifacts</p>
                     <p className="font-sans text-sm font-semibold text-foreground">{artifacts.length}</p>
                   </div>
-                  <div className="rounded-lg border border-border/70 bg-background/60 px-2 py-1.5">
+                  <div className="rounded-lg border border-border/70 bg-background px-2 py-1.5">
                     <p className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground">Approvals</p>
                     <p className="font-sans text-sm font-semibold text-foreground">{pendingApprovals.length}</p>
                   </div>
-                  <div className="rounded-lg border border-border/70 bg-background/60 px-2 py-1.5">
+                  <div className="rounded-lg border border-border/70 bg-background px-2 py-1.5">
                     <p className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground">Scheduled</p>
                     <p className="font-sans text-sm font-semibold text-foreground">{scheduledCount}</p>
                   </div>
@@ -786,7 +985,7 @@ export function CoworkPage({
             {!workspaceCardCollapsed ? (
               <CardContent className="space-y-2 border-t border-border/70 pt-3">
                 <p className="font-sans text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Project instructions</p>
-                <div className="rounded-xl border border-border/70 bg-background/60 px-2.5 py-2">
+                <div className="rounded-xl border border-border/70 bg-background px-2.5 py-2">
                   <p className="font-sans text-xs leading-5 text-foreground/90">
                     {projectInstructions.trim() || 'Add project instructions in Project Settings to define role, tone, constraints, and output format.'}
                   </p>
@@ -795,7 +994,7 @@ export function CoworkPage({
             ) : null}
           </Card>
 
-          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card/95 shadow-sm" data-testid="cowork-scheduled-card">
+          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card shadow-sm" data-testid="cowork-scheduled-card">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center justify-between gap-2 text-sm">
                 Scheduled
@@ -815,7 +1014,7 @@ export function CoworkPage({
             </CardContent>
           </Card>
 
-          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card/95 shadow-sm" data-testid="cowork-artifacts-card">
+          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card shadow-sm" data-testid="cowork-artifacts-card">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center justify-between gap-2 text-sm">
                 Artifacts
@@ -833,7 +1032,7 @@ export function CoworkPage({
                     key={artifact.id}
                     type="button"
                     onClick={() => onOpenArtifact(artifact)}
-                    className="w-full rounded-lg border border-border bg-background/70 p-2 text-left transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="w-full rounded-lg border border-border bg-background p-2 text-left transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     data-testid={`cowork-artifact-${artifact.id}`}
                   >
                     <div className="mb-1 flex items-center justify-between gap-2">
@@ -861,7 +1060,7 @@ export function CoworkPage({
             </CardContent>
           </Card>
 
-          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card/95 shadow-sm" data-testid="cowork-project-recents">
+          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card shadow-sm" data-testid="cowork-project-recents">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center justify-between gap-2 text-sm">
                 Recents in this project
@@ -875,7 +1074,7 @@ export function CoworkPage({
                 </div>
               ) : (
                 projectTasks.map((task) => (
-                  <div key={`recent-${task.id}`} className="rounded-lg border border-border bg-background/70 px-2.5 py-2">
+                  <div key={`recent-${task.id}`} className="rounded-lg border border-border bg-background px-2.5 py-2">
                     <div className="mb-1 flex items-center gap-2">
                       <Badge variant="outline" className={`rounded-full font-sans text-[10px] capitalize ${taskStatusClasses(task.status)}`}>
                         {taskStatusLabel(task.status)}

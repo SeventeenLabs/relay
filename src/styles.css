@@ -96,8 +96,71 @@ html.dark {
 html.dark .bg-background { background-color: #1c1b18; }
 html.dark .bg-muted { background-color: #2a2924; }
 html.dark .bg-white { background-color: #242320; }
+html.dark .bg-card { background-color: #2a2723; }
+html.dark .bg-popover { background-color: #2f2b27; }
 html.dark .text-foreground { color: #e8e6e0; }
 html.dark .text-muted-foreground { color: #8a887e; }
+
+/* Claude style explicit surfaces (light/default only) */
+html:not(.relay-style):not(.dark) .bg-background { background-color: #f4f3ee; }
+html:not(.relay-style):not(.dark) .bg-card { background-color: #fff9f2; }
+html:not(.relay-style):not(.dark) .bg-muted { background-color: #f0e5d7; }
+html:not(.relay-style):not(.dark) .bg-popover { background-color: #fff9f2; }
+html:not(.relay-style):not(.dark) .text-foreground { color: #1f1f1c; }
+html:not(.relay-style):not(.dark) .text-muted-foreground { color: #6f655a; }
+html:not(.relay-style):not(.dark) .border-border { border-color: #ded3c2; }
+
+/* Claude cowork surface should stay white in light mode */
+html:not(.relay-style):not(.dark) [data-slot="cowork-surface"] {
+  background-color: #ffffff;
+}
+
+html:not(.relay-style):not(.dark) [data-slot="cowork-surface"] .bg-card,
+html:not(.relay-style):not(.dark) [data-slot="cowork-surface"] .bg-popover,
+html:not(.relay-style):not(.dark) [data-slot="cowork-surface"] .bg-background {
+  background-color: #ffffff;
+}
+
+html:not(.relay-style):not(.dark) [data-slot="cowork-surface"] .bg-muted {
+  background-color: #f4f4f4;
+}
+
+html:not(.relay-style):not(.dark) [data-slot="cowork-surface"] .border-border {
+  border-color: #e3e3e3;
+}
+
+/* Claude cowork surface in dark mode */
+html.dark:not(.relay-style) [data-slot="cowork-surface"] {
+  background-color: #1f1d1a;
+}
+
+html.dark:not(.relay-style) [data-slot="cowork-surface"] .bg-card,
+html.dark:not(.relay-style) [data-slot="cowork-surface"] .bg-popover,
+html.dark:not(.relay-style) [data-slot="cowork-surface"] .bg-background {
+  background-color: #2a2723;
+}
+
+html.dark:not(.relay-style) [data-slot="cowork-surface"] .bg-muted {
+  background-color: #302d29;
+}
+
+html.dark:not(.relay-style) [data-slot="cowork-surface"] .border-border {
+  border-color: #3b3732;
+}
+
+html.dark:not(.relay-style) [data-slot="cowork-surface"] .text-foreground {
+  color: #e4dacd;
+}
+
+html.dark:not(.relay-style) [data-slot="cowork-surface"] .text-muted-foreground {
+  color: #a79a8b;
+}
+
+/* Claude chrome in dark mode */
+html.dark:not(.relay-style) [data-slot="sidebar"],
+html.dark:not(.relay-style) .app-titlebar {
+  background-color: #1f1d1a;
+}
 
 /* Relay style variant */
 html.relay-style body {
@@ -213,6 +276,46 @@ html.relay-style .border-border {
 
 html.relay-style :is(button, a, input, select, textarea) {
   border-radius: 10px;
+}
+
+html .app-titlebar .window-control-btn {
+  border-radius: 0 !important;
+}
+
+html .footer-settings-trigger:hover {
+  background-color: rgba(120, 120, 120, 0.22) !important;
+}
+
+html.dark .footer-settings-trigger:hover,
+html.relay-style.dark .footer-settings-trigger:hover,
+html.dark.relay-style .footer-settings-trigger:hover {
+  background-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+html .footer-gateway-badge:hover {
+  filter: brightness(0.95);
+}
+
+html .app-titlebar .window-control-neutral:hover {
+  background-color: rgba(90, 90, 90, 0.22) !important;
+  color: #111 !important;
+}
+
+html .app-titlebar .window-control-neutral:active {
+  background-color: rgba(90, 90, 90, 0.3) !important;
+}
+
+html.dark .app-titlebar .window-control-neutral:hover,
+html.relay-style.dark .app-titlebar .window-control-neutral:hover,
+html.dark.relay-style .app-titlebar .window-control-neutral:hover {
+  background-color: rgba(255, 255, 255, 0.16) !important;
+  color: #f4f4f4 !important;
+}
+
+html.dark .app-titlebar .window-control-neutral:active,
+html.relay-style.dark .app-titlebar .window-control-neutral:active,
+html.dark.relay-style .app-titlebar .window-control-neutral:active {
+  background-color: rgba(255, 255, 255, 0.24) !important;
 }
 
 html.relay-style :is(button, a) {
@@ -340,4 +443,64 @@ html.dark.relay-style .text-muted-foreground {
 html.relay-style.dark .border-border,
 html.dark.relay-style .border-border {
   border-color: #2b2b2b;
+}
+
+/* Scrollbars */
+* {
+  scrollbar-width: thin;
+}
+
+html:not(.relay-style):not(.dark) {
+  scrollbar-color: #c7b19d #f0e5d7;
+}
+
+html.dark:not(.relay-style) {
+  scrollbar-color: #7f7569 #302d29;
+}
+
+html.relay-style:not(.dark) {
+  scrollbar-color: #b8c3bd #eef2f0;
+}
+
+html.relay-style.dark,
+html.dark.relay-style {
+  scrollbar-color: #4a4a4a #141414;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html:not(.relay-style):not(.dark) *::-webkit-scrollbar-thumb {
+  background: #c7b19d;
+  border: 2px solid #f0e5d7;
+  border-radius: 999px;
+}
+
+html.dark:not(.relay-style) *::-webkit-scrollbar-thumb {
+  background: #7f7569;
+  border: 2px solid #302d29;
+  border-radius: 999px;
+}
+
+html.relay-style:not(.dark) *::-webkit-scrollbar-thumb {
+  background: #b8c3bd;
+  border: 2px solid #eef2f0;
+  border-radius: 999px;
+}
+
+html.relay-style.dark *::-webkit-scrollbar-thumb,
+html.dark.relay-style *::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+  border: 2px solid #141414;
+  border-radius: 999px;
+}
+
+html *::-webkit-scrollbar-thumb:hover {
+  filter: brightness(0.92);
 }

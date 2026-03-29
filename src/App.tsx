@@ -5604,7 +5604,6 @@ export default function App() {
         coworkRightPanelOpen={coworkRightPanelOpen}
         isMaximized={isMaximized}
         usageModeLabel={usageModeLabel}
-        gatewayConnected={gatewayConnected}
         coworkRunPhase={coworkRunPhase}
         coworkRunStatus={coworkRunStatus}
         coworkProgressSteps={coworkProgressSteps}
@@ -5620,10 +5619,6 @@ export default function App() {
         onToggleMaximize={handleToggleMaximize}
         onClose={handleClose}
         onShowSystemMenu={handleShowSystemMenu}
-        onOpenGatewaySettings={() => {
-          setActivePage('settings');
-          setSettingsSection('Gateway');
-        }}
       />
 
       {needsOnboarding ? (
@@ -5661,6 +5656,7 @@ export default function App() {
             scheduledItems={scheduledJobs}
             scheduledLoading={scheduledLoading}
             sessionUsage={sessionUsage}
+            gatewayConnected={gatewayConnected}
             onSelectRecentItem={(item) => {
               if (item.kind === 'cowork') {
                 handleOpenRecentCowork(item.sessionKey);

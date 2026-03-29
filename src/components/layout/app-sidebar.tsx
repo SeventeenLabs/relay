@@ -93,6 +93,7 @@ type AppSidebarProps = {
   scheduledItems: ScheduledSidebarItem[];
   scheduledLoading: boolean;
   sessionUsage?: MessageUsage;
+  gatewayConnected: boolean;
   onSelectRecentItem: (item: RecentSidebarItem) => void;
   onRenameRecentItem: (item: RecentSidebarItem) => void;
   onDeleteRecentItem: (item: RecentSidebarItem) => void;
@@ -164,6 +165,7 @@ export function AppSidebar({
   scheduledItems,
   scheduledLoading,
   sessionUsage,
+  gatewayConnected,
   onSelectRecentItem,
   onRenameRecentItem,
   onDeleteRecentItem,
@@ -1003,18 +1005,37 @@ export function AppSidebar({
               </button>
             </div>
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => setProfileMenuOpen((open) => !open)}
-            className={`h-9 border-0 bg-transparent shadow-none gap-2 rounded-xl font-sans text-[13px] ${compact ? 'w-9 px-0 justify-center' : 'w-full justify-start'}`}
-            aria-label="Open settings menu"
-            aria-expanded={profileMenuOpen}
-            title="Settings"
-          >
-            <Settings className="size-4" />
-            {!compact && <span>Settings</span>}
-          </Button>
+          <div className={`flex items-center gap-2 ${compact ? 'justify-center' : ''}`}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setProfileMenuOpen((open) => !open)}
+              className={`footer-settings-trigger h-9 border-0 bg-muted/85 shadow-none gap-2 rounded-xl font-sans text-[13px] text-foreground transition-colors ${compact ? 'w-9 px-0 justify-center' : 'flex-1 justify-start px-2.5'}`}
+              aria-label="Open settings menu"
+              aria-expanded={profileMenuOpen}
+              title="Settings"
+            >
+              <Settings className="size-4 text-muted-foreground" />
+              {!compact && <span>{t('Settings', 'Einstellungen')}</span>}
+            </Button>
+            {!compact ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectPage('settings');
+                  onSettingsSectionChange('Gateway');
+                }}
+                className={`footer-gateway-badge h-8 shrink-0 rounded-xl border px-2.5 font-sans text-[11px] font-medium transition ${
+                  gatewayConnected
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/18 dark:text-emerald-300 dark:hover:bg-emerald-500/22'
+                    : 'border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/18 dark:text-amber-300 dark:hover:bg-amber-500/22'
+                }`}
+                title={gatewayConnected ? 'Open Gateway Settings' : 'Connect Gateway'}
+              >
+                {gatewayConnected ? t('Connected', 'Verbunden') : t('Disconnected', 'Getrennt')}
+              </button>
+            ) : null}
+          </div>
         </div>
       </SidebarFooter>
     </Sidebar>
