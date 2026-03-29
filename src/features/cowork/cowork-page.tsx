@@ -50,11 +50,15 @@ type CoworkPageProps = {
   sending: boolean;
   gatewayConnected: boolean;
   webSearchEnabled: boolean;
+  approvalMode: 'standard' | 'project' | 'none';
   projectPathReferences: ProjectPathReference[];
+  contextWindowUsedTokens: number;
+  contextWindowTotalTokens: number;
   onOpenGatewaySettings: () => void;
   onTaskPromptChange: (value: string) => void;
   onModelChange: (value: string) => void;
   onWebSearchEnabledChange: (enabled: boolean) => void;
+  onApprovalModeChange: (mode: 'standard' | 'project' | 'none') => void;
   onSubmit: (event: FormEvent) => void | Promise<void>;
   onApprovePendingAction: (approvalId: string) => void;
   onRejectPendingAction: (approvalId: string, reason: string) => void;
@@ -62,96 +66,23 @@ type CoworkPageProps = {
 
 const COWORK_DEFAULT_MODEL_LABEL = 'Default model';
 const MENTION_TOKEN_PATTERN = /@project:"[^"]+"/g;
-
-function buildEditorFragmentFromText(text: string): DocumentFragment {
-  const fragment = document.createDocumentFragment();
-  MENTION_TOKEN_PATTERN.lastIndex = 0;
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = MENTION_TOKEN_PATTERN.exec(text)) !== null) {
-    const start = match.index;
-    const end = start + match[0].length;
-    if (start > cursor) {
-      fragment.appendChild(document.createTextNode(text.slice(cursor, start)));
-    }
-    const mention = document.createElement('span');
-    mention.className =
-      'inline-flex items-center rounded-md border border-sky-500/35 bg-sky-500/12 px-1.5 py-[1px] font-mono text-[0.88em] font-medium text-sky-700 dark:text-sky-200';
-    mention.textContent = text.slice(start, end);
-    fragment.appendChild(mention);
-    cursor = end;
-  }
-
-  if (cursor < text.length) {
-    fragment.appendChild(document.createTextNode(text.slice(cursor)));
-  }
-
-  return fragment;
-}
-
-function getEditorPlainText(editor: HTMLDivElement): string {
-  return (editor.textContent ?? '').replace(/\u00A0/g, ' ');
-}
-
-function setEditorHtmlFromText(editor: HTMLDivElement, text: string): void {
-  editor.replaceChildren(buildEditorFragmentFromText(text));
-}
-
-function getCaretCharacterOffset(root: HTMLElement): number {
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) {
-    return 0;
-  }
-  const range = selection.getRangeAt(0);
-  const preCaretRange = range.cloneRange();
-  preCaretRange.selectNodeContents(root);
-  preCaretRange.setEnd(range.endContainer, range.endOffset);
-  return preCaretRange.toString().length;
-}
-
-function setCaretCharacterOffset(root: HTMLElement, offset: number): void {
-  const selection = window.getSelection();
-  if (!selection) {
-    return;
-  }
-  const range = document.createRange();
-  const stack: Node[] = [root];
-  let remaining = offset;
-
-  while (stack.length > 0) {
-    const node = stack.shift()!;
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent ?? '';
-      if (remaining <= text.length) {
-        range.setStart(node, Math.max(0, remaining));
-        range.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(range);
-        return;
-      }
-      remaining -= text.length;
-      continue;
-    }
-
-    const children = Array.from(node.childNodes);
-    stack.unshift(...children);
-  }
-
-  placeCaretAtEnd(root);
-}
-
-function placeCaretAtEnd(root: HTMLElement): void {
-  const selection = window.getSelection();
-  if (!selection) {
-    return;
-  }
-  const range = document.createRange();
-  range.selectNodeContents(root);
-  range.collapse(false);
-  selection.removeAllRanges();
-  selection.addRange(range);
-}
+const COWORK_IDEA_CARDS = [
+  {
+    icon: FileText,
+    title: 'Research a topic',
+    prompt: 'Research this topic and give me a concise report with key findings and sources:',
+  },
+  {
+    icon: FolderOpen,
+    title: 'Summarize project files',
+    prompt: 'Summarize the important files in this project and highlight what changed recently.',
+  },
+  {
+    icon: Shield,
+    title: 'Plan implementation',
+    prompt: 'Create an implementation plan for this feature, including steps, risks, and rollout notes:',
+  },
+] as const;
 
 export function CoworkPage({
   projectTitle,
@@ -176,20 +107,22 @@ export function CoworkPage({
   sending,
   gatewayConnected,
   webSearchEnabled,
+  approvalMode,
   projectPathReferences,
+  contextWindowUsedTokens,
+  contextWindowTotalTokens,
   onOpenGatewaySettings,
   onTaskPromptChange,
   onModelChange,
   onWebSearchEnabledChange,
+  onApprovalModeChange,
   onSubmit,
   onApprovePendingAction,
   onRejectPendingAction,
 }: CoworkPageProps) {
   const formRef = useRef<HTMLFormElement | null>(null);
-  const composerEditorRef = useRef<HTMLDivElement | null>(null);
+  const composerEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const taskPromptId = useId();
-  const taskPromptHelpId = useId();
-  const modelSelectId = useId();
   const approvalsHeadingId = useId();
   const workspaceCardBodyId = useId();
   const [expandedInlineActivityId, setExpandedInlineActivityId] = useState<string | null>(null);
@@ -198,16 +131,20 @@ export function CoworkPage({
   const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
   const [mentionMenuIndex, setMentionMenuIndex] = useState(0);
   const [composerText, setComposerText] = useState(taskPrompt);
-  const [openDropdown, setOpenDropdown] = useState<'model' | 'effort' | 'scope' | 'approvals' | null>(null);
+  const [openDropdown, setOpenDropdown] = useState<'model' | 'effort' | 'approvals' | null>(null);
   const [effortLevel, setEffortLevel] = useState<'low' | 'medium' | 'high'>('medium');
-  const [scopeMode, setScopeMode] = useState<'local' | 'project' | 'workspace'>('local');
   const canSend = composerText.trim().length > 0 && !sending && gatewayConnected;
   const visibleMessages = useMemo(() => messages.filter((message) => !isSystemLikeMessage(message)), [messages]);
   const isInitialWorkspace = visibleMessages.length === 0;
   const showRightPanel = rightPanelOpen && (!isInitialWorkspace || projectSelected);
-  const contextWindowUsagePercent = 60;
-  const contextWindowUsedTokens = '155k';
-  const contextWindowTotalTokens = '258k';
+  const safeContextWindowTotalTokens = Math.max(1, contextWindowTotalTokens);
+  const contextWindowUsagePercent = Math.max(0, Math.min(100, Math.round((contextWindowUsedTokens / safeContextWindowTotalTokens) * 100)));
+  const contextWindowUsedTokensLabel = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(
+    Math.max(0, contextWindowUsedTokens),
+  );
+  const contextWindowTotalTokensLabel = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(
+    safeContextWindowTotalTokens,
+  );
   const composerDropdownItemClass =
     'h-7 rounded-md px-2 text-[11px] text-foreground/80 hover:bg-muted hover:text-foreground data-[active=true]:bg-primary/12 data-[active=true]:text-foreground data-[active=true]:ring-1 data-[active=true]:ring-primary/30';
   const dateTimeFormatter = useMemo(
@@ -252,12 +189,8 @@ export function CoworkPage({
     if (!editor) {
       return;
     }
-
-    const editorText = getEditorPlainText(editor);
-    if (editorText === composerText) {
-      return;
-    }
-    setEditorHtmlFromText(editor, composerText);
+    editor.style.height = 'auto';
+    editor.style.height = `${editor.scrollHeight}px`;
   }, [composerText]);
 
   const mentionQuery = useMemo(() => {
@@ -331,14 +264,19 @@ export function CoworkPage({
     const nextPrompt = composerText.replace(/(^|\s)@([^\s]*)$/, (full, prefix) => `${prefix}${mentionToken}`);
     setComposerText(nextPrompt);
     onTaskPromptChange(nextPrompt);
-    if (composerEditorRef.current) {
-      setEditorHtmlFromText(composerEditorRef.current, nextPrompt);
-      placeCaretAtEnd(composerEditorRef.current);
-    }
+    requestAnimationFrame(() => {
+      const editor = composerEditorRef.current;
+      if (!editor) {
+        return;
+      }
+      editor.focus();
+      const nextCaret = nextPrompt.length;
+      editor.setSelectionRange(nextCaret, nextCaret);
+    });
     setMentionMenuOpen(false);
   };
 
-  const handleComposerKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (mentionMenuOpen && mentionCommands.length > 0) {
       if (event.key === 'ArrowDown') {
         event.preventDefault();
@@ -424,15 +362,21 @@ export function CoworkPage({
     );
   };
 
-  const handleEditorInput = () => {
-    const editor = composerEditorRef.current;
-    if (!editor) {
-      return;
-    }
-    const caretOffset = getCaretCharacterOffset(editor);
-    const nextText = getEditorPlainText(editor);
-    setEditorHtmlFromText(editor, nextText);
-    setCaretCharacterOffset(editor, caretOffset);
+  const applyIdeaPrompt = (value: string) => {
+    setComposerText(value);
+    onTaskPromptChange(value);
+    requestAnimationFrame(() => {
+      const editor = composerEditorRef.current;
+      if (!editor) {
+        return;
+      }
+      editor.focus();
+      const nextCaret = value.length;
+      editor.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
+
+  const handleEditorInput = (nextText: string) => {
     setComposerText(nextText);
     onTaskPromptChange(nextText);
   };
@@ -447,23 +391,16 @@ export function CoworkPage({
       >
         {renderMentionMenu()}
         <div className="relative px-4 pt-3">
-          {!composerText ? (
-            <span className="pointer-events-none absolute left-4 top-3.5 font-sans text-[16px] leading-none text-muted-foreground/35">
-              Ask follow-up changes
-            </span>
-          ) : null}
-          <div
+          <textarea
             id={taskPromptId}
             ref={composerEditorRef}
-            role="textbox"
             aria-label="Task prompt"
-            aria-multiline="true"
-            aria-describedby={taskPromptHelpId}
-            contentEditable
-            suppressContentEditableWarning
-            onInput={handleEditorInput}
+            placeholder="What should Relay do next?"
+            value={composerText}
+            onChange={(event) => handleEditorInput(event.target.value)}
             onKeyDown={handleComposerKeyDown}
-            className={`${textareaMinHeightClass} max-h-[26vh] overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-0 pb-1.5 pt-1 font-sans text-[13px] leading-5 text-foreground outline-none`}
+            rows={1}
+            className={`${textareaMinHeightClass} max-h-[26vh] w-full resize-none overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-0 pb-1.5 pt-1 font-sans text-[13px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/45`}
           />
         </div>
 
@@ -578,43 +515,6 @@ export function CoworkPage({
             <button
               type="button"
               className={`inline-flex h-6 items-center gap-1 rounded-md px-1.5 font-sans text-[11px] transition ${
-                openDropdown === 'scope'
-                  ? 'bg-muted text-foreground'
-                  : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
-              }`}
-              onClick={() => setOpenDropdown((current) => (current === 'scope' ? null : 'scope'))}
-            >
-              <FolderOpen className="h-3.5 w-3.5" />
-              <span>{scopeMode === 'local' ? 'Local' : scopeMode === 'project' ? 'Project' : 'Workspace'}</span>
-              <ChevronDown className="h-3 w-3 opacity-80" />
-            </button>
-            {openDropdown === 'scope' ? (
-              <div className="absolute bottom-[calc(100%+0.3rem)] left-0 z-30 w-[138px] rounded-lg border border-border bg-popover p-1 shadow-xl">
-                <Menu>
-                  <MenuGroup>
-                    {(['local', 'project', 'workspace'] as const).map((value) => (
-                      <MenuItem
-                        key={value}
-                        className={composerDropdownItemClass}
-                        active={scopeMode === value}
-                        onClick={() => {
-                          setScopeMode(value);
-                          setOpenDropdown(null);
-                        }}
-                      >
-                        {value === 'local' ? 'Local' : value === 'project' ? 'Project' : 'Workspace'}
-                      </MenuItem>
-                    ))}
-                  </MenuGroup>
-                </Menu>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="composer-dropdown relative inline-flex items-center">
-            <button
-              type="button"
-              className={`inline-flex h-6 items-center gap-1 rounded-md px-1.5 font-sans text-[11px] transition ${
                 openDropdown === 'approvals'
                   ? 'bg-muted text-foreground'
                   : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
@@ -622,7 +522,7 @@ export function CoworkPage({
               onClick={() => setOpenDropdown((current) => (current === 'approvals' ? null : 'approvals'))}
             >
               <Shield className="h-3.5 w-3.5" />
-              <span>{webSearchEnabled ? 'Standard approvals' : 'Strict approvals'}</span>
+              <span>{approvalMode === 'project' ? 'Project' : approvalMode === 'none' ? 'No approvals' : 'Standard'}</span>
               <ChevronDown className="h-3 w-3 opacity-80" />
             </button>
             {openDropdown === 'approvals' ? (
@@ -631,23 +531,33 @@ export function CoworkPage({
                   <MenuGroup>
                     <MenuItem
                       className={composerDropdownItemClass}
-                      active={webSearchEnabled}
+                      active={approvalMode === 'standard'}
                       onClick={() => {
-                        onWebSearchEnabledChange(true);
+                        onApprovalModeChange('standard');
                         setOpenDropdown(null);
                       }}
                     >
-                      Standard approvals
+                      Standard
                     </MenuItem>
                     <MenuItem
                       className={composerDropdownItemClass}
-                      active={!webSearchEnabled}
+                      active={approvalMode === 'project'}
                       onClick={() => {
-                        onWebSearchEnabledChange(false);
+                        onApprovalModeChange('project');
                         setOpenDropdown(null);
                       }}
                     >
-                      Strict approvals
+                      Project
+                    </MenuItem>
+                    <MenuItem
+                      className={composerDropdownItemClass}
+                      active={approvalMode === 'none'}
+                      onClick={() => {
+                        onApprovalModeChange('none');
+                        setOpenDropdown(null);
+                      }}
+                    >
+                      No approvals
                     </MenuItem>
                   </MenuGroup>
                 </Menu>
@@ -656,9 +566,6 @@ export function CoworkPage({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span id={taskPromptHelpId} className="text-[11px]">
-            Enter sends
-          </span>
           <div className="group relative">
             <button
               type="button"
@@ -679,7 +586,7 @@ export function CoworkPage({
             <div className="pointer-events-none absolute bottom-[calc(100%+0.45rem)] right-0 z-20 hidden w-[170px] rounded-xl border border-border bg-popover px-3 py-2 text-center shadow-xl group-hover:block">
               <p className="font-sans text-[11px] text-muted-foreground">Context window:</p>
               <p className="font-sans text-[11px] text-muted-foreground">{contextWindowUsagePercent}% full</p>
-              <p className="mt-1 font-sans text-[11px] text-foreground">{contextWindowUsedTokens} / {contextWindowTotalTokens} Tokens</p>
+              <p className="mt-1 font-sans text-[11px] text-foreground">{contextWindowUsedTokensLabel} / {contextWindowTotalTokensLabel} Tokens</p>
               <p className="font-sans text-[11px] text-foreground">used</p>
               <p className="mt-1 font-sans text-[11px] text-foreground/90">Relay compacts context automatically.</p>
             </div>
@@ -814,8 +721,24 @@ export function CoworkPage({
           {isInitialWorkspace ? (
             <div className="mx-auto grid h-full w-full max-w-[920px] place-items-center px-4">
               <div className="w-full">
-                <p className="mb-3 text-[clamp(1.6rem,2.4vw,2.2rem)] tracking-tight text-foreground">Let's knock something off your list</p>
+                <p className="mb-1 text-[clamp(1.6rem,2.4vw,2.2rem)] tracking-tight text-foreground">What should we get done?</p>
+                <p className="font-sans text-sm text-muted-foreground">Start with your own task, or pick a quick idea below.</p>
                 <div className="mt-4 grid gap-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    {COWORK_IDEA_CARDS.map((item) => (
+                      <button
+                        key={item.title}
+                        type="button"
+                        onClick={() => applyIdeaPrompt(item.prompt)}
+                        className="min-w-0 rounded-lg border border-border/50 bg-muted/25 px-2.5 py-2 text-left transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      >
+                        <p className="flex items-center gap-1.5 truncate font-sans text-[12px] font-medium text-foreground/90">
+                          <item.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="truncate">{item.title}</span>
+                        </p>
+                      </button>
+                    ))}
+                  </div>
                   {renderPendingApprovalsPanel()}
                   {renderCoworkComposer('min-h-[40px]')}
                 </div>

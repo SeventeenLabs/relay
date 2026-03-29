@@ -54,7 +54,7 @@ import { ScrollArea } from './components/ui/scroll-area';
 import { OpenClawGatewayClient } from './lib/openclaw-gateway-client';
 import { createFileService, LocalFileService } from './lib/file-service';
 import { buildMemoryContext, loadMemoryEntries } from './lib/memory-context';
-import { accumulateTodayUsage, addUsage, loadTodayUsage, parseUsageFromPayload } from './lib/token-usage';
+import { accumulateTodayUsage, addUsage, estimateTokens, loadTodayUsage, parseUsageFromPayload } from './lib/token-usage';
 import {
   compileResearchOperatorPlan,
   createDefaultResearchInputSchema,
@@ -121,6 +121,8 @@ const COWORK_ACTIVE_PROJECT_STORAGE_KEY = 'relay.cowork.projects.active.v1';
 const COWORK_TASKS_STORAGE_KEY = 'relay.cowork.tasks.v1';
 const COWORK_PROJECT_KNOWLEDGE_STORAGE_KEY = 'relay.cowork.project.knowledge.v1';
 const COWORK_WEB_SEARCH_MODE_STORAGE_KEY = 'relay.cowork.websearch.v1';
+const COWORK_APPROVAL_MODE_STORAGE_KEY = 'relay.cowork.approvals.v1';
+const COWORK_SCOPE_MODE_STORAGE_KEY = 'relay.cowork.scope.v1';
 const CHAT_DRAFT_STORAGE_KEY = 'relay.chat.draft.v1';
 const COWORK_DRAFT_STORAGE_KEY = 'relay.cowork.draft.v1';
 const SCHEDULED_JOB_PROJECT_LINKS_STORAGE_KEY = 'relay.scheduled.project-links.v1';
@@ -183,6 +185,8 @@ type CoworkRunProjectContext = {
   projectId: string;
   projectTitle: string;
   rootFolder: string;
+  scopeMode: 'local' | 'project' | 'workspace';
+  approvalMode: 'standard' | 'project' | 'none';
   startedAt: number;
 };
 
@@ -922,6 +926,22 @@ export default function App() {
       return false;
     }
   });
+  const [coworkApprovalMode, setCoworkApprovalMode] = useState<'standard' | 'project' | 'none'>(() => {
+    try {
+      const raw = localStorage.getItem(COWORK_APPROVAL_MODE_STORAGE_KEY);
+      return raw === 'project' || raw === 'none' ? raw : 'standard';
+    } catch {
+      return 'standard';
+    }
+  });
+  const [coworkScopeMode, setCoworkScopeMode] = useState<'local' | 'project' | 'workspace'>(() => {
+    try {
+      const raw = localStorage.getItem(COWORK_SCOPE_MODE_STORAGE_KEY);
+      return raw === 'project' || raw === 'workspace' ? raw : 'local';
+    } catch {
+      return 'local';
+    }
+  });
   const [coworkProjectPathReferences, setCoworkProjectPathReferences] = useState<ProjectPathReference[]>([]);
   const [localActionReceipts, setLocalActionReceipts] = useState<LocalActionReceipt[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalAction[]>([]);
@@ -1030,6 +1050,53 @@ export default function App() {
     const folders = [activeCoworkProject?.workspaceFolder?.trim() || '', workingFolder.trim()].filter(Boolean);
     return Array.from(new Set(folders));
   }, [activeCoworkProject?.workspaceFolder, workingFolder]);
+  const activeProjectRootFolder = useMemo(
+    () => activeCoworkProject?.workspaceFolder?.trim() || '',
+    [activeCoworkProject?.workspaceFolder],
+  );
+  const effectiveCoworkRootFolder = useMemo(() => {
+    const localFolder = workingFolder.trim();
+    if (coworkScopeMode === 'project') {
+      return activeProjectRootFolder || localFolder;
+    }
+    if (coworkScopeMode === 'workspace') {
+      return activeProjectRootFolder || localFolder;
+    }
+    return localFolder;
+  }, [activeProjectRootFolder, coworkScopeMode, workingFolder]);
+  const latestCoworkUsage = useMemo(() => {
+    for (let index = coworkMessages.length - 1; index >= 0; index -= 1) {
+      const usage = coworkMessages[index]?.usage;
+      if (usage && Number.isFinite(usage.inputTokens) && Number.isFinite(usage.outputTokens)) {
+        return usage;
+      }
+    }
+    return null;
+  }, [coworkMessages]);
+  const coworkContextWindowTotalTokens = useMemo(() => {
+    const normalizedModel = (coworkModel || selectedModel || '').toLowerCase();
+    if (normalizedModel.includes('gpt-4.1') || normalizedModel.includes('gpt-4o')) {
+      return 128_000;
+    }
+    if (normalizedModel.includes('claude')) {
+      return 200_000;
+    }
+    return 256_000;
+  }, [coworkModel, selectedModel]);
+  const coworkContextWindowUsedTokens = useMemo(() => {
+    if (latestCoworkUsage) {
+      return latestCoworkUsage.inputTokens + latestCoworkUsage.outputTokens;
+    }
+    const recentConversation = coworkMessages
+      .slice(-20)
+      .map((message) => message.text)
+      .join('\n\n');
+    const estimationSource = [recentConversation, coworkDraftPrompt]
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .join('\n');
+    return estimationSource ? estimateTokens(estimationSource) : 0;
+  }, [coworkDraftPrompt, coworkMessages, latestCoworkUsage]);
 
   const contextDocuments = useMemo(() => {
     const docs = localActionReceipts
@@ -1260,7 +1327,9 @@ export default function App() {
     const fallback: CoworkRunProjectContext = {
       projectId: activeCoworkProject?.id ?? '',
       projectTitle: activeCoworkProject?.name ?? '',
-      rootFolder: workingFolderRef.current,
+      rootFolder: effectiveCoworkRootFolder || workingFolderRef.current,
+      scopeMode: coworkScopeMode,
+      approvalMode: coworkApprovalMode,
       startedAt: Date.now(),
     };
     const resolved = nextFromQueue ?? fallback;
@@ -1646,6 +1715,22 @@ export default function App() {
       // ignore persistence failures
     }
   }, [coworkWebSearchEnabled]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COWORK_APPROVAL_MODE_STORAGE_KEY, coworkApprovalMode);
+    } catch {
+      // ignore persistence failures
+    }
+  }, [coworkApprovalMode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COWORK_SCOPE_MODE_STORAGE_KEY, coworkScopeMode);
+    } catch {
+      // ignore persistence failures
+    }
+  }, [coworkScopeMode]);
 
   useEffect(() => {
     try {
@@ -2943,7 +3028,8 @@ export default function App() {
                   if (
                     action.type === 'create_file' &&
                     !action.overwrite &&
-                    bridge.existsInFolder
+                    bridge.existsInFolder &&
+                    runContext.approvalMode !== 'none'
                   ) {
                     try {
                       const existing = await bridge.existsInFolder(rootPath, action.path);
@@ -3016,11 +3102,21 @@ export default function App() {
                     }
                   }
 
-                  const autoApproved = policy.requiresApproval && isLowRiskTextWriteAction(action);
+                  const standardApprovals = runContext.approvalMode === 'standard';
+                  const projectApprovals = runContext.approvalMode === 'project';
+                  const noApprovals = runContext.approvalMode === 'none';
+                  const autoApproved = standardApprovals && policy.requiresApproval && isLowRiskTextWriteAction(action);
 
                   const requiresHardApproval = isDestructiveLocalAction(action.type) || policy.riskLevel === 'critical';
+                  const requiresApprovalByMode =
+                    !noApprovals &&
+                    (projectApprovals
+                      ? policy.requiresApproval || requiresHardApproval
+                      : standardApprovals
+                        ? policy.requiresApproval || requiresHardApproval
+                        : false);
 
-                  if ((policy.requiresApproval || requiresHardApproval) && !autoApproved && !approvedByOperator) {
+                  if (requiresApprovalByMode && !autoApproved && !approvedByOperator) {
                     const approvalId = `${runId}-${actionId}-${index + 1}`;
                     const previewBody =
                       action.type === 'create_file' || action.type === 'append_file'
@@ -3850,7 +3946,14 @@ export default function App() {
         await withTimeout(client.setSessionModel(sessionKey, coworkModel.trim()), 'Session model update');
       }
 
-      const folderContext = workingFolderRef.current;
+      const localFolderContext = workingFolderRef.current.trim();
+      const projectFolderContext = activeCoworkProject?.workspaceFolder?.trim() || '';
+      const folderContext =
+        coworkScopeMode === 'project'
+          ? projectFolderContext || localFolderContext
+          : coworkScopeMode === 'workspace'
+            ? projectFolderContext || localFolderContext
+            : localFolderContext;
       const selectedKindByPath = new Map(
         coworkProjectPathReferences.map((entry) => [entry.path, entry.kind] as const),
       );
@@ -3920,6 +4023,8 @@ export default function App() {
         projectId: activeCoworkProject?.id ?? '',
         projectTitle: activeCoworkProject?.name ?? '',
         rootFolder: folderContext,
+        scopeMode: coworkScopeMode,
+        approvalMode: coworkApprovalMode,
         startedAt: Date.now(),
       });
       const relayFileInstruction = [
@@ -3944,6 +4049,15 @@ export default function App() {
             'Always include a Sources section with markdown links for any factual claims from external sources.',
           ].join('\n')
         : '';
+      const approvalInstruction =
+        coworkApprovalMode === 'none'
+          ? 'Approval mode is none. Do not wait for operator approval prompts.'
+          : coworkApprovalMode === 'project'
+            ? 'Approval mode is project. Follow project safety policy for approval checks.'
+            : 'Approval mode is standard. High-risk actions still require explicit approval.';
+      const scopeInstruction = `Folder scope mode: ${coworkScopeMode}. ${
+        folderContext ? `Primary folder: ${folderContext}` : 'No folder context available.'
+      }`;
       const coworkMemoryContext = preferences.injectMemory
         ? buildMemoryContext(loadMemoryEntries(), preferences.systemPrompt)
         : preferences.systemPrompt.trim();
@@ -3952,6 +4066,8 @@ export default function App() {
         activeCoworkProject ? `Project context: ${activeCoworkProject.name}` : '',
         projectKnowledgeContext ? `Project knowledge:\n${projectKnowledgeContext}` : '',
         folderContext ? `Working folder context: ${folderContext}` : '',
+        scopeInstruction,
+        approvalInstruction,
         referencedProjectFilesContext,
         webSearchInstruction,
         relayFileInstruction,
@@ -5820,7 +5936,10 @@ export default function App() {
                   sending={coworkSending}
                   gatewayConnected={gatewayConnected}
                   webSearchEnabled={coworkWebSearchEnabled}
+                  approvalMode={coworkApprovalMode}
                   projectPathReferences={coworkProjectPathReferences}
+                  contextWindowUsedTokens={coworkContextWindowUsedTokens}
+                  contextWindowTotalTokens={coworkContextWindowTotalTokens}
                   onOpenGatewaySettings={() => {
                     setActivePage('settings');
                     setSettingsSection('Gateway');
@@ -5828,6 +5947,7 @@ export default function App() {
                   onTaskPromptChange={handleCoworkPromptChange}
                   onModelChange={handleCoworkModelChange}
                   onWebSearchEnabledChange={setCoworkWebSearchEnabled}
+                  onApprovalModeChange={setCoworkApprovalMode}
                   onSubmit={handlePlanTask}
                   onApprovePendingAction={handleApprovePendingAction}
                   onRejectPendingAction={handleRejectPendingAction}
