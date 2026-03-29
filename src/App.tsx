@@ -101,7 +101,6 @@ import {
   normalizeCoworkMessage,
 } from './lib/chat-utils';
 
-const ChatPage = lazy(() => import('./features/chat/chat-page').then((module) => ({ default: module.ChatPage })));
 const CoworkPage = lazy(() => import('./features/cowork/cowork-page').then((module) => ({ default: module.CoworkPage })));
 const ProjectPage = lazy(() => import('./features/cowork/project-page').then((module) => ({ default: module.ProjectPage })));
 const SettingsPage = lazy(() => import('./features/settings/settings-page').then((module) => ({ default: module.SettingsPage })));
@@ -5515,7 +5514,7 @@ export default function App() {
 
   const handleCompleteOnboarding = () => {
     completeOnboarding();
-    setActivePage('chat');
+    setActivePage('cowork');
   };
 
   const handleStartNewTask = () => {
@@ -5535,6 +5534,12 @@ export default function App() {
     setCoworkResetKey((current) => current + 1);
   };
 
+  useEffect(() => {
+    if (activePage === 'chat') {
+      setActivePage('cowork');
+    }
+  }, [activePage]);
+
   const handleRerunLastCoworkTask = () => {
     if (!latestVisibleCoworkTaskPrompt) {
       setStatus('No previous task prompt available to rerun.');
@@ -5552,7 +5557,6 @@ export default function App() {
   );
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const allThreadsForSearch = [
-    ...chatThreads.map((t) => ({ ...t, label: t.title, kind: 'chat' as const })),
     ...coworkThreads.map((t) => ({ ...t, label: t.title, kind: 'cowork' as const })),
   ];
   const searchCandidates = (normalizedSearchQuery ? allThreadsForSearch : recentItems).map((item) => ({
@@ -5671,7 +5675,7 @@ export default function App() {
             onRenameCoworkProject={handleRenameCoworkProject}
             onDeleteCoworkProject={handleDeleteCoworkProject}
             onPickWorkingFolder={handlePickWorkingFolderForProject}
-            onStartNewChat={handleStartNewChat}
+            onStartNewChat={handleStartNewTask}
             onStartNewTask={handleStartNewTask}
             onSelectMenuItem={setActiveMenuItem}
             onSelectPage={(page) => setActivePage(page)}
@@ -5908,36 +5912,6 @@ export default function App() {
                   </section>
                 )
               ) : (
-                <>
-                {activePage === 'chat' && (
-                  <ChatPage
-                    taskPrompt={chatDraftPrompt}
-                    messages={chatMessages}
-                    sending={sendingChat}
-                    awaitingStream={awaitingChatStream}
-                    sessionKey={activeSessionKey}
-                    userDisplayName={preferences.displayName || preferences.fullName}
-                    models={chatModels}
-                    selectedModel={selectedModel}
-                    modelsLoading={modelsLoading}
-                    changingModel={changingModel}
-                    gatewayConnected={gatewayConnected}
-                    status={status}
-                    onTaskPromptChange={handleChatPromptChange}
-                    onModelChange={handleModelChange}
-                    onSubmit={handleSendChat}
-                    onExport={handleExportChat}
-                    onNewChat={handleStartNewChat}
-                    onClearChat={() => setChatMessages([])}
-                    onOpenSettings={() => setActivePage('settings')}
-                    onOpenGatewaySettings={() => {
-                      setActivePage('settings');
-                      setSettingsSection('Gateway');
-                    }}
-                  />
-                )}
-
-                {activePage !== 'chat' && (
                   <ScrollArea className="h-full">
                     {activePage === 'activity' && (
                       <ActivityPage
@@ -6013,8 +5987,6 @@ export default function App() {
                       />
                     )}
                   </ScrollArea>
-                )}
-                </>
               )}
             </Suspense>
           </main>

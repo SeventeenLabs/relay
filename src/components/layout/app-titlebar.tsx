@@ -5,9 +5,8 @@ import { ArrowLeft, Circle, Copy, Loader2, Minus, PanelLeftClose, PanelLeftOpen,
 import type { CoworkProgressStep, CoworkRunPhase } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-type AppPage = 'chat' | 'cowork' | 'project' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'approvals' | 'safety' | 'settings';
+type AppPage = 'cowork' | 'project' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'approvals' | 'safety' | 'settings';
 
 type AppTitlebarProps = {
   sidebarOpen: boolean;
@@ -26,15 +25,13 @@ type AppTitlebarProps = {
   minimal?: boolean;
   onToggleSidebar: () => void;
   onToggleCoworkRightPanel?: () => void;
-  onSelectPage: (page: 'chat' | 'cowork') => void;
+  onSelectPage: (page: 'cowork') => void;
   onMinimize: () => void | Promise<void>;
   onToggleMaximize: () => void | Promise<void>;
   onClose: () => void | Promise<void>;
   onShowSystemMenu: (x: number, y: number) => void | Promise<void>;
   onOpenGatewaySettings: () => void;
 };
-
-const modeOptions = ['chat', 'cowork'] as const;
 
 export function AppTitlebar({
   sidebarOpen,
@@ -64,8 +61,7 @@ export function AppTitlebar({
   const progressPopupRef = useRef<HTMLDivElement | null>(null);
   const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties;
   const noDragStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties;
-  const showModeTabs = !minimal && activePage !== 'settings';
-  const activeMode: 'chat' | 'cowork' = activePage === 'chat' ? 'chat' : 'cowork';
+  const showModeTabs = false;
   const isWorkspacePage = ['project', 'files', 'local-files', 'activity', 'memory', 'scheduled', 'approvals', 'safety'].includes(activePage);
   const isSettingsPage = activePage === 'settings';
   const showBackButton = isWorkspacePage || isSettingsPage;
@@ -184,7 +180,7 @@ export function AppTitlebar({
             size="sm"
             className="h-6 gap-1 px-1.5 text-muted-foreground text-xs"
             style={noDragStyle}
-            onClick={() => onSelectPage(isSettingsPage ? 'chat' : 'cowork')}
+            onClick={() => onSelectPage('cowork')}
             aria-label={isSettingsPage ? 'Back' : 'Back to cowork'}
           >
             <ArrowLeft className="size-3.5" />
@@ -200,32 +196,7 @@ export function AppTitlebar({
         onDoubleClick={handleTitlebarDoubleClick}
         onContextMenu={handleTitlebarContextMenu}
       >
-        {showModeTabs && (
-        <div className="inline-flex items-center" style={noDragStyle} aria-label="workspace mode">
-          <Tabs
-            value={activeMode}
-            onValueChange={(nextMode) => {
-              if (nextMode === 'chat' || nextMode === 'cowork') {
-                onSelectPage(nextMode);
-              }
-            }}
-            className="gap-0"
-          >
-            <TabsList className="h-9 rounded-xl border-0 bg-transparent px-1 py-1 shadow-none gap-1">
-              {modeOptions.map((mode) => (
-                <TabsTrigger
-                  key={mode}
-                  value={mode}
-                  className="titlebar-mode-trigger h-7 min-w-[84px] rounded-lg px-3 font-sans text-[12px] font-semibold tracking-[0.03em] uppercase text-muted-foreground data-active:border-transparent data-active:bg-[linear-gradient(120deg,#e5a48a,#d98765)] data-active:text-[#fffefb]"
-                  style={noDragStyle}
-                >
-                  {mode}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </div>
-        )}
+        {showModeTabs ? <div /> : null}
       </div>
 
       <div

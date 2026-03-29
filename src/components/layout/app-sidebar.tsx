@@ -112,8 +112,6 @@ type AppSidebarProps = {
   onLogout: () => void;
 };
 
-const chatNavItems = [{ label: 'Search', icon: Search }] as const;
-
 const coworkNavItems = [
   { label: 'Search', icon: Search },
 ] as const;
@@ -185,11 +183,11 @@ export function AppSidebar({
   onLogout,
 }: AppSidebarProps) {
   const t = (en: string, de: string) => (language === 'de' ? de : en);
-  const isChatView = activePage === 'chat';
+  const isChatView = false;
   const isSettingsView = activePage === 'settings';
   const isWorkspacePage = ['project', 'files', 'local-files', 'activity', 'memory', 'scheduled', 'approvals', 'safety'].includes(activePage);
   const compact = !sidebarOpen;
-  const navItems = isChatView ? chatNavItems : coworkNavItems;
+  const navItems = coworkNavItems;
   const safeRecentItems = recentItems ?? [];
   const safeScheduledItems = scheduledItems ?? [];
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -422,20 +420,18 @@ export function AppSidebar({
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu aria-label="Primary workspace menu">
-                  {isChatView ? (
-                    <SidebarMenuItem>
-                      <SidebarMenuButton
-                        type="button"
-                        className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
-                        title="New Chat"
-                        aria-label="Start a new chat"
-                        onClick={onStartNewChat}
-                      >
-                        <Plus data-icon="inline-start" />
-                        {!compact && <span className="min-w-0 flex-1 truncate">New Chat</span>}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ) : null}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      type="button"
+                      className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
+                      title="New Run"
+                      aria-label="Start a new run"
+                      onClick={onStartNewTask}
+                    >
+                      <Plus data-icon="inline-start" />
+                      {!compact && <span className="min-w-0 flex-1 truncate">New Run</span>}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                   {navItems.map((item) => (
                     <SidebarMenuItem key={item.label}>
                       <SidebarMenuButton
@@ -498,7 +494,7 @@ export function AppSidebar({
                       {safeRecentItems.length === 0 ? (
                         <SidebarMenuItem>
                           <SidebarMenuButton type="button" className="w-full justify-start truncate font-sans text-[12px] text-muted-foreground" disabled>
-                            {isChatView ? 'No recent chats yet' : 'No recent runs yet'}
+                            No recent runs yet
                           </SidebarMenuButton>
                         </SidebarMenuItem>
                       ) : (
@@ -508,22 +504,20 @@ export function AppSidebar({
                               <SidebarMenuButton
                                 type="button"
                                 active={
-                                  (item.kind === 'chat' && item.sessionKey === activeSessionKey) ||
-                                  (item.kind === 'cowork' && item.sessionKey === activeCoworkSessionKey)
+                                  item.kind === 'cowork' && item.sessionKey === activeCoworkSessionKey
                                 }
                                 aria-current={
-                                  (item.kind === 'chat' && item.sessionKey === activeSessionKey) ||
-                                  (item.kind === 'cowork' && item.sessionKey === activeCoworkSessionKey)
+                                  item.kind === 'cowork' && item.sessionKey === activeCoworkSessionKey
                                     ? 'page'
                                     : undefined
                                 }
-                                aria-label={`Open ${item.kind === 'cowork' ? 'task' : 'chat'} ${item.label}`}
+                                aria-label={`Open task ${item.label}`}
                                 className="min-w-0 w-full gap-2 font-sans text-[12px]"
                                 title={item.label}
                                 onClick={() => onSelectRecentItem(item)}
                               >
                                 <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-                                  {item.kind === 'cowork' ? 'Task' : 'Chat'}
+                                  Task
                                 </span>
                                 <span className="block min-w-0 flex-1 truncate">{item.label}</span>
                               </SidebarMenuButton>
@@ -533,7 +527,7 @@ export function AppSidebar({
                                   size="icon"
                                   variant="ghost"
                                   className="size-6"
-                                  title={`Rename ${item.kind === 'cowork' ? 'task' : 'chat'}`}
+                                  title="Rename task"
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     onRenameRecentItem(item);
@@ -546,7 +540,7 @@ export function AppSidebar({
                                   size="icon"
                                   variant="ghost"
                                   className="size-6 text-destructive hover:text-destructive"
-                                  title={`Delete ${item.kind === 'cowork' ? 'task' : 'chat'}`}
+                                  title="Delete task"
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     onDeleteRecentItem(item);

@@ -619,17 +619,6 @@ export function CoworkPage({
             <div className="mx-auto grid h-full w-full max-w-[920px] place-items-center">
               <div className="w-full">
                 <p className="mb-3 text-[clamp(1.6rem,2.4vw,2.2rem)] tracking-tight text-foreground">Let's knock something off your list</p>
-                <div className="rounded-2xl border border-border bg-card p-4">
-                  <p className="font-sans text-sm text-muted-foreground">
-                    Cowork runs against your configured gateway and supports file-aware task context.
-                  </p>
-                  <ul className="mt-3 grid gap-1.5 font-sans text-xs text-muted-foreground">
-                    <li>Ask for planning, implementation, or review tasks.</li>
-                    <li>File writes are scoped to the selected project folder.</li>
-                    <li>Risky actions require explicit approval.</li>
-                  </ul>
-                </div>
-
                 <div className="mt-4 grid gap-2">
                   {renderPendingApprovalsPanel()}
                   {renderCoworkComposer('min-h-[90px]')}
