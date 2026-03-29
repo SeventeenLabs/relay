@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CoworkProject, MessageUsage } from '@/app-types';
 import { formatCostUsd, formatTokenCount } from '@/lib/token-usage';
 import {
@@ -389,7 +389,7 @@ export function AppSidebar({
     >
       <SidebarContent>
         {isSettingsView ? (
-          /* ── Settings navigation ── */
+          /* â”€â”€ Settings navigation â”€â”€ */
           <>
             <SidebarGroup>
               {!compact && <SidebarGroupLabel>{t('Settings', 'Einstellungen')}</SidebarGroupLabel>}
@@ -415,7 +415,7 @@ export function AppSidebar({
             </SidebarGroup>
           </>
         ) : (
-          /* ── Regular chat/cowork navigation ── */
+          /* â”€â”€ Regular chat/cowork navigation â”€â”€ */
           <>
             <SidebarGroup>
               <SidebarGroupContent>
@@ -657,7 +657,7 @@ export function AppSidebar({
                                           active={project.id === activeCoworkProjectId && activePage === item.page}
                                           aria-current={project.id === activeCoworkProjectId && activePage === item.page ? 'page' : undefined}
                                           className="gap-2 font-sans text-[12px]"
-                                          title={`${item.label} · ${project.name}`}
+                                          title={`${item.label} Â· ${project.name}`}
                                           onClick={() => {
                                             onSelectCoworkProject(project.id);
                                             onSelectPage(item.page);
@@ -893,168 +893,131 @@ export function AppSidebar({
           </DialogContent>
         </Dialog>
       </SidebarContent>
-
-      <SidebarFooter>
-        {sessionUsage && (sessionUsage.inputTokens + sessionUsage.outputTokens) > 0 && (
-          <div className={`flex items-center gap-1.5 px-3 pt-1 ${compact ? 'justify-center' : ''}`}>
-            <span className="font-sans text-[11px] text-muted-foreground/70" title={`Input: ${sessionUsage.inputTokens.toLocaleString()} · Output: ${sessionUsage.outputTokens.toLocaleString()}`}>
-              {!compact && <span className="mr-1 text-muted-foreground/50">Today</span>}
-              {formatTokenCount(sessionUsage.inputTokens + sessionUsage.outputTokens)}
-              {sessionUsage.costUsd !== undefined && sessionUsage.costUsd > 0 && (
-                <span className="ml-1">·&nbsp;{formatCostUsd(sessionUsage.costUsd)}</span>
-              )}
-            </span>
-          </div>
-        )}
-        <div className="relative" ref={profileMenuRef}>
-          {profileMenuOpen && (
+      <SidebarFooter className="border-0 p-0">
+        <div className={`relative px-2 py-2 ${compact ? 'flex justify-center' : ''}`} ref={profileMenuRef}>
+          {profileMenuOpen ? (
             <div className={`absolute z-50 ${profilePopupWidthClass} rounded-2xl border border-border bg-popover p-1.5 shadow-2xl backdrop-blur-sm ${profilePopupPositionClass}`}>
-              <div className="px-2 py-1.5">
-                <p className="truncate text-[13px] font-medium text-foreground/90">{userEmail}</p>
-              </div>
-              <div className="flex items-center gap-3 px-2.5 pb-2 pt-1">
-                <div className="flex size-9 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold text-foreground">
-                  {userInitials}
+              <div className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-[13px] text-muted-foreground">
+                <div className="flex size-5 items-center justify-center rounded-full bg-muted">
+                  <User className="size-3.5" />
                 </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{guestMode ? 'Local mode' : 'Cloud mode'}</p>
-                </div>
+                <span className="truncate">{userEmail}</span>
               </div>
-              <Separator className="my-1" />
-              <div className="grid gap-0.5 p-1">
+              <button
+                type="button"
+                className="mt-1 flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] font-medium text-foreground/80 transition-[background-color,color] hover:bg-muted hover:text-foreground"
+              >
+                <Settings className="size-4 text-muted-foreground" />
+                <span>{t('Personal account', 'Persönliches Konto')}</span>
+              </button>
+              <button
+                type="button"
+                className="mt-1 flex w-full items-center justify-between gap-2 rounded-xl bg-muted px-2.5 py-2 text-left text-[13px] font-medium text-foreground/90 transition-[background-color,color] hover:bg-muted/80"
+              >
+                <span className="flex items-center gap-2">
+                  <Zap className="size-4 text-foreground" />
+                  <span>{t('Get an upgrade for higher limits', 'Hol dir ein Upgrade für höhere Limits')}</span>
+                </span>
+                <ChevronRight className="size-4 text-muted-foreground" />
+              </button>
+              <Separator className="my-1.5" />
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] font-medium text-foreground/80 transition-[background-color,color] hover:bg-muted hover:text-foreground"
+                onClick={() => {
+                  onOpenSettings();
+                  setProfileMenuOpen(false);
+                }}
+              >
+                <Settings className="size-4 text-muted-foreground" />
+                <span>{t('Settings', 'Einstellungen')}</span>
+              </button>
+              <div
+                className="relative"
+                onMouseEnter={openLanguageMenu}
+                onMouseLeave={scheduleLanguageMenuClose}
+              >
                 <button
                   type="button"
-                  className={profileMenuItemClass}
-                  onClick={() => {
-                    onOpenSettings();
-                    setProfileMenuOpen(false);
-                  }}
+                  className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] font-medium text-foreground/80 transition-[background-color,color] hover:bg-muted hover:text-foreground"
+                  aria-expanded={languageMenuOpen}
+                  aria-haspopup="menu"
+                  onFocus={openLanguageMenu}
+                  onClick={() => setLanguageMenuOpen((open) => !open)}
                 >
                   <span className="flex items-center gap-2">
-                    <Settings data-icon="inline-start" className={profileMenuIconClass} />
-                    {t('Settings', 'Einstellungen')}
-                  </span>
-                  <span className="text-xs text-muted-foreground">Ctrl+,</span>
-                </button>
-                <div
-                  className="relative"
-                  onMouseEnter={openLanguageMenu}
-                  onMouseLeave={scheduleLanguageMenuClose}
-                >
-                  <button
-                    type="button"
-                    className={`${profileMenuItemClass} ${languageMenuOpen ? 'bg-muted text-foreground' : ''}`}
-                    aria-expanded={languageMenuOpen}
-                    aria-haspopup="menu"
-                    onFocus={openLanguageMenu}
-                    onClick={() => setLanguageMenuOpen((open) => !open)}
-                  >
-                    <span className="flex items-center gap-2">
-                      <Globe data-icon="inline-start" className={profileMenuIconClass} />
-                      {t('Language', 'Sprache')}
-                    </span>
-                    <ChevronRight className="size-4 text-muted-foreground transition-colors group-hover:text-foreground/80" />
-                  </button>
-                  {languageMenuOpen && (
-                    <div
-                      className="absolute top-0 left-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-border bg-popover p-1.5 shadow-2xl backdrop-blur-sm"
-                      role="menu"
-                      onMouseEnter={openLanguageMenu}
-                      onMouseLeave={scheduleLanguageMenuClose}
-                    >
-                      <div className="grid gap-0.5">
-                        {languageOptions.map((option) => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-[13px] font-medium transition-[background-color,color] hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
-                              language === option.value ? 'bg-muted text-foreground' : 'text-foreground/80'
-                            }`}
-                            onClick={() => {
-                              onLanguageChange(option.value);
-                              setLanguageMenuOpen(false);
-                              setProfileMenuOpen(false);
-                            }}
-                          >
-                            <span>{option.label}</span>
-                            {language === option.value ? <Check className="size-4 text-foreground/80" /> : null}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className={profileMenuItemClass}
-                  onClick={() => setProfileMenuOpen(false)}
-                >
-                  <span className="flex items-center gap-2">
-                    <HelpCircle data-icon="inline-start" className={profileMenuIconClass} />
-                    {t('Get help', 'Hilfe erhalten')}
+                    <Globe className="size-4 text-muted-foreground" />
+                    {t('Language', 'Sprache')}
                   </span>
                   <ChevronRight className="size-4 text-muted-foreground" />
                 </button>
-                <Separator className="my-1" />
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] font-medium text-foreground/80 transition-[background-color,color] hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                  onClick={() => {
-                    setProfileMenuOpen(false);
-                    onLogout();
-                  }}
-                >
-                  <LogOut data-icon="inline-start" className={profileMenuIconClass} />
-                  <span>{guestMode ? t('Exit local mode', 'Lokalen Modus beenden') : t('Sign out', 'Abmelden')}</span>
-                </button>
+                {languageMenuOpen ? (
+                  <div
+                    className="absolute top-0 left-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-border bg-popover p-1.5 shadow-2xl backdrop-blur-sm"
+                    role="menu"
+                    onMouseEnter={openLanguageMenu}
+                    onMouseLeave={scheduleLanguageMenuClose}
+                  >
+                    <div className="grid gap-0.5">
+                      {languageOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-[13px] font-medium transition-[background-color,color] hover:bg-muted hover:text-foreground ${
+                            language === option.value ? 'bg-muted text-foreground' : 'text-foreground/80'
+                          }`}
+                          onClick={() => {
+                            onLanguageChange(option.value);
+                            setLanguageMenuOpen(false);
+                            setProfileMenuOpen(false);
+                          }}
+                        >
+                          <span>{option.label}</span>
+                          {language === option.value ? <Check className="size-4 text-foreground/80" /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] font-medium text-foreground/80 transition-[background-color,color] hover:bg-muted hover:text-foreground"
+              >
+                <span className="flex items-center gap-2">
+                  <HelpCircle className="size-4 text-muted-foreground" />
+                  {t('Remaining rate limits', 'Verbleibende Ratelimits')}
+                </span>
+                <ChevronRight className="size-4 text-muted-foreground" />
+              </button>
+              <button
+                type="button"
+                className="mt-1 flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] font-medium text-foreground/80 transition-[background-color,color] hover:bg-muted hover:text-foreground"
+                onClick={() => {
+                  setProfileMenuOpen(false);
+                  onLogout();
+                }}
+              >
+                <LogOut className="size-4 text-muted-foreground" />
+                <span>{guestMode ? t('Exit local mode', 'Abmelden') : t('Sign out', 'Abmelden')}</span>
+              </button>
             </div>
-          )}
-          <div className={`rounded-xl border border-border bg-background py-2 ${compact ? 'flex justify-center px-1' : 'flex items-center justify-between gap-3 px-2'}`}>
-            <div className={`flex items-center gap-3 ${compact ? '' : 'min-w-0'}`}>
-              {compact ? (
-                <button
-                  type="button"
-                  aria-label="Open account menu"
-                  aria-expanded={profileMenuOpen}
-                  onClick={() => setProfileMenuOpen((open) => !open)}
-                  className="flex size-9 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground transition-colors hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                >
-                  {userInitials}
-                </button>
-              ) : (
-                <div className="flex size-9 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground">
-                  {userInitials}
-                </div>
-              )}
-              {!compact && (
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{userEmail}</p>
-                  <p className="text-xs text-muted-foreground">{guestMode ? 'Local mode' : 'Cloud mode'}</p>
-                </div>
-              )}
-            </div>
-            {!compact && (
-              <div className="flex items-center gap-1">
-                <Button type="button" variant="ghost" size="icon-sm" aria-label="Download">
-                  <Download data-icon="inline-start" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Open account menu"
-                  aria-expanded={profileMenuOpen}
-                  onClick={() => setProfileMenuOpen((open) => !open)}
-                  className={profileMenuOpen ? 'rotate-180 transition-transform' : 'transition-transform'}
-                >
-                  <ChevronUp data-icon="inline-start" />
-                </Button>
-              </div>
-            )}
-          </div>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setProfileMenuOpen((open) => !open)}
+            className={`h-9 border-0 bg-transparent shadow-none gap-2 rounded-xl font-sans text-[13px] ${compact ? 'w-9 px-0 justify-center' : 'w-full justify-start'}`}
+            aria-label="Open settings menu"
+            aria-expanded={profileMenuOpen}
+            title="Settings"
+          >
+            <Settings className="size-4" />
+            {!compact && <span>Settings</span>}
+          </Button>
         </div>
       </SidebarFooter>
     </Sidebar>
   );
 }
+
