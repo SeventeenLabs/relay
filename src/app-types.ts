@@ -397,6 +397,7 @@ export type CoworkProject = {
   description?: string;
   instructions?: string;
   workspaceFolder: string;
+  contextPaths?: ProjectPathReference[];
   createdAt: number;
   updatedAt: number;
 };
@@ -413,6 +414,7 @@ export type ProjectKnowledgeItem = {
 export type ProjectPathReference = {
   path: string;
   kind: 'file' | 'directory';
+  source?: 'project' | 'external';
 };
 
 export type MemoryEntry = {

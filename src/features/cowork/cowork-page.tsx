@@ -292,7 +292,7 @@ export function CoworkPage({
 
   const mentionCommands = useMemo(() => {
     if (!projectSelected || mentionQuery === null) {
-      return [] as Array<{ path: string; kind: ProjectPathReference['kind'] }>;
+      return [] as Array<{ path: string; kind: ProjectPathReference['kind']; source?: ProjectPathReference['source'] }>;
     }
 
     const normalizedQuery = mentionQuery.toLowerCase();
@@ -302,7 +302,19 @@ export function CoworkPage({
         if (!normalizedQuery) {
           return true;
         }
-        return normalizedPath.includes(normalizedQuery) || `project/${normalizedPath}`.includes(normalizedQuery);
+        const sourceLabel = entry.source === 'external' ? 'external' : 'project';
+        return normalizedPath.includes(normalizedQuery) || `${sourceLabel}/${normalizedPath}`.includes(normalizedQuery);
+      })
+      .sort((a, b) => {
+        const sourceA = a.source ?? 'project';
+        const sourceB = b.source ?? 'project';
+        if (sourceA !== sourceB) {
+          return sourceA === 'external' ? -1 : 1;
+        }
+        if (a.kind !== b.kind) {
+          return a.kind === 'directory' ? -1 : 1;
+        }
+        return a.path.localeCompare(b.path, undefined, { sensitivity: 'base' });
       })
       .slice(0, 30);
   }, [mentionQuery, projectPathReferences, projectSelected]);
@@ -407,7 +419,7 @@ export function CoworkPage({
     return (
       <div className="absolute bottom-full left-4 z-20 mb-2 w-[min(680px,calc(100%-2rem))] overflow-hidden rounded-2xl border border-border bg-popover shadow-[0_20px_45px_rgba(20,20,18,0.20)]">
         <div className="flex items-center justify-between border-b border-border bg-muted px-3 py-2">
-          <p className="font-sans text-xs font-semibold tracking-wide text-foreground">Project references</p>
+          <p className="font-sans text-xs font-semibold tracking-wide text-foreground">References</p>
           <p className="font-sans text-[11px] text-muted-foreground">Enter to insert</p>
         </div>
         <div className="max-h-72 overflow-y-auto bg-popover p-1.5">
@@ -416,6 +428,7 @@ export function CoworkPage({
             const segments = command.path.split('/');
             const name = segments[segments.length - 1] || command.path;
             const parent = segments.length > 1 ? segments.slice(0, -1).join('/') : '';
+            const sourceLabel = command.source === 'external' ? 'external' : 'project';
 
             return (
               <button
@@ -440,7 +453,7 @@ export function CoworkPage({
                   {parent ? <span className="block truncate font-mono text-[11px] text-muted-foreground">{parent}</span> : null}
                 </span>
                 <span className="rounded-full border border-border bg-background px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
-                  {command.kind === 'directory' ? '@folder' : '@file'}
+                  {sourceLabel} {command.kind === 'directory' ? '@folder' : '@file'}
                 </span>
                 <span className="sr-only">{fullPath}</span>
               </button>

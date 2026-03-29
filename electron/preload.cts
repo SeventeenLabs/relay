@@ -34,6 +34,9 @@ const api = {
   showSystemMenu: (x: number, y: number) => ipcRenderer.invoke('window:show-system-menu', { x, y }) as Promise<void>,
   getDownloadsPath: () => ipcRenderer.invoke('local:downloads-path') as Promise<string>,
   selectFolder: (initialPath?: string) => ipcRenderer.invoke('local:select-folder', initialPath) as Promise<string | null>,
+  selectFile: (initialPath?: string) => ipcRenderer.invoke('local:select-file', initialPath) as Promise<string | null>,
+  selectContextPaths: (initialPath?: string) =>
+    ipcRenderer.invoke('local:select-context-paths', initialPath) as Promise<Array<{ path: string; kind: 'file' | 'directory' }>>,
   planOrganizeFolder: (rootPath: string) =>
     ipcRenderer.invoke('local:plan-organize-folder', rootPath) as Promise<LocalFilePlanResult>,
   applyOrganizeFolderPlan: (rootPath: string, actions: LocalFilePlanAction[]) =>

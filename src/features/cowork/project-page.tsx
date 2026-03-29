@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, Clock3, FileText, FolderOpen, Pencil, Play, Search, Shield, Sparkles, Zap } from 'lucide-react';
+import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, Clock3, FileText, FolderOpen, Lock, Pencil, Play, Search, Shield, Sparkles, Zap } from 'lucide-react';
 
 import type { CoworkArtifact, CoworkProject, CoworkProjectTask, OperatorDefinition, OperatorRun, OutcomePipeline, ProjectKnowledgeItem } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,7 @@ type ProjectPageProps = {
   projectKnowledge: ProjectKnowledgeItem[];
   webSearchEnabled: boolean;
   onPickFolder: () => Promise<string | undefined>;
+  onPickExternalContextPaths: (initialPath?: string) => Promise<Array<{ path: string; kind: 'file' | 'directory' }>>;
   onUpdateProject: (projectId: string, name: string, workspaceFolder: string, description?: string, instructions?: string) => void;
   onCreatePipeline: (
     projectId: string,
@@ -63,6 +64,7 @@ type ProjectPageProps = {
   onOpenArtifact: (artifact: CoworkArtifact) => void;
   onAddKnowledge: (projectId: string, title: string, content: string) => void;
   onDeleteKnowledge: (knowledgeId: string) => void;
+  onAddContextPath: (projectId: string, path: string, kind: 'file' | 'directory') => void;
   onWebSearchEnabledChange: (enabled: boolean) => void;
   onSelectPage: (page: ProjectPageTarget) => void;
 };
@@ -97,6 +99,7 @@ export function ProjectPage(props: ProjectPageProps) {
   const [draftInstructions, setDraftInstructions] = useState('');
   const [draftFolder, setDraftFolder] = useState('');
   const [folderBrowsing, setFolderBrowsing] = useState(false);
+  const [externalContextAdding, setExternalContextAdding] = useState(false);
 
   useEffect(() => {
     if (!project) {
@@ -151,10 +154,39 @@ export function ProjectPage(props: ProjectPageProps) {
     }
   };
 
+  const handlePickContextFolder = async () => {
+    if (!project) return;
+    const selected = await props.onPickContextFolder(project.workspaceFolder);
+    if (selected?.trim()) {
+      props.onAddContextPath(project.id, selected.trim(), 'directory');
+    }
+  };
+
+  const handlePickContextFile = async () => {
+    if (!project) return;
+    const selected = await props.onPickContextFile(project.workspaceFolder);
+    if (selected?.trim()) {
+      props.onAddContextPath(project.id, selected.trim(), 'file');
+    }
+  };
+
   const handleSaveProjectSettings = () => {
     if (!draftName.trim() || !draftFolder.trim()) return;
     props.onUpdateProject(project.id, draftName.trim(), draftFolder.trim(), draftDescription.trim() || undefined, draftInstructions.trim() || undefined);
     setEditingProject(false);
+  };
+
+  const handleAddExternalContext = async () => {
+    if (!project) return;
+    setExternalContextAdding(true);
+    try {
+      const selectedItems = await props.onPickExternalContextPaths(project.workspaceFolder);
+      selectedItems.forEach((item) => {
+        props.onAddContextPath(project.id, item.path, item.kind);
+      });
+    } finally {
+      setExternalContextAdding(false);
+    }
   };
 
   return (
@@ -233,6 +265,42 @@ export function ProjectPage(props: ProjectPageProps) {
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="grid gap-3">
+          <div className="rounded-2xl border border-border/60 bg-card p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Lock className="size-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold">External Context</h2>
+              </div>
+              <Badge variant="outline" className="text-[10px]">
+                {(project.contextPaths ?? []).length}
+              </Badge>
+            </div>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Add files or folders with your system file picker. External context is read-only protected during cowork runs.
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <Button type="button" size="sm" onClick={() => void handleAddExternalContext()} disabled={externalContextAdding}>
+                {externalContextAdding ? 'Adding…' : 'Add files or folders'}
+              </Button>
+            </div>
+            {(project.contextPaths ?? []).length === 0 ? (
+              <p className="mt-2 rounded-lg border border-dashed border-border/70 bg-muted/30 px-3 py-3 text-xs text-muted-foreground">
+                No external context added yet.
+              </p>
+            ) : (
+              <div className="mt-2 grid gap-1.5">
+                {(project.contextPaths ?? []).map((entry) => (
+                  <div key={`${entry.kind}-${entry.path}`} className="flex items-center gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-2">
+                    <Badge variant="outline" className="text-[10px]">{entry.kind === 'directory' ? 'Folder' : 'File'}</Badge>
+                    <p className="min-w-0 flex-1 truncate text-xs font-mono text-foreground/90" title={entry.path}>
+                      {entry.path}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="rounded-2xl border border-border/60 bg-card p-3">
             <h2 className="text-sm font-semibold">What this page is for</h2>
             <p className="mt-1 text-sm text-muted-foreground">This page is your project home. Check status, review recent work, and navigate to the right workspace area.</p>

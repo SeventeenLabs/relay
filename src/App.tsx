@@ -250,6 +250,37 @@ function extractProjectFileMentions(inputText: string): string[] {
   return Array.from(mentions);
 }
 
+function normalizeProjectPathForStorage(inputPath: string): { ok: true; path: string } | { ok: false; reason: string } {
+  const raw = (inputPath ?? '').trim();
+  if (!raw) {
+    return { ok: false, reason: 'Path is required.' };
+  }
+
+  let normalized = raw.replace(/\\/g, '/').replace(/\/+$/, '');
+  const hasControlChars = Array.from(normalized).some((char) => char.charCodeAt(0) < 32);
+  if (hasControlChars) {
+    return { ok: false, reason: 'Path contains invalid control characters.' };
+  }
+  if (!normalized) {
+    return { ok: false, reason: 'Path is required.' };
+  }
+
+  const isAbsolute =
+    normalized.startsWith('/') ||
+    normalized.startsWith('//') ||
+    /^[a-zA-Z]:\//.test(normalized);
+
+  if (isAbsolute) {
+    return { ok: true, path: normalized };
+  }
+
+  const validation = validateProjectRelativePath(normalized);
+  if (!validation.ok) {
+    return { ok: false, reason: validation.reason };
+  }
+  return { ok: true, path: normalized };
+}
+
 function loadCoworkProjects(): CoworkProject[] {
   try {
     const raw = localStorage.getItem(COWORK_PROJECTS_STORAGE_KEY);
@@ -273,6 +304,26 @@ function loadCoworkProjects(): CoworkProject[] {
         const description = typeof record.description === 'string' ? record.description.trim() : '';
         const instructionsRaw = typeof record.instructions === 'string' ? record.instructions.trim() : '';
         const workspaceFolder = typeof record.workspaceFolder === 'string' ? record.workspaceFolder.trim() : '';
+        const contextPaths = Array.isArray(record.contextPaths)
+          ? (record.contextPaths as unknown[])
+              .map((entry) => {
+                if (!entry || typeof entry !== 'object') {
+                  return null;
+                }
+                const pathRecord = entry as Record<string, unknown>;
+                const rawPath = typeof pathRecord.path === 'string' ? pathRecord.path.trim() : '';
+                const kind = pathRecord.kind === 'directory' ? 'directory' : pathRecord.kind === 'file' ? 'file' : null;
+                if (!rawPath || !kind) {
+                  return null;
+                }
+                const normalized = normalizeProjectPathForStorage(rawPath);
+                if (!normalized.ok) {
+                  return null;
+                }
+                return { path: normalized.path, kind } as ProjectPathReference;
+              })
+              .filter((entry): entry is ProjectPathReference => entry !== null)
+          : [];
         const createdAt = typeof record.createdAt === 'number' ? record.createdAt : Date.now();
         const updatedAt = typeof record.updatedAt === 'number' ? record.updatedAt : createdAt;
         if (!id || !name || !workspaceFolder) {
@@ -284,6 +335,7 @@ function loadCoworkProjects(): CoworkProject[] {
           description: description || undefined,
           instructions: instructionsRaw || description || undefined,
           workspaceFolder,
+          contextPaths,
           createdAt,
           updatedAt,
         };
@@ -824,6 +876,7 @@ export default function App() {
   const activeSessionKeyRef = useRef('');
   const coworkSessionKeyRef = useRef('');
   const workingFolderRef = useRef('');
+  const coworkProjectsRef = useRef<CoworkProject[]>([]);
   const chatLoadRequestRef = useRef(0);
   const coworkLoadRequestRef = useRef(0);
   const skipNextChatEffectLoadRef = useRef(false);
@@ -1881,6 +1934,19 @@ export default function App() {
     const loadProjectFileReferences = async () => {
       const rootPath = activeCoworkProject?.workspaceFolder?.trim() ?? '';
       if (!rootPath || !bridge?.listDirInFolder) {
+        const externalRefs =
+          (activeCoworkProject?.contextPaths ?? [])
+            .filter((entry) => entry.path?.trim())
+            .map((entry) => ({
+              path: entry.path.trim(),
+              kind: entry.kind,
+              source: 'external' as const,
+            })) ?? [];
+        setCoworkProjectPathReferences(externalRefs.slice(0, 500));
+        return;
+      }
+
+      if (!activeCoworkProject) {
         setCoworkProjectPathReferences([]);
         return;
       }
@@ -1912,6 +1978,7 @@ export default function App() {
           pathRefs.push({
             path: item.path,
             kind: item.kind,
+            source: 'project',
           });
           if (pathRefs.length >= MAX_ITEMS) {
             break;
@@ -1939,9 +2006,27 @@ export default function App() {
         }
       }
 
+      for (const external of activeCoworkProject.contextPaths ?? []) {
+        const normalizedPath = external.path?.trim();
+        if (!normalizedPath) {
+          continue;
+        }
+        const key = `${external.kind}:${normalizedPath}`;
+        if (!deduped.has(key)) {
+          deduped.set(key, {
+            path: normalizedPath,
+            kind: external.kind,
+            source: 'external',
+          });
+        }
+      }
+
       setCoworkProjectPathReferences(
         Array.from(deduped.values())
           .sort((a, b) => {
+            if ((a.source ?? 'project') !== (b.source ?? 'project')) {
+              return (a.source ?? 'project') === 'external' ? -1 : 1;
+            }
             if (a.kind !== b.kind) {
               return a.kind === 'directory' ? -1 : 1;
             }
@@ -1956,7 +2041,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeCoworkProject?.id, activeCoworkProject?.workspaceFolder, bridge]);
+  }, [activeCoworkProject?.id, activeCoworkProject?.workspaceFolder, activeCoworkProject?.contextPaths, bridge]);
 
   const loadChatSession = async (sessionKeyInput: string, statusMessage?: string) => {
     const client = gatewayClientRef.current;
@@ -2572,6 +2657,10 @@ export default function App() {
   }, [workingFolder]);
 
   useEffect(() => {
+    coworkProjectsRef.current = coworkProjects;
+  }, [coworkProjects]);
+
+  useEffect(() => {
     const client = new OpenClawGatewayClient();
     client.setConnectionHandler((connected, message) => {
       setStatus(message);
@@ -2870,6 +2959,80 @@ export default function App() {
                 const actionReceipts: LocalActionReceipt[] = [];
                 const previews: string[] = [];
                 const errors: string[] = [];
+                const projectForRun = runContext.projectId
+                  ? coworkProjectsRef.current.find((project) => project.id === runContext.projectId) ?? null
+                  : null;
+                const configuredExternalContextPaths = (projectForRun?.contextPaths ?? [])
+                  .map((entry) => entry.path)
+                  .filter(Boolean);
+
+                const normalizeFsPathForMatch = (inputPath: string): string => {
+                  let normalized = inputPath.replace(/\\/g, '/').trim();
+                  if (/^[a-zA-Z]:$/.test(normalized)) {
+                    normalized = `${normalized}/`;
+                  }
+                  if (normalized.length > 1) {
+                    normalized = normalized.replace(/\/+$/, '');
+                  }
+                  return normalized;
+                };
+
+                const isAbsolutePath = (inputPath: string) =>
+                  inputPath.startsWith('/') || inputPath.startsWith('//') || /^[a-zA-Z]:\//.test(inputPath);
+
+                const isPathWithin = (basePath: string, targetPath: string) => {
+                  const normalizedBase = normalizeFsPathForMatch(basePath).toLowerCase();
+                  const normalizedTarget = normalizeFsPathForMatch(targetPath).toLowerCase();
+                  if (!normalizedBase || !normalizedTarget) {
+                    return false;
+                  }
+                  if (normalizedTarget === normalizedBase) {
+                    return true;
+                  }
+                  return normalizedTarget.startsWith(`${normalizedBase}/`);
+                };
+
+                const isAllowedExternalReadPath = (candidatePath: string) =>
+                  configuredExternalContextPaths.some((entryPath) => isPathWithin(entryPath, candidatePath));
+
+                const resolveAbsoluteBridgeTarget = (
+                  actionType: (typeof boundedActions)[number]['type'],
+                  absolutePath: string,
+                ): { bridgeRootPath: string; bridgeRelativePath: string } | null => {
+                  const normalizedPath = normalizeFsPathForMatch(absolutePath);
+                  if (!normalizedPath) {
+                    return null;
+                  }
+                  if (actionType === 'list_dir') {
+                    return {
+                      bridgeRootPath: normalizedPath,
+                      bridgeRelativePath: '',
+                    };
+                  }
+
+                  const lastSlashIndex = normalizedPath.lastIndexOf('/');
+                  if (lastSlashIndex < 0) {
+                    return null;
+                  }
+                  let parent = normalizedPath.slice(0, lastSlashIndex);
+                  const leaf = normalizedPath.slice(lastSlashIndex + 1);
+                  if (!leaf) {
+                    return null;
+                  }
+                  if (!parent && normalizedPath.startsWith('/')) {
+                    parent = '/';
+                  }
+                  if (/^[a-zA-Z]:$/.test(parent)) {
+                    parent = `${parent}/`;
+                  }
+                  if (!parent) {
+                    return null;
+                  }
+                  return {
+                    bridgeRootPath: parent,
+                    bridgeRelativePath: leaf,
+                  };
+                };
 
                 if (relayActions.length > MAX_LOCAL_ACTIONS_PER_RUN) {
                   errors.push(
@@ -2962,22 +3125,78 @@ export default function App() {
                   const policy = resolveLocalActionPolicy(action.type, safetyScopes);
                   let createFileOverwriteApproved = false;
                   let approvedByOperator = false;
+                  const normalizedActionPath = normalizeFsPathForMatch(actionPath);
+                  const absoluteActionPath = isAbsolutePath(normalizedActionPath);
+                  const externalReadAllowed = absoluteActionPath && isAllowedExternalReadPath(normalizedActionPath);
+                  const readOnlyExternalAction =
+                    action.type === 'read_file' || action.type === 'list_dir' || action.type === 'exists';
+                  let executionRootPath = rootPath;
+                  let executionPath = action.path;
 
-                  const pathValidation = validateProjectRelativePath(actionPath, {
-                    allowEmpty: action.type === 'list_dir',
-                  });
-                  if (!pathValidation.ok) {
-                    const message = `Blocked by project boundary: ${pathValidation.reason}`;
-                    errors.push(`${actionPath || '.'}: ${message}`);
-                    actionReceipts.push({
-                      id: actionId,
-                      type: action.type,
-                      path: actionPath || '.',
-                      status: 'error',
-                      errorCode: 'PROJECT_BOUNDARY_BLOCK',
-                      message,
+                  if (absoluteActionPath) {
+                    if (!externalReadAllowed) {
+                      const message = 'Blocked: absolute path is outside configured External Context.';
+                      errors.push(`${actionPath}: ${message}`);
+                      actionReceipts.push({
+                        id: actionId,
+                        type: action.type,
+                        path: actionPath,
+                        status: 'error',
+                        errorCode: 'PROJECT_BOUNDARY_BLOCK',
+                        message,
+                      });
+                      continue;
+                    }
+
+                    if (!readOnlyExternalAction) {
+                      const message = 'Blocked: External Context is read-only protected.';
+                      errors.push(`${actionPath}: ${message}`);
+                      actionReceipts.push({
+                        id: actionId,
+                        type: action.type,
+                        path: actionPath,
+                        status: 'error',
+                        errorCode: 'BLOCKED_BY_POLICY',
+                        message,
+                      });
+                      continue;
+                    }
+
+                    const target = resolveAbsoluteBridgeTarget(action.type, normalizedActionPath);
+                    if (!target) {
+                      const message = 'Blocked: invalid absolute path target.';
+                      errors.push(`${actionPath}: ${message}`);
+                      actionReceipts.push({
+                        id: actionId,
+                        type: action.type,
+                        path: actionPath,
+                        status: 'error',
+                        errorCode: 'PROJECT_BOUNDARY_BLOCK',
+                        message,
+                      });
+                      continue;
+                    }
+                    executionRootPath = target.bridgeRootPath;
+                    executionPath = target.bridgeRelativePath;
+                  }
+
+                  if (!absoluteActionPath) {
+                    const pathValidation = validateProjectRelativePath(actionPath, {
+                      allowEmpty: action.type === 'list_dir',
                     });
-                    continue;
+                    if (!pathValidation.ok) {
+                      const message = `Blocked by project boundary: ${pathValidation.reason}`;
+                      errors.push(`${actionPath || '.'}: ${message}`);
+                      actionReceipts.push({
+                        id: actionId,
+                        type: action.type,
+                        path: actionPath || '.',
+                        status: 'error',
+                        errorCode: 'PROJECT_BOUNDARY_BLOCK',
+                        message,
+                      });
+                      continue;
+                    }
                   }
 
                   if (action.type === 'rename') {
@@ -3206,7 +3425,7 @@ export default function App() {
                       }
 
                       const result = await bridge.createFileInFolder(
-                        rootPath,
+                        executionRootPath,
                         action.path,
                         action.content,
                         createFileOverwriteApproved ? true : action.overwrite,
@@ -3236,7 +3455,7 @@ export default function App() {
                         continue;
                       }
 
-                      const result = await bridge.appendFileInFolder(rootPath, action.path, action.content);
+                      const result = await bridge.appendFileInFolder(executionRootPath, executionPath, action.content);
                       actionReceipts.push({
                         id: actionId,
                         type: 'append_file',
@@ -3263,7 +3482,7 @@ export default function App() {
                         continue;
                       }
 
-                      const result = await bridge.readFileInFolder(rootPath, action.path);
+                      const result = await bridge.readFileInFolder(executionRootPath, executionPath);
                       actionReceipts.push({
                         id: actionId,
                         type: 'read_file',
@@ -3292,7 +3511,7 @@ export default function App() {
                         continue;
                       }
 
-                      const result = await bridge.listDirInFolder(rootPath, action.path || '');
+                      const result = await bridge.listDirInFolder(executionRootPath, executionPath || '');
                       actionReceipts.push({
                         id: actionId,
                         type: 'list_dir',
@@ -3323,7 +3542,7 @@ export default function App() {
                         continue;
                       }
 
-                      const result = await bridge.existsInFolder(rootPath, action.path);
+                      const result = await bridge.existsInFolder(executionRootPath, executionPath);
                       actionReceipts.push({
                         id: actionId,
                         type: 'exists',
@@ -3954,66 +4173,126 @@ export default function App() {
           : coworkScopeMode === 'workspace'
             ? projectFolderContext || localFolderContext
             : localFolderContext;
-      const selectedKindByPath = new Map(
-        coworkProjectPathReferences.map((entry) => [entry.path, entry.kind] as const),
-      );
+      const selectedKindByPath = new Map(coworkProjectPathReferences.map((entry) => [entry.path, entry.kind] as const));
+      const projectContextKindByPath = new Map((activeCoworkProject?.contextPaths ?? []).map((entry) => [entry.path, entry.kind] as const));
       const referencedProjectPaths = Array.from(new Set(extractProjectFileMentions(text))).slice(0, 8);
-      let referencedProjectFilesContext = '';
-      if (referencedProjectPaths.length > 0 && folderContext) {
+      const configuredProjectContextPaths = Array.from(
+        new Set((activeCoworkProject?.contextPaths ?? []).map((entry) => entry.path).filter(Boolean)),
+      ).slice(0, 8);
+
+      const buildProjectReferenceContext = async (
+        heading: string,
+        paths: string[],
+        kindByPath: Map<string, ProjectPathReference['kind']>,
+      ): Promise<string> => {
+        if (paths.length === 0) {
+          return '';
+        }
         const snippets: string[] = [];
         const MAX_FILE_CHARS = 8_000;
         const MAX_FOLDER_LIST_ITEMS = 40;
 
-        for (const rawPath of referencedProjectPaths) {
-          const mentionsDirectory = /\/+$/.test(rawPath) || selectedKindByPath.get(rawPath) === 'directory';
-          const relPath = rawPath.replace(/\/+$/, '').trim();
-          if (!relPath) {
-            continue;
+        const toBridgeTarget = (
+          inputPath: string,
+          options?: { forceDirectory?: boolean },
+        ): { rootPath: string; relativePath: string; normalizedPath: string } | null => {
+          const normalizedInput = inputPath.replace(/\\/g, '/').replace(/\/+$/, '').trim();
+          if (!normalizedInput) {
+            return null;
           }
 
-          const validated = validateProjectRelativePath(relPath);
-          if (!validated.ok) {
-            snippets.push(`- ${relPath}: skipped (${validated.reason})`);
+          const isAbsolute =
+            normalizedInput.startsWith('/') ||
+            normalizedInput.startsWith('//') ||
+            /^[a-zA-Z]:\//.test(normalizedInput);
+          const forceDirectory = Boolean(options?.forceDirectory);
+
+          if (isAbsolute) {
+            if (forceDirectory) {
+              return { rootPath: normalizedInput, relativePath: '', normalizedPath: normalizedInput };
+            }
+            const lastSlashIndex = normalizedInput.lastIndexOf('/');
+            if (lastSlashIndex < 0) {
+              return null;
+            }
+
+            let rootPath = normalizedInput.slice(0, lastSlashIndex);
+            const relativePath = normalizedInput.slice(lastSlashIndex + 1);
+            if (!rootPath && normalizedInput.startsWith('/')) {
+              rootPath = '/';
+            }
+            if (/^[a-zA-Z]:$/.test(rootPath)) {
+              rootPath = `${rootPath}/`;
+            }
+            if (!rootPath || !relativePath) {
+              return null;
+            }
+            return { rootPath, relativePath, normalizedPath: normalizedInput };
+          }
+
+          const validated = validateProjectRelativePath(normalizedInput);
+          if (!validated.ok || !folderContext) {
+            return null;
+          }
+          return { rootPath: folderContext, relativePath: normalizedInput, normalizedPath: normalizedInput };
+        };
+
+        for (const rawPath of paths) {
+          const mentionsDirectory = /\/+$/.test(rawPath) || kindByPath.get(rawPath) === 'directory';
+          const target = toBridgeTarget(rawPath, { forceDirectory: mentionsDirectory });
+          if (!target) {
+            snippets.push(`- ${rawPath}: skipped (invalid or unsupported path)`);
             continue;
           }
 
           if (mentionsDirectory && bridge?.listDirInFolder) {
             try {
-              const listing = await bridge.listDirInFolder(folderContext, relPath);
+              const listing = await bridge.listDirInFolder(target.rootPath, target.relativePath);
               const listed = listing.items
                 .slice(0, MAX_FOLDER_LIST_ITEMS)
                 .map((item) => `- ${item.kind === 'directory' ? '[dir]' : '[file]'} ${item.path}`)
                 .join('\n');
               const truncated = listing.items.length > MAX_FOLDER_LIST_ITEMS ? '\n- ...truncated...' : '';
-              snippets.push(`### ${relPath}/\n${listed || '- (empty)'}${truncated}`);
+              snippets.push(`### ${target.normalizedPath}/\n${listed || '- (empty)'}${truncated}`);
             } catch (error) {
               const message = error instanceof Error ? error.message : 'Failed to list folder';
-              snippets.push(`- ${relPath}/: list failed (${message})`);
+              snippets.push(`- ${target.normalizedPath}/: list failed (${message})`);
             }
             continue;
           }
 
           if (!bridge?.readFileInFolder) {
-            snippets.push(`- ${relPath}: read unavailable in this mode`);
+            snippets.push(`- ${target.normalizedPath}: read unavailable in this mode`);
             continue;
           }
 
           try {
-            const fileResult = await bridge.readFileInFolder(folderContext, relPath);
+            const fileResult = await bridge.readFileInFolder(target.rootPath, target.relativePath);
             const fullContent = fileResult.content ?? '';
             const snippet = fullContent.slice(0, MAX_FILE_CHARS);
             const truncated = fullContent.length > MAX_FILE_CHARS ? '\n[...truncated...]' : '';
-            snippets.push(`### ${relPath}\n\`\`\`\n${snippet}${truncated}\n\`\`\``);
+            snippets.push(`### ${target.normalizedPath}\n\`\`\`\n${snippet}${truncated}\n\`\`\``);
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to read file';
-            snippets.push(`- ${relPath}: read failed (${message})`);
+            snippets.push(`- ${target.normalizedPath}: read failed (${message})`);
           }
         }
 
-        if (snippets.length > 0) {
-          referencedProjectFilesContext = `Referenced project files:\n${snippets.join('\n\n')}`;
+        if (snippets.length === 0) {
+          return '';
         }
-      }
+        return `${heading}\n${snippets.join('\n\n')}`;
+      };
+      const configuredProjectContext = await buildProjectReferenceContext(
+        'External context (read-only):',
+        configuredProjectContextPaths,
+        projectContextKindByPath,
+      );
+      const referencedProjectFilesContext = await buildProjectReferenceContext(
+        'Referenced project files:',
+        referencedProjectPaths,
+        selectedKindByPath,
+      );
 
       setCoworkTaskStatus(queuedTaskId, 'running', {
         summary: 'Sending task to cowork.',
@@ -4033,8 +4312,25 @@ export default function App() {
         '{"relay_actions":[{"id":"a1","type":"list_dir","path":"."},{"id":"a2","type":"create_file","path":"relative/path.ext","content":"file contents","overwrite":false},{"id":"a3","type":"append_file","path":"relative/path.ext","content":"more text"},{"id":"a4","type":"read_file","path":"relative/path.ext"},{"id":"a5","type":"exists","path":"relative/path.ext"},{"id":"a6","type":"rename","path":"old.ext","newPath":"new.ext"},{"id":"a7","type":"delete","path":"obsolete.ext"}]}',
         '```',
         'If filenames are unknown, first emit a list_dir action and do not ask follow-up questions.',
+        'When the prompt contains @project:"...": treat each referenced path as actionable filesystem context.',
+        'For absolute referenced paths (e.g. C:/... or /...), use that exact absolute path in read-only actions (list_dir/read_file/exists).',
+        'Do not claim a referenced @project path is inaccessible before attempting relay_actions for it.',
         'Never respond with natural language explanations for file-operation requests.',
       ].join('\n');
+      const explicitReferencedPathsInstruction =
+        referencedProjectPaths.length > 0
+          ? [
+              'Explicit @project references were provided by the user.',
+              `You must process these paths first via relay_actions: ${referencedProjectPaths.join(', ')}`,
+            ].join('\n')
+          : '';
+      const externalContextProtectionInstruction = configuredProjectContextPaths.length > 0
+        ? [
+            'External context is protected and read-only.',
+            'Do not create, modify, rename, or delete any file/folder from external context paths.',
+            'Use external context only for reading and referencing.',
+          ].join('\n')
+        : '';
       const projectKnowledgeContext = activeCoworkProject
         ? projectKnowledgeItems
             .filter((item) => item.projectId === activeCoworkProject.id)
@@ -4068,7 +4364,10 @@ export default function App() {
         folderContext ? `Working folder context: ${folderContext}` : '',
         scopeInstruction,
         approvalInstruction,
+        configuredProjectContext,
         referencedProjectFilesContext,
+        explicitReferencedPathsInstruction,
+        externalContextProtectionInstruction,
         webSearchInstruction,
         relayFileInstruction,
         '',
@@ -4394,6 +4693,26 @@ export default function App() {
     return selected?.trim() ? selected.trim() : undefined;
   };
 
+  const handlePickExternalContextPathsForProject = async (
+    initialPath?: string,
+  ): Promise<Array<{ path: string; kind: 'file' | 'directory' }>> => {
+    if (!bridge?.selectContextPaths) {
+      setStatus('External context picker requires the Electron desktop app.');
+      return [];
+    }
+    try {
+      const selected = await bridge.selectContextPaths(initialPath?.trim() || workingFolderRef.current || undefined);
+      if (selected.length > 0) {
+        setStatus(`Selected ${selected.length} external context item${selected.length === 1 ? '' : 's'}.`);
+      }
+      return selected;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to open external context picker.';
+      setStatus(message);
+      return [];
+    }
+  };
+
   const handleApplyLocalPlan = async () => {
     if (!bridge?.applyOrganizeFolderPlan) {
       setStatus('Local file organizer is available in the Electron desktop app only.');
@@ -4568,6 +4887,104 @@ export default function App() {
 
     if (updatedProjectName) {
       setStatus(`Project updated: ${updatedProjectName}`);
+    }
+  };
+
+  const handleAddProjectContextPath = (projectId: string, path: string, kind: ProjectPathReference['kind']) => {
+    const normalizedProjectId = projectId.trim();
+    if (!normalizedProjectId || !path.trim()) {
+      setStatus('Context path is required.');
+      return;
+    }
+    const normalized = normalizeProjectPathForStorage(path);
+    if (!normalized.ok) {
+      setStatus(`Invalid context path: ${normalized.reason}`);
+      return;
+    }
+    const normalizedPath = normalized.path;
+
+    let added = false;
+    setCoworkProjects((current) =>
+      current.map((project) => {
+        if (project.id !== normalizedProjectId) {
+          return project;
+        }
+        const existing = project.contextPaths ?? [];
+        if (existing.some((entry) => entry.path === normalizedPath && entry.kind === kind)) {
+          return project;
+        }
+        added = true;
+        return {
+          ...project,
+          contextPaths: [...existing, { path: normalizedPath, kind }],
+          updatedAt: Date.now(),
+        };
+      }),
+    );
+    if (added) {
+      setStatus(`Added external context ${kind}: ${normalizedPath}`);
+    }
+  };
+
+  const handleRemoveProjectContextPath = (projectId: string, path: string, kind: ProjectPathReference['kind']) => {
+    const normalizedProjectId = projectId.trim();
+    if (!normalizedProjectId || !path.trim()) {
+      return;
+    }
+    const normalized = normalizeProjectPathForStorage(path);
+    if (!normalized.ok) {
+      return;
+    }
+    const normalizedPath = normalized.path;
+    let removed = false;
+    setCoworkProjects((current) =>
+      current.map((project) => {
+        if (project.id !== normalizedProjectId) {
+          return project;
+        }
+        const existing = project.contextPaths ?? [];
+        const next = existing.filter((entry) => !(entry.path === normalizedPath && entry.kind === kind));
+        if (next.length === existing.length) {
+          return project;
+        }
+        removed = true;
+        return {
+          ...project,
+          contextPaths: next,
+          updatedAt: Date.now(),
+        };
+      }),
+    );
+    if (removed) {
+      setStatus(`Removed external context ${kind}: ${normalizedPath}`);
+    }
+  };
+
+  const handleListProjectPathEntries = async (rootPath: string, relativePath?: string) => {
+    const normalizedRoot = rootPath.trim();
+    if (!normalizedRoot) {
+      return [] as Array<{ path: string; kind: 'file' | 'directory'; size?: number; modifiedMs?: number }>;
+    }
+    if (!bridge?.listDirInFolder) {
+      setStatus('Project path browser requires the Electron desktop bridge.');
+      return [] as Array<{ path: string; kind: 'file' | 'directory'; size?: number; modifiedMs?: number }>;
+    }
+    try {
+      const listing = await bridge.listDirInFolder(normalizedRoot, relativePath?.trim() || '');
+      return listing.items
+        .map((item) => {
+          const normalized = normalizeProjectPathForStorage(item.path);
+          if (!normalized.ok) {
+            return null;
+          }
+          return { ...item, path: normalized.path };
+        })
+        .filter((item): item is typeof listing.items[number] => item !== null)
+        .slice(0, 500);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to browse project paths.';
+      setStatus(message);
+      return [] as Array<{ path: string; kind: 'file' | 'directory'; size?: number; modifiedMs?: number }>;
     }
   };
 
@@ -5969,6 +6386,7 @@ export default function App() {
                   projectKnowledge={visibleProjectKnowledge}
                   webSearchEnabled={coworkWebSearchEnabled}
                   onPickFolder={handlePickWorkingFolderForProject}
+                  onPickExternalContextPaths={handlePickExternalContextPathsForProject}
                   onUpdateProject={handleUpdateCoworkProject}
                   onCreatePipeline={handleCreateOutcomePipeline}
                   onUpdatePipeline={handleUpdateOutcomePipeline}
@@ -5979,6 +6397,7 @@ export default function App() {
                   onOpenArtifact={handleOpenCoworkArtifact}
                   onAddKnowledge={handleAddProjectKnowledge}
                   onDeleteKnowledge={handleDeleteProjectKnowledge}
+                  onAddContextPath={handleAddProjectContextPath}
                   onWebSearchEnabledChange={setCoworkWebSearchEnabled}
                   onSelectPage={(page) => setActivePage(page)}
                 />
