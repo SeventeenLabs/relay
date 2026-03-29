@@ -171,7 +171,7 @@ export function MemoryPage({ gatewayConnected }: MemoryPageProps) {
   }, [entries]);
 
   return (
-    <section className="mx-auto grid h-full w-full max-w-[1060px] min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3">
+    <section className="grid h-full w-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3 p-4">
       {/* Header */}
       <header className="flex items-center justify-between gap-3">
         <div>

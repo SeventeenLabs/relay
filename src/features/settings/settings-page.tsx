@@ -6,7 +6,6 @@ import type { GatewayConnectionProfile, HealthCheckResult, UserPreferences } fro
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { listConnectors, persistConnectorConfig } from '@/lib/connectors';
 import { loadAllowedDomains, saveAllowedDomains } from '@/lib/connectors/web-fetch';
@@ -255,6 +254,7 @@ export function SettingsPage({
   const [prefersDarkSystem, setPrefersDarkSystem] = useState(false);
   const [connectionNameDraft, setConnectionNameDraft] = useState('');
   const t = useCallback((en: string, de: string) => (preferences.language === 'de' ? de : en), [preferences.language]);
+  const settingsCardClass = 'max-w-[980px] rounded-2xl border border-border/60 bg-card p-4';
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -300,7 +300,7 @@ export function SettingsPage({
   }, [connectionNameDraft, draftGatewayUrl, onSaveGatewayConnection]);
 
   const renderPlaceholder = (icon: ReactNode, hint: string) => (
-    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/60 py-12 text-center">
+    <div className="max-w-[980px] flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/60 py-12 text-center">
       <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
         {icon}
       </div>
@@ -312,8 +312,8 @@ export function SettingsPage({
   );
 
   return (
-    <section className="mx-auto w-full max-w-[720px] px-2">
-      <div className="mb-6">
+    <section className="h-full w-full overflow-y-auto p-4 pb-8">
+      <div className="mb-4">
         <h1 className="mb-1 text-[clamp(1.55rem,2.4vw,2rem)] tracking-tight">
           {preferences.language === 'de'
             ? ({
@@ -332,7 +332,7 @@ export function SettingsPage({
       </div>
 
       {activeSection === 'Profile' && (
-        <section className="pb-6">
+        <section className={settingsCardClass}>
           <div className="mb-3">
             <h2 className="text-base font-medium">{t('Personal details', 'Persoenliche Daten')}</h2>
           </div>
@@ -360,8 +360,8 @@ export function SettingsPage({
       )}
 
       {activeSection === 'Appearance' && (
-        <div className="flex flex-col gap-6">
-          <section>
+        <div className="flex flex-col gap-4">
+          <section className={settingsCardClass}>
             <div className="mb-3">
               <h2 className="text-base font-medium">{t('Theme', 'Theme')}</h2>
             </div>
@@ -406,9 +406,7 @@ export function SettingsPage({
             </div>
           </section>
 
-          <Separator />
-
-          <section>
+          <section className={settingsCardClass}>
             <div className="mb-3">
               <h2 className="text-base font-medium">{t('Style', 'Stil')}</h2>
             </div>
@@ -441,9 +439,7 @@ export function SettingsPage({
             </div>
           </section>
 
-          <Separator />
-
-          <section>
+          <section className={settingsCardClass}>
             <div className="mb-3">
               <h2 className="text-base font-medium">{t('Language', 'Sprache')}</h2>
             </div>
@@ -460,9 +456,7 @@ export function SettingsPage({
             </label>
           </section>
 
-          <Separator />
-
-          <section>
+          <section className={settingsCardClass}>
             <div className="mb-3">
               <h2 className="text-base font-medium">{t('Notifications', 'Benachrichtigungen')}</h2>
             </div>
@@ -476,7 +470,6 @@ export function SettingsPage({
                 </div>
                 <Button variant="outline" size="sm">{t('Enable', 'Aktivieren')}</Button>
               </div>
-              <Separator />
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-medium">{t('System alerts', 'Systemhinweise')}</p>
@@ -490,7 +483,7 @@ export function SettingsPage({
       )}
 
       {activeSection === 'System Prompt' && (
-        <section className="pb-6">
+        <section className={settingsCardClass}>
           <div className="mb-3">
             <h2 className="text-base font-medium">{t('Default system prompt', 'Standard System-Prompt')}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{t('Prepended as context to every conversation.', 'Wird jeder Konversation als Kontext vorangestellt.')}</p>
@@ -532,8 +525,8 @@ export function SettingsPage({
       )}
 
       {activeSection === 'Gateway' && (
-        <div className="flex flex-col gap-6">
-          <section>
+        <div className="flex flex-col gap-4">
+          <section className={settingsCardClass}>
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-base font-medium">{t('Connection', 'Verbindung')}</h2>
               <Badge
@@ -612,9 +605,7 @@ export function SettingsPage({
             ) : null}
           </section>
 
-          <Separator />
-
-          <section>
+          <section className={settingsCardClass}>
             <div className="mb-3">
               <h2 className="text-base font-medium">{t('Saved connections', 'Gespeicherte Verbindungen')}</h2>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -699,9 +690,7 @@ export function SettingsPage({
             </div>
           </section>
 
-          <Separator />
-
-          <section>
+          <section className={settingsCardClass}>
             <div className="mb-3">
               <h2 className="text-base font-medium">{t('Device management', 'Geraeteverwaltung')}</h2>
               <p className="mt-1 text-sm text-muted-foreground">{t('Device identity and pairing status.', 'Geraeteidentitaet und Pairing-Status.')}</p>
@@ -727,9 +716,7 @@ export function SettingsPage({
             </div>
           </section>
 
-          <Separator />
-
-          <section className="pb-2">
+          <section className={settingsCardClass}>
             <button
               type="button"
               className="font-sans text-xs text-muted-foreground/70 underline-offset-2 hover:text-muted-foreground hover:underline"
@@ -828,7 +815,7 @@ function ConnectorsSection({ language }: { language: 'en' | 'de' }) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-[980px] space-y-4">
       {connectors.map((connector) => (
         <div
           key={connector.id}
@@ -911,4 +898,6 @@ function ConnectorsSection({ language }: { language: 'en' | 'de' }) {
     </div>
   );
 }
+
+
 

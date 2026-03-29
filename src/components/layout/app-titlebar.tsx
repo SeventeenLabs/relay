@@ -153,7 +153,7 @@ export function AppTitlebar({
   };
 
   return (
-    <header className="relative flex h-[44px] items-center justify-between border-b border-border bg-background/90 pl-1">
+    <header className="app-titlebar relative flex h-[44px] items-center justify-between bg-background pl-1">
       {!minimal && (
       <div
         className="inline-flex min-w-[124px] items-center gap-1 [-webkit-app-region:no-drag]"

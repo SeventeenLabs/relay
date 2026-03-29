@@ -5686,7 +5686,7 @@ export default function App() {
             onLogout={handleLogout}
           />
 
-          <main className="relative min-h-0 overflow-hidden p-0">
+          <main className="relative min-h-0 overflow-hidden rounded-l-xl border-l border-t border-border bg-background p-0">
             <Dialog
               open={Boolean(recentRenameTarget)}
               onOpenChange={(nextOpen) => {

@@ -10,7 +10,7 @@ function Sidebar({ className, ...props }: React.ComponentProps<'aside'>) {
   return (
     <aside
       data-slot="sidebar"
-      className={cn('flex h-full w-full min-w-0 flex-col rounded-none border-r border-border bg-background text-foreground', className)}
+      className={cn('flex h-full w-full min-w-0 flex-col rounded-none bg-background text-foreground', className)}
       {...props}
     />
   );

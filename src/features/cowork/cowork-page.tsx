@@ -197,9 +197,10 @@ export function CoworkPage({
   const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
   const [mentionMenuIndex, setMentionMenuIndex] = useState(0);
   const [composerText, setComposerText] = useState(taskPrompt);
-  const canSend = composerText.trim().length > 0 && !sending && projectSelected && gatewayConnected;
+  const canSend = composerText.trim().length > 0 && !sending && gatewayConnected;
   const visibleMessages = useMemo(() => messages.filter((message) => !isSystemLikeMessage(message)), [messages]);
   const isInitialWorkspace = visibleMessages.length === 0;
+  const showRightPanel = rightPanelOpen && (!isInitialWorkspace || projectSelected);
   const dateTimeFormatter = useMemo(
     () =>
       new Intl.DateTimeFormat(undefined, {
@@ -411,16 +412,12 @@ export function CoworkPage({
           className={`rounded-full font-sans text-[10px] ${
             projectSelected
               ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-              : 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+              : 'border-border bg-muted text-muted-foreground'
           }`}
         >
-          {projectSelected ? `Runs in: ${projectTitle}` : 'No project selected'}
+          {projectSelected ? `Project: ${projectTitle}` : 'No project context'}
         </Badge>
-        {!projectSelected ? (
-          <span className="font-sans text-[11px] text-muted-foreground">
-            Select a project in the sidebar before running a task.
-          </span>
-        ) : !gatewayConnected ? (
+        {!gatewayConnected ? (
           <span className="font-sans text-[11px] text-muted-foreground">
             Connect the gateway to run cowork tasks.
           </span>
@@ -448,11 +445,11 @@ export function CoworkPage({
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
         <p id={taskPromptHelpId} className="font-sans text-xs text-muted-foreground">
-          {projectSelected
-            ? gatewayConnected
+          {gatewayConnected
+            ? projectSelected
               ? 'Type @ to reference project files/folders. Enter sends, Shift+Enter new line.'
-              : 'Gateway disconnected. Connect to enable sending.'
-            : 'Choose a project to enable sending'}
+              : 'Enter sends, Shift+Enter new line. Select a project if you want file-aware context.'
+            : 'Gateway disconnected. Connect to enable sending.'}
         </p>
 
         <div className="ml-auto flex items-center gap-2">
@@ -602,9 +599,9 @@ export function CoworkPage({
         </div>
       </section>
     ) : (
-    <section
+        <section
       className={`grid h-full w-full min-h-0 overflow-hidden transition-[grid-template-columns,gap] duration-200 ${
-        rightPanelOpen
+        showRightPanel
           ? 'gap-4 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_420px]'
           : 'gap-0 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_0px]'
       } p-0`}
@@ -616,7 +613,7 @@ export function CoworkPage({
       >
         <ScrollArea className="h-full px-2">
           {isInitialWorkspace ? (
-            <div className="mx-auto grid h-full w-full max-w-[920px] place-items-center">
+            <div className="mx-auto grid h-full w-full max-w-[920px] place-items-center px-4">
               <div className="w-full">
                 <p className="mb-3 text-[clamp(1.6rem,2.4vw,2.2rem)] tracking-tight text-foreground">Let's knock something off your list</p>
                 <div className="mt-4 grid gap-2">
@@ -626,7 +623,7 @@ export function CoworkPage({
               </div>
             </div>
           ) : (
-            <div className="mx-auto grid w-full max-w-[860px] gap-3" role="log" aria-live="polite" aria-relevant="additions">
+            <div className="mx-auto grid w-full max-w-[860px] gap-3 px-4" role="log" aria-live="polite" aria-relevant="additions">
               {visibleMessages.map((message) => {
                 const inline = extractInlineActivityCards(message);
 
@@ -718,7 +715,7 @@ export function CoworkPage({
 
         {!isInitialWorkspace ? (
           <div className="px-2">
-            <div className="mx-auto grid w-full max-w-[920px] gap-2">
+            <div className="mx-auto grid w-full max-w-[920px] gap-2 px-4">
               {renderPendingApprovalsPanel()}
               {renderCoworkComposer('min-h-[84px]')}
             </div>
@@ -728,7 +725,7 @@ export function CoworkPage({
 
       <aside
         className={`min-h-0 w-full transition-opacity duration-200 ${
-          rightPanelOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+          showRightPanel ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
       >
         <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto py-2 pr-1">

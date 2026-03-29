@@ -52,7 +52,7 @@ export function ApprovalsPage({
   };
 
   return (
-    <section className="mx-auto grid h-full w-full max-w-[1100px] min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3 p-4">
+    <section className="grid h-full w-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3 p-4">
       <header className="rounded-2xl border border-border/60 bg-card px-4 py-3.5">
         <div className="flex flex-wrap items-center gap-2">
           <AlertTriangle className="size-5 text-amber-600" />

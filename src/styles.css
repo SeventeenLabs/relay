@@ -140,6 +140,11 @@ html.relay-style [data-slot="sidebar"] {
   background-color: #f8f8f8;
 }
 
+html.relay-style .app-titlebar {
+  background-color: #f8f8f8;
+}
+
+
 html.relay-style .bg-card {
   background-color: #ffffff;
 }
@@ -253,6 +258,12 @@ html.relay-style.dark [data-slot="sidebar"],
 html.dark.relay-style [data-slot="sidebar"] {
   background-color: #080808;
 }
+
+html.relay-style.dark .app-titlebar,
+html.dark.relay-style .app-titlebar {
+  background-color: #080808;
+}
+
 
 html.relay-style.dark .bg-card,
 html.dark.relay-style .bg-card {
