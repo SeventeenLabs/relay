@@ -1,4 +1,4 @@
-# Relay Claude Cowork Research Summary
+﻿# Relay Cowork Research Summary
 
 Date: 2026-03-23
 Purpose: Preserve market and product evidence used to define Relay MVP.
@@ -30,7 +30,7 @@ Implication for Relay:
 - Must show decision rationale and policy references.
 - Must provide an auditable run timeline.
 
-## 4. Observed Claude Cowork Patterns
+## 4. Observed Cowork Patterns
 
 Common workflow shape:
 
@@ -129,3 +129,4 @@ Additional execution strategy stack:
 - RELAY-EXECUTION-HANDBOOK.md
 - RELAY-NOTION-TEMPLATES.md
 - RELAY-MVP-V1-FEATURES.md
+

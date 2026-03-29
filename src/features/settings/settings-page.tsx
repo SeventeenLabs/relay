@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { Code2, Folder, Globe, KeyRound, Link2, Shield, Terminal, Trash2 } from 'lucide-react';
 
@@ -414,7 +414,7 @@ export function SettingsPage({
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {([
-                ['claude', t('Claude Cowork', 'Claude Cowork'), t('Warm editorial look', 'Warmer Editorial-Look')],
+                ['claude', t('Cowork', 'Cowork'), t('Warm editorial look', 'Warmer Editorial-Look')],
                 ['relay', t('Relay', 'Relay'), t('Crisp product look', 'Klarer Produkt-Look')],
               ] as const).map(([value, label, description]) => (
                 <button
@@ -663,7 +663,7 @@ export function SettingsPage({
                             <p className="mt-0.5 font-sans text-[11px] text-muted-foreground">
                               {connection.gatewayToken ? t('Token saved', 'Token gespeichert') : t('No token', 'Kein Token')}
                               {connection.lastUsedAt
-                                ? ` • ${t('Last used', 'Zuletzt verwendet')} ${new Date(connection.lastUsedAt).toLocaleString()}`
+                                ? ` â€¢ ${t('Last used', 'Zuletzt verwendet')} ${new Date(connection.lastUsedAt).toLocaleString()}`
                                 : ''}
                             </p>
                           </div>
@@ -766,7 +766,7 @@ export function SettingsPage({
   );
 }
 
-/* ── Connectors settings section ─────────────────────────────────────────── */
+/* â”€â”€ Connectors settings section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 const connectorIcons: Record<string, ReactNode> = {
   folder: <Folder className="size-4" />,
@@ -884,7 +884,7 @@ function ConnectorsSection({ language }: { language: 'en' | 'de' }) {
                       className="ml-1 text-muted-foreground hover:text-foreground"
                       onClick={() => removeDomain(domain)}
                     >
-                      ×
+                      Ã—
                     </button>
                   </Badge>
                 ))}
@@ -911,3 +911,4 @@ function ConnectorsSection({ language }: { language: 'en' | 'de' }) {
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
   <img src="assets/screenshots/cowork.png" alt="Relay cowork view" width="1100" style="border-radius: 5px;" />
 </p>
 
@@ -22,11 +22,13 @@
 
 ## What Is Relay?
 
-# The open-source Claude Cowork for OpenClaw.
+# The open-source Cowork for OpenClaw.
+
+## Starts like chat, runs like infrastructure.
 
 **If OpenClaw is the runtime, Relay is your local command center.**
 
-Relay is an Electron desktop app that gives you the same workflow as Claude Cowork (autonomous task execution, scheduling, sub-agents, connectors) but running on **your infrastructure**, with **your choice of model**, and with **real governance built in**.
+Relay is an Electron desktop app that gives you the same workflow as Cowork (autonomous task execution, scheduling, sub-agents, connectors) but running on **your infrastructure**, with **your choice of model**, and with **real governance built in**.
 
 Cowork is a great product. But there are three structural limits that push companies toward alternatives:
 
@@ -41,82 +43,82 @@ Relay solves all three. Same workflow pattern, different trust model.
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                          You (Operator)                                  │
-│         give goals · review deliverables · approve risky actions         │
-└─────────────────────────────┬────────────────────────────────────────────┘
-                              │
-              ┌───────────────▼────────────────┐
-              │     Relay (Desktop App)        │
-              │     ── Control Plane ──        │
-              │                                │
-              │  Dispatch & Chat               │  You see everything.
-              │  • Give a task in natural lang │  You approve what matters.
-              │  • Agent plans steps for you   │  You stay in control.
-              │  • Review polished deliverable │
-              │                                │
-              │  Governance                    │
-              │  • Approval gates (file ops,   │
-              │    shell commands, data sends) │
-              │  • Exportable audit trail      │
-              │  • Cost tracking per task      │
-              │                                │
-              │  Configure                     │
-              │  • Schedule recurring tasks    │─ ─ ┐ Relay defines.
-              │  • Browse & edit agent memory  │    │ OpenClaw executes.
-              │  • Manage connectors (Slack,   │    │
-              │    Notion, GitHub, Jira, etc.) │    │
-              │  • Set project working folder  │    │
-              └───────────────┬────────────────┘    │
-                              │                     │
-                       WebSocket / API              │
-                              │                     │
-              ┌───────────────▼────────────────┐    │
-              │  OpenClaw Gateway (Runtime)    │◄ ─ ┘
-              │  local · VPS · custom URL      │
-              │  ── Execution Plane ──         │
-              │                                │
-              │  Agent Runtime                 │  Runs on YOUR infra.
-              │  • Autonomous task execution   │  Your keys. Your data.
-              │  • Multi-step planning & tools │
-              │  • Sub-agent orchestration     │
-              │                                │
-              │  Persistence                   │
-              │  • Memory storage & retrieval  │
-              │  • Schedule runner (cron)      │
-              │  • File read / write / search  │
-              │                                │
-              │  Integrations                  │
-              │  • Connectors (Slack, Notion,  │
-              │    GitHub, Jira, email, etc.)  │
-              │  • Computer use (browser, UI)  │
-              │  • Shell / script execution    │
-              │                                │
-              │  Model Router                  │
-              │  • Routes to any LLM backend   │
-              └──┬──────────┬──────────┬───────┘
-                 │          │          │
-           ┌─────▼───┐ ┌────▼───┐ ┌────▼─────┐
-           │ Claude  │ │ GPT-4  │ │  Llama   │
-           │ Gemini  │ │ Mixtral│ │  Custom  │
-           └─────────┘ └────────┘ └──────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                          You (Operator)                                  â”‚
+â”‚         give goals Â· review deliverables Â· approve risky actions         â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                              â”‚
+              â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+              â”‚     Relay (Desktop App)        â”‚
+              â”‚     â”€â”€ Control Plane â”€â”€        â”‚
+              â”‚                                â”‚
+              â”‚  Dispatch & Chat               â”‚  You see everything.
+              â”‚  â€¢ Give a task in natural lang â”‚  You approve what matters.
+              â”‚  â€¢ Agent plans steps for you   â”‚  You stay in control.
+              â”‚  â€¢ Review polished deliverable â”‚
+              â”‚                                â”‚
+              â”‚  Governance                    â”‚
+              â”‚  â€¢ Approval gates (file ops,   â”‚
+              â”‚    shell commands, data sends) â”‚
+              â”‚  â€¢ Exportable audit trail      â”‚
+              â”‚  â€¢ Cost tracking per task      â”‚
+              â”‚                                â”‚
+              â”‚  Configure                     â”‚
+              â”‚  â€¢ Schedule recurring tasks    â”‚â”€ â”€ â” Relay defines.
+              â”‚  â€¢ Browse & edit agent memory  â”‚    â”‚ OpenClaw executes.
+              â”‚  â€¢ Manage connectors (Slack,   â”‚    â”‚
+              â”‚    Notion, GitHub, Jira, etc.) â”‚    â”‚
+              â”‚  â€¢ Set project working folder  â”‚    â”‚
+              â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜    â”‚
+                              â”‚                     â”‚
+                       WebSocket / API              â”‚
+                              â”‚                     â”‚
+              â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”    â”‚
+              â”‚  OpenClaw Gateway (Runtime)    â”‚â—„ â”€ â”˜
+              â”‚  local Â· VPS Â· custom URL      â”‚
+              â”‚  â”€â”€ Execution Plane â”€â”€         â”‚
+              â”‚                                â”‚
+              â”‚  Agent Runtime                 â”‚  Runs on YOUR infra.
+              â”‚  â€¢ Autonomous task execution   â”‚  Your keys. Your data.
+              â”‚  â€¢ Multi-step planning & tools â”‚
+              â”‚  â€¢ Sub-agent orchestration     â”‚
+              â”‚                                â”‚
+              â”‚  Persistence                   â”‚
+              â”‚  â€¢ Memory storage & retrieval  â”‚
+              â”‚  â€¢ Schedule runner (cron)      â”‚
+              â”‚  â€¢ File read / write / search  â”‚
+              â”‚                                â”‚
+              â”‚  Integrations                  â”‚
+              â”‚  â€¢ Connectors (Slack, Notion,  â”‚
+              â”‚    GitHub, Jira, email, etc.)  â”‚
+              â”‚  â€¢ Computer use (browser, UI)  â”‚
+              â”‚  â€¢ Shell / script execution    â”‚
+              â”‚                                â”‚
+              â”‚  Model Router                  â”‚
+              â”‚  â€¢ Routes to any LLM backend   â”‚
+              â””â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”˜
+                 â”‚          â”‚          â”‚
+           â”Œâ”€â”€â”€â”€â”€â–¼â”€â”€â”€â” â”Œâ”€â”€â”€â”€â–¼â”€â”€â”€â” â”Œâ”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”
+           â”‚ Claude  â”‚ â”‚ GPT-4  â”‚ â”‚  Llama   â”‚
+           â”‚ Gemini  â”‚ â”‚ Mixtralâ”‚ â”‚  Custom  â”‚
+           â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â””â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
-**Relay is the control plane — you see, configure, and approve.
-OpenClaw is the execution plane — agents run, remember, and act on your infrastructure.**
+**Relay is the control plane â€” you see, configure, and approve.
+OpenClaw is the execution plane â€” agents run, remember, and act on your infrastructure.**
 
 ```
 Example: Scheduled daily briefing
 
   Relay (you define)                                    OpenClaw (it executes)
-  ──────────────────                                    ──────────────────────
-  Create schedule: "Daily 8am"          ──────►         Stores schedule
+  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€                                    â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  Create schedule: "Daily 8am"          â”€â”€â”€â”€â”€â”€â–º         Stores schedule
   Set connectors: Slack + Notion                        Cron fires at 8am
                                                         Agent reads project files
                                                         Pulls Slack threads & Notion pages
                                                         Calls LLM (your model choice)
                                                         Writes briefing to memory
-  Briefing appears in Relay             ◄──────         Returns deliverable
+  Briefing appears in Relay             â—„â”€â”€â”€â”€â”€â”€         Returns deliverable
   You review, approve, or redirect
   Full audit trail exported
 ```
@@ -163,7 +165,7 @@ Canonical definition: [docs/RELAY-OPENCLAW-AGENT-SKILL-NODE-MODEL.md](docs/RELAY
 ## How It Works
 
 ```
-You give the goal → Agent plans the steps → You approve what matters → Agent executes → Everything is logged
+You give the goal â†’ Agent plans the steps â†’ You approve what matters â†’ Agent executes â†’ Everything is logged
 ```
 
 |        | Step               | What Happens                                              |
@@ -291,9 +293,9 @@ Files, activity, memory, schedule, safety, and approvals all visible in one plac
 
 <br/>
 
-## Relay vs Claude Cowork
+## Relay vs Cowork
 
-| Capability | Relay | Claude Cowork |
+| Capability | Relay | Cowork |
 |---------|-------|---------------|
 | **Autonomous task execution** | Yes | Yes |
 | **Scheduling** | Yes | Yes |
@@ -429,10 +431,11 @@ npm run test:e2e            # Electron E2E tests (mock gateway)
 ## Open Source
 
 - License: [MIT](LICENSE)
-- Copyright © 2026 SeventeenLabs
+- Copyright Â© 2026 SeventeenLabs
 
 ---
 
 **Get started:** [Download](https://github.com/SeventeenLabs/relay/releases) the latest build or clone and run locally.
 
 **Questions?** Open an issue or email hello@seventeenlabs.io.
+

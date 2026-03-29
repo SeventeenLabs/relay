@@ -1,4 +1,4 @@
-# Relay MVP Definition
+﻿# Relay MVP Definition
 
 > Last updated: March 24, 2026
 
@@ -8,14 +8,14 @@
 
 **Relay is the governed operator desk for your AI agent.**
 
-Claude Cowork is a personal AI worker for knowledge workers — cloud-hosted, Claude-only, $20-200/mo.
-Paperclip is an AI company OS for autonomous businesses — 20+ agent org charts, heartbeats, company templates.
+Cowork is a personal AI worker for knowledge workers â€” cloud-hosted, Claude-only, $20-200/mo.
+Paperclip is an AI company OS for autonomous businesses â€” 20+ agent org charts, heartbeats, company templates.
 
 **Relay is neither.**
 
 Relay is the self-hosted, model-agnostic, human-in-the-loop control plane for operators who run 1-3 AI agents and need real governance over what those agents do. It's the middle ground: more serious than a chatbot, more personal than a company OS.
 
-| | Claude Cowork | Paperclip | **Relay** |
+| | Cowork | Paperclip | **Relay** |
 |---|---|---|---|
 | **For** | Knowledge workers | Autonomous businesses | Operators / founders |
 | **Agents** | 1 (Claude) | 20+ (any) | 1-3 (any) |
@@ -34,7 +34,7 @@ Relay is the self-hosted, model-agnostic, human-in-the-loop control plane for op
 
 The MVP proves one core loop:
 
-> **Dispatch a task → agent works → operator reviews results → approves or redirects → work is done.**
+> **Dispatch a task â†’ agent works â†’ operator reviews results â†’ approves or redirects â†’ work is done.**
 
 Everything below serves that loop. Nothing outside it ships in MVP.
 
@@ -50,7 +50,7 @@ Everything below serves that loop. Nothing outside it ships in MVP.
 
 **MVP scope:**
 - New "Dispatch" action: user writes a task prompt, selects a working context (folder or project), hits "Dispatch"
-- Task enters a queue with status: `dispatched` → `working` → `review` → `completed` / `failed`
+- Task enters a queue with status: `dispatched` â†’ `working` â†’ `review` â†’ `completed` / `failed`
 - Gateway streams the work in the background; Relay polls for status + results
 - When the agent finishes, the result appears as a reviewable deliverable (not an ephemeral chat message)
 - User can review, approve, request changes, or reject
@@ -59,7 +59,7 @@ Everything below serves that loop. Nothing outside it ships in MVP.
 
 **Key behaviors:**
 - App can be minimized/backgrounded while agent works
-- Results persist server-side (gateway) — not just localStorage
+- Results persist server-side (gateway) â€” not just localStorage
 - Optionally, results also cached locally for offline access
 - Task prompt, result, and all intermediate steps are traceable
 
@@ -79,7 +79,7 @@ Everything below serves that loop. Nothing outside it ships in MVP.
 
 ---
 
-### 2. Memory → Context Injection (Priority: CRITICAL)
+### 2. Memory â†’ Context Injection (Priority: CRITICAL)
 
 **What it is:** Memory entries actually affect agent behavior by being injected into the system prompt.
 
@@ -89,16 +89,16 @@ Everything below serves that loop. Nothing outside it ships in MVP.
 - On every message send (chat, cowork, dispatch), serialize relevant memory entries into the system prompt
 - Injection format: structured block at the end of the system prompt, categorized
 - Categories map to injection priority:
-  - `rules` → always injected (behavioral constraints)
-  - `about-me` → always injected (identity/context)
-  - `knowledge` → injected when relevant tags match the prompt (or always, if small enough)
-  - `reflection` → injected as recent context
+  - `rules` â†’ always injected (behavioral constraints)
+  - `about-me` â†’ always injected (identity/context)
+  - `knowledge` â†’ injected when relevant tags match the prompt (or always, if small enough)
+  - `reflection` â†’ injected as recent context
 - Total injection budget: ~2000 tokens max. If entries exceed budget, prioritize rules > about-me > latest reflection > tagged knowledge
 - Memory entries synced to gateway (if available) so Dispatch tasks also get memory context
 
 **Implementation notes:**
 - Add `buildMemoryContext(entries: MemoryEntry[]): string` function in `src/lib/memory-context.ts`
-- Call before `sendMessage()` / `dispatchTask()` — prepend to system prompt
+- Call before `sendMessage()` / `dispatchTask()` â€” prepend to system prompt
 - Settings page: toggle "Inject memory into conversations" (default: on)
 - Token estimation: rough character count / 4
 
@@ -121,7 +121,7 @@ Everything below serves that loop. Nothing outside it ships in MVP.
 - Display per-message token count in chat/cowork (small badge on each message)
 - Session summary: total tokens used in current session
 - Running total: all-time token usage (persisted in localStorage)
-- If gateway provides cost data (price per token × usage), show estimated cost in USD
+- If gateway provides cost data (price per token Ã— usage), show estimated cost in USD
 - Cost dashboard in sidebar or settings: daily/weekly usage chart (simple bar chart)
 
 **Implementation notes:**
@@ -143,21 +143,21 @@ Everything below serves that loop. Nothing outside it ships in MVP.
 
 **What it is:** When the agent wants to perform a dangerous action, Relay pauses and asks the operator for approval.
 
-**Current state:** Safety page defines 12 permission scopes with risk levels — but nothing is enforced. Agents act without approval.
+**Current state:** Safety page defines 12 permission scopes with risk levels â€” but nothing is enforced. Agents act without approval.
 
 **MVP scope:**
 - When the agent response contains a `relay_action` flagged as requiring approval (based on Safety page scope settings), Relay:
   1. Pauses execution
   2. Shows an approval card: action type, target path, risk level, details
   3. Operator clicks Approve, Reject, or Modify
-  4. If approved → execute action, send receipt
-  5. If rejected → send rejection message to agent, agent can adjust
+  4. If approved â†’ execute action, send receipt
+  5. If rejected â†’ send rejection message to agent, agent can adjust
 - Scope mapping (from existing Safety page):
-  - `file_delete` → approval if enabled
-  - `file_write_outside_workspace` → approval if enabled
-  - `shell_execute` → always approval (critical)
-  - `network_request` → approval if enabled
-  - `data_export` → approval if enabled
+  - `file_delete` â†’ approval if enabled
+  - `file_write_outside_workspace` â†’ approval if enabled
+  - `shell_execute` â†’ always approval (critical)
+  - `network_request` â†’ approval if enabled
+  - `data_export` â†’ approval if enabled
 - Approval decisions logged in Activity page as auditable events
 
 **Implementation notes:**
@@ -190,9 +190,9 @@ Everything below serves that loop. Nothing outside it ships in MVP.
   - Schedule: preset options (every hour, daily at 9am, weekly Monday, custom cron)
   - Working context (folder/workspace)
   - Enabled toggle
-- On save → send to gateway via `cron.create` RPC
-- Edit existing: click a job → edit form pre-filled → `cron.update` RPC
-- Delete: context menu → `cron.delete` RPC
+- On save â†’ send to gateway via `cron.create` RPC
+- Edit existing: click a job â†’ edit form pre-filled â†’ `cron.update` RPC
+- Delete: context menu â†’ `cron.delete` RPC
 - Visual confirmation: newly created jobs appear in the timeline/calendar view
 
 **Implementation notes:**
@@ -226,17 +226,17 @@ Everything below serves that loop. Nothing outside it ships in MVP.
 
 **MVP Connectors:**
 
-1. **File System (local)** — already built, formalize as connector
+1. **File System (local)** â€” already built, formalize as connector
    - Actions: read, write, list, delete, rename, stat
    - Status: working
 
-2. **Web Fetch** — simple HTTP GET/POST
-   - Actions: `web.fetch(url)` → returns page content
+2. **Web Fetch** â€” simple HTTP GET/POST
+   - Actions: `web.fetch(url)` â†’ returns page content
    - Configuration: allowed domains list (safety)
    - Use case: research, API calls, checking services
 
-3. **Shell / Terminal** — execute commands in working directory
-   - Actions: `shell.exec(command)` → returns stdout/stderr
+3. **Shell / Terminal** â€” execute commands in working directory
+   - Actions: `shell.exec(command)` â†’ returns stdout/stderr
    - Configuration: allowed commands list, blocked commands, timeout
    - Approval gate: always requires approval (critical scope)
    - Use case: run tests, build projects, git operations
@@ -246,7 +246,7 @@ Everything below serves that loop. Nothing outside it ships in MVP.
 **Implementation notes:**
 - Create `src/lib/connectors/` with connector interface + registry
 - Each connector is a module: `src/lib/connectors/filesystem.ts`, `web-fetch.ts`, `shell.ts`
-- Connector status shown in Settings → Connectors tab
+- Connector status shown in Settings â†’ Connectors tab
 - Agent-facing: connector actions described in system prompt so agent knows what tools are available
 
 **Acceptance criteria:**
@@ -268,15 +268,15 @@ Everything below serves that loop. Nothing outside it ships in MVP.
 **MVP scope:**
 - On message send/receive, persist to gateway via `thread.save` RPC
 - On app load, restore from gateway via `thread.list`, `thread.get`
-- localStorage as cache/fallback — gateway as source of truth
+- localStorage as cache/fallback â€” gateway as source of truth
 - Thread metadata: id, title, type (chat/cowork/dispatch), created, updated, message count
 - Graceful degradation: if gateway unavailable, use localStorage only
 
 **Implementation notes:**
 - Extend gateway client: `saveThread()`, `listThreads()`, `getThread()`, `deleteThread()`
-- Add sync logic in App.tsx: on mount → pull thread list from gateway → merge with localStorage
+- Add sync logic in App.tsx: on mount â†’ pull thread list from gateway â†’ merge with localStorage
 - Conflict resolution: gateway wins (newer timestamp)
-- Migration: first run after update → push existing localStorage threads to gateway
+- Migration: first run after update â†’ push existing localStorage threads to gateway
 
 **Acceptance criteria:**
 - [ ] Threads persist on gateway
@@ -302,7 +302,7 @@ Everything below serves that loop. Nothing outside it ships in MVP.
   - Images: display
 - Panel shows a tab per artifact (multiple outputs per task)
 - Each artifact has: download button, copy button, "apply to workspace" button
-- Panel persists per session — switching back to a completed task shows its artifacts
+- Panel persists per session â€” switching back to a completed task shows its artifacts
 
 **Implementation notes:**
 - Create `ArtifactPanel` component in `src/features/cowork/artifact-panel.tsx`
@@ -344,12 +344,12 @@ The MVP is done when a user can:
 2. **Set up memory** with their name, role, rules, and domain knowledge
 3. **Dispatch a task** ("Organize my downloads folder by file type") and close the window
 4. **Get notified** when the task is done
-5. **Review the results** — see what files were moved, read the agent's reasoning
-6. **Approve a dangerous action** — agent wants to delete duplicates, Relay pauses and asks
-7. **See what it cost** — 8,400 tokens, ~$0.02
+5. **Review the results** â€” see what files were moved, read the agent's reasoning
+6. **Approve a dangerous action** â€” agent wants to delete duplicates, Relay pauses and asks
+7. **See what it cost** â€” 8,400 tokens, ~$0.02
 8. **Schedule a recurring task** ("Every Monday, scan my project for TODO comments and create a summary")
-9. **Use a connector** — agent runs `shell.exec("npm test")` with approval
-10. **Trust the audit trail** — every action, approval, and result is logged in Activity
+9. **Use a connector** â€” agent runs `shell.exec("npm test")` with approval
+10. **Trust the audit trail** â€” every action, approval, and result is logged in Activity
 
 That's the loop. That's the MVP. Everything else is iteration.
 
@@ -358,38 +358,38 @@ That's the loop. That's the MVP. Everything else is iteration.
 ## Architecture Notes for MVP
 
 ```
-┌─────────────────────────────────────────────────┐
-│                  RELAY (Electron)                │
-│                                                  │
-│  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
-│  │   Chat   │  │  Cowork  │  │   Dispatch    │  │
-│  │   Page   │  │   Page   │  │    Page       │  │
-│  └────┬─────┘  └────┬─────┘  └──────┬────────┘  │
-│       │              │               │           │
-│  ┌────▼──────────────▼───────────────▼────────┐  │
-│  │           Message Pipeline                  │  │
-│  │  ┌─────────┐ ┌──────────┐ ┌─────────────┐  │  │
-│  │  │ Memory  │ │ Approval │ │  Connector   │  │  │
-│  │  │ Inject  │ │  Gate    │ │  Actions     │  │  │
-│  │  └─────────┘ └──────────┘ └─────────────┘  │  │
-│  └─────────────────────┬──────────────────────┘  │
-│                        │                         │
-│  ┌─────────────────────▼──────────────────────┐  │
-│  │         Gateway Client (WebSocket RPC)      │  │
-│  │  + dispatch.*  + thread.*  + cron.*         │  │
-│  └─────────────────────┬──────────────────────┘  │
-│                        │                         │
-│  ┌─────────────────────▼──────────────────────┐  │
-│  │        Electron Bridge (IPC)                │  │
-│  │  File ops, Shell exec, Notifications        │  │
-│  └────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────┘
-                         │
-                         ▼
-              ┌──────────────────┐
-              │  OpenClaw Gateway │
-              │  (RPC Server)     │
-              └──────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                  RELAY (Electron)                â”‚
+â”‚                                                  â”‚
+â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”‚
+â”‚  â”‚   Chat   â”‚  â”‚  Cowork  â”‚  â”‚   Dispatch    â”‚  â”‚
+â”‚  â”‚   Page   â”‚  â”‚   Page   â”‚  â”‚    Page       â”‚  â”‚
+â”‚  â””â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”˜  â””â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”˜  â””â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚
+â”‚       â”‚              â”‚               â”‚           â”‚
+â”‚  â”Œâ”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”  â”‚
+â”‚  â”‚           Message Pipeline                  â”‚  â”‚
+â”‚  â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â” â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â” â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”‚  â”‚
+â”‚  â”‚  â”‚ Memory  â”‚ â”‚ Approval â”‚ â”‚  Connector   â”‚  â”‚  â”‚
+â”‚  â”‚  â”‚ Inject  â”‚ â”‚  Gate    â”‚ â”‚  Actions     â”‚  â”‚  â”‚
+â”‚  â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚  â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚
+â”‚                        â”‚                         â”‚
+â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”‚
+â”‚  â”‚         Gateway Client (WebSocket RPC)      â”‚  â”‚
+â”‚  â”‚  + dispatch.*  + thread.*  + cron.*         â”‚  â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚
+â”‚                        â”‚                         â”‚
+â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”‚
+â”‚  â”‚        Electron Bridge (IPC)                â”‚  â”‚
+â”‚  â”‚  File ops, Shell exec, Notifications        â”‚  â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                         â”‚
+                         â–¼
+              â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+              â”‚  OpenClaw Gateway â”‚
+              â”‚  (RPC Server)     â”‚
+              â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ---
@@ -398,7 +398,7 @@ That's the loop. That's the MVP. Everything else is iteration.
 
 | Phase | Features | Depends on |
 |---|---|---|
-| **Phase 1** | Memory → context injection | Nothing (standalone) |
+| **Phase 1** | Memory â†’ context injection | Nothing (standalone) |
 | **Phase 1** | Cost/token tracking | Nothing (parse gateway responses) |
 | **Phase 2** | Approval gates (wired) | Safety page data (exists) |
 | **Phase 2** | Connector framework + shell/web-fetch | Approval gates (shell needs approval) |
@@ -416,13 +416,13 @@ Phase 4 is the capstone. Dispatch is the product-defining feature.
 
 ## Positioning Summary
 
-> **Claude Cowork** = a personal AI worker for knowledge workers ($20-200/mo, cloud, Claude-only)
+> **Cowork** = a personal AI worker for knowledge workers ($20-200/mo, cloud, Claude-only)
 >
 > **Paperclip** = an AI company OS for autonomous businesses (open-source, 20+ agents, zero-human)
 >
 > **Relay** = the governed operator desk for your AI agent (self-hosted, model-agnostic, human-in-the-loop)
 
-Relay's moat: **governance + local-first + model freedom.** You own your data, you choose your model, you approve every important action. Claude Cowork can't promise local-first. Paperclip is overkill for one operator with one agent. Relay is the right tool for the right scale.
+Relay's moat: **governance + local-first + model freedom.** You own your data, you choose your model, you approve every important action. Cowork can't promise local-first. Paperclip is overkill for one operator with one agent. Relay is the right tool for the right scale.
 
 ---
 ---
@@ -435,9 +435,9 @@ Relay's moat: **governance + local-first + model freedom.** You own your data, y
 
 ## The Core Thesis
 
-**Businesses that want AI in their operations but don't want to use Claude Cowork (or can't).**
+**Businesses that want AI in their operations but don't want to use Cowork (or can't).**
 
-Why can't they / won't they use Claude Cowork?
+Why can't they / won't they use Cowork?
 
 | Reason | Who | Size |
 |---|---|---|
@@ -445,7 +445,7 @@ Why can't they / won't they use Claude Cowork?
 | **Model lock-in** | Companies that want to use multiple models, fine-tuned models, or open-weight models | Growing fast |
 | **Cost control** | Teams burning $200/mo/seat on Claude Max and wanting their own infrastructure | Medium |
 | **Customization** | Companies needing deep integration with proprietary systems, not generic connectors | Large |
-| **Compliance** | Organizations requiring audit trails, approval workflows, and governance that Claude Cowork's lightweight controls don't cover | Enterprise |
+| **Compliance** | Organizations requiring audit trails, approval workflows, and governance that Cowork's lightweight controls don't cover | Enterprise |
 | **Ownership** | Founders/CTOs who philosophically want to own their AI stack, not rent it | Indie/SMB |
 
 These are SeventeenLabs customers.
@@ -458,11 +458,11 @@ Relay is open-source (MIT). This is correct and should stay. The OSS version is 
 
 ### Revenue Stream 1: Relay Pro / Enterprise (Software License)
 
-**The n8n / Windmill model** — free self-hosted, paid for enterprise features.
+**The n8n / Windmill model** â€” free self-hosted, paid for enterprise features.
 
 | | Relay Community (Free) | Relay Pro | Relay Enterprise |
 |---|---|---|---|
-| **Price** | $0 | ~€49-99/mo per operator | Custom (€500+/mo) |
+| **Price** | $0 | ~â‚¬49-99/mo per operator | Custom (â‚¬500+/mo) |
 | **Hosting** | Self-hosted | Self-hosted | Self-hosted or managed |
 | **Core features** | Chat, Cowork, Dispatch, Files, Memory, Activity, Schedule, Safety | Everything in Community | Everything in Pro |
 | **Connectors** | File system, Shell, Web fetch | + Slack, GitHub, Google Drive, Notion, Calendar, CRM | + Custom connector SDK, unlimited |
@@ -475,9 +475,9 @@ Relay is open-source (MIT). This is correct and should stay. The OSS version is 
 | **Users** | Single operator | + Up to 5 operators | + Unlimited, SSO/SAML, SCIM |
 | **Support** | Community (Discord/GitHub) | Email support, 48h response | Dedicated Slack, SLA, onboarding |
 
-**Why this works:** n8n does €30M+ ARR with this model. Windmill charges €120/mo for enterprise. The free tier gets adoption; paid tiers capture value when companies need governance, compliance, team features, and support.
+**Why this works:** n8n does â‚¬30M+ ARR with this model. Windmill charges â‚¬120/mo for enterprise. The free tier gets adoption; paid tiers capture value when companies need governance, compliance, team features, and support.
 
-**Key pricing insight:** Don't charge per AI execution or per token — that competes with the model provider. Charge per **operator seat** and **feature tier**. The value is governance, not compute.
+**Key pricing insight:** Don't charge per AI execution or per token â€” that competes with the model provider. Charge per **operator seat** and **feature tier**. The value is governance, not compute.
 
 ---
 
@@ -489,13 +489,13 @@ SeventeenLabs already has a "Core" product on the website: *"The Core platform u
 
 | What Core provides | Why it's paid |
 |---|---|
-| Context layer API — unified company data, goals, constraints, team structure | Companies don't want to build this themselves |
-| Governance engine — approval workflows, policy rules, role-based access | Compliance teams require this |
-| Agent orchestration — manage 2-10 agents across projects with state, retries, rollback | Operational reliability |
-| Enterprise memory — searchable, permissioned, org-wide knowledge store | IP protection and institutional memory |
-| Observability — quality metrics, drift detection, latency, cost per workflow | Exec reporting |
+| Context layer API â€” unified company data, goals, constraints, team structure | Companies don't want to build this themselves |
+| Governance engine â€” approval workflows, policy rules, role-based access | Compliance teams require this |
+| Agent orchestration â€” manage 2-10 agents across projects with state, retries, rollback | Operational reliability |
+| Enterprise memory â€” searchable, permissioned, org-wide knowledge store | IP protection and institutional memory |
+| Observability â€” quality metrics, drift detection, latency, cost per workflow | Exec reporting |
 
-**Pricing:** Platform license. €200-2,000/mo depending on scale. Sold alongside Relay Enterprise or standalone.
+**Pricing:** Platform license. â‚¬200-2,000/mo depending on scale. Sold alongside Relay Enterprise or standalone.
 
 **This is the real business.** Relay gets you in the door. Core is the platform companies pay for long-term.
 
@@ -503,16 +503,16 @@ SeventeenLabs already has a "Core" product on the website: *"The Core platform u
 
 ### Revenue Stream 3: Implementation Services (Professional Services)
 
-SeventeenLabs already positions as "Partnership Over Consulting" with proven results (€50k+ average annual ROI per client, 40% time saved, 3-6 months to deploy).
+SeventeenLabs already positions as "Partnership Over Consulting" with proven results (â‚¬50k+ average annual ROI per client, 40% time saved, 3-6 months to deploy).
 
 | Service | Price range | Scope |
 |---|---|---|
-| **AI Operations Audit** | €3,000-8,000 | Assess current workflows, identify automation opportunities, produce prioritized roadmap |
-| **Relay Deployment** | €5,000-15,000 | Install, configure, connect to existing stack, train team, first 3 workflows live |
-| **Custom Connector Build** | €2,000-10,000 per connector | Build custom connectors for proprietary or niche systems (ERP, CRM, internal tools) |
-| **Governance Design** | €5,000-20,000 | Design approval workflows, permission scopes, compliance templates, audit requirements |
-| **AI Agent Setup** | €3,000-15,000 | Configure OpenClaw or other agents with business-specific context, memory, skills, and safety rules |
-| **Ongoing Operations** | €2,000-5,000/mo retainer | Monitor, optimize, expand — fractional AI operations team |
+| **AI Operations Audit** | â‚¬3,000-8,000 | Assess current workflows, identify automation opportunities, produce prioritized roadmap |
+| **Relay Deployment** | â‚¬5,000-15,000 | Install, configure, connect to existing stack, train team, first 3 workflows live |
+| **Custom Connector Build** | â‚¬2,000-10,000 per connector | Build custom connectors for proprietary or niche systems (ERP, CRM, internal tools) |
+| **Governance Design** | â‚¬5,000-20,000 | Design approval workflows, permission scopes, compliance templates, audit requirements |
+| **AI Agent Setup** | â‚¬3,000-15,000 | Configure OpenClaw or other agents with business-specific context, memory, skills, and safety rules |
+| **Ongoing Operations** | â‚¬2,000-5,000/mo retainer | Monitor, optimize, expand â€” fractional AI operations team |
 
 **Why this works:** The website already claims 12+ opportunities found per audit. This is the fastest path to revenue while the product matures. Services fund product development.
 
@@ -527,25 +527,25 @@ Similar to Paperclip's "ClipMart" concept but for operator workflows, not compan
 | Asset type | Example | Price model |
 |---|---|---|
 | **Workflow templates** | "Weekly stakeholder report from Slack + GitHub + Linear" | Free (acquisition) or $19-49 per premium template |
-| **Connector packs** | Industry-specific connector bundles (Legal pack: Clio + DocuSign + iManage) | €29-99/mo subscription |
-| **Governance templates** | SOC2-ready approval workflows, GDPR data handling rules, HIPAA compliance gates | €99-299 per template pack |
+| **Connector packs** | Industry-specific connector bundles (Legal pack: Clio + DocuSign + iManage) | â‚¬29-99/mo subscription |
+| **Governance templates** | SOC2-ready approval workflows, GDPR data handling rules, HIPAA compliance gates | â‚¬99-299 per template pack |
 | **Skills marketplace** | Community-contributed agent skills with revenue share | 70/30 creator split |
 
 **Timeline:** Post-MVP. Requires adoption first. But design Relay's connector and template interfaces now to enable this later.
 
 ---
 
-## Competitive Moat Against Claude Cowork
+## Competitive Moat Against Cowork
 
-This is the central strategic question: **Why would a business pay SeventeenLabs when they can just use Claude Cowork at $20-200/mo per person?**
+This is the central strategic question: **Why would a business pay SeventeenLabs when they can just use Cowork at $20-200/mo per person?**
 
-### What Claude Cowork CANNOT offer:
+### What Cowork CANNOT offer:
 
-| Capability | Claude Cowork | Relay + Core |
+| Capability | Cowork | Relay + Core |
 |---|---|---|
 | **Self-hosted / on-prem** | No. Your data goes to Anthropic. | Yes. Data stays on your infrastructure. |
 | **Model choice** | Claude only | Any model: GPT-4, Claude, Llama, Mistral, Gemini, fine-tuned models |
-| **Custom governance** | "Shows you the plan, waits for approval" — one-size-fits-all | Configurable per scope, per role, per risk level, with audit trails |
+| **Custom governance** | "Shows you the plan, waits for approval" â€” one-size-fits-all | Configurable per scope, per role, per risk level, with audit trails |
 | **Cost predictability** | Rate-limited, opaque pricing, "consumes limits faster" | Pay for your own compute; full token/cost visibility |
 | **Enterprise compliance** | Limited audit trail, no SOC2-specific controls | Immutable audit logs, compliance templates, log streaming |
 | **Team memory / org knowledge** | Per-user only | Shared, permissioned, org-wide knowledge base |
@@ -555,24 +555,24 @@ This is the central strategic question: **Why would a business pay SeventeenLabs
 
 ### The pitch to businesses:
 
-> "Claude Cowork is great for individual knowledge workers. But if your company needs to own its AI infrastructure, choose its own models, enforce real governance, and keep data on-prem — you need Relay."
+> "Cowork is great for individual knowledge workers. But if your company needs to own its AI infrastructure, choose its own models, enforce real governance, and keep data on-prem â€” you need Relay."
 
 ---
 
 ## Go-to-Market Sequence
 
-### Phase 1: Services-Led (Now → 6 months)
+### Phase 1: Services-Led (Now â†’ 6 months)
 - Lead with AI Operations Audits and Relay Deployments
 - Every services engagement produces a live Relay installation
 - Charge for the work, give Relay Community Edition for free
 - Build case studies and proven ROI metrics
-- **Revenue: €5-15k per engagement, 2-4 clients/month = €10-60k/mo**
+- **Revenue: â‚¬5-15k per engagement, 2-4 clients/month = â‚¬10-60k/mo**
 
 ### Phase 2: Product-Led (6-12 months)
 - Launch Relay Pro with team features, advanced connectors, and persistent audit
-- Self-serve signup → download → connect gateway → upgrade when needed
+- Self-serve signup â†’ download â†’ connect gateway â†’ upgrade when needed
 - Services clients become Pro/Enterprise upgrades automatically
-- **Revenue: €49-99/mo × growing operator base + services pipeline**
+- **Revenue: â‚¬49-99/mo Ã— growing operator base + services pipeline**
 
 ### Phase 3: Platform-Led (12-18 months)
 - Launch Core as the backend platform
@@ -587,12 +587,12 @@ This is the central strategic question: **Why would a business pay SeventeenLabs
 
 | Comparison | Their price | What they offer | Relay equivalent |
 |---|---|---|---|
-| Claude Cowork Max | $200/mo/seat | Single AI worker, cloud | Relay Pro at €49-99/mo gives more governance + model freedom |
-| n8n Business | €667/mo | Workflow automation, 40k executions | Relay Enterprise at similar range gives AI-native operations |
-| Windmill Enterprise | €120/mo + compute | Developer workflows | Similar tier, different audience (ops vs. dev) |
+| Cowork Max | $200/mo/seat | Single AI worker, cloud | Relay Pro at â‚¬49-99/mo gives more governance + model freedom |
+| n8n Business | â‚¬667/mo | Workflow automation, 40k executions | Relay Enterprise at similar range gives AI-native operations |
+| Windmill Enterprise | â‚¬120/mo + compute | Developer workflows | Similar tier, different audience (ops vs. dev) |
 | Paperclip | Free (OSS) | Full company OS | Relay Community is free too; Pro/Enterprise for governance |
 
-**Key insight:** Relay Pro at €49-99/mo is cheaper than Claude Cowork Max ($200/mo) AND gives you data ownership + model choice. That's a real value pitch.
+**Key insight:** Relay Pro at â‚¬49-99/mo is cheaper than Cowork Max ($200/mo) AND gives you data ownership + model choice. That's a real value pitch.
 
 ---
 
@@ -612,4 +612,5 @@ This is the central strategic question: **Why would a business pay SeventeenLabs
 - **Services** = the implementation partner that deploys and configures it all
 - **Marketplace** = the ecosystem where governance templates, connectors, and skills compound
 
-The revenue ladder: **Services → Relay Pro → Core Platform → Marketplace**. Each rung funds the next and builds on the last.
+The revenue ladder: **Services â†’ Relay Pro â†’ Core Platform â†’ Marketplace**. Each rung funds the next and builds on the last.
+
