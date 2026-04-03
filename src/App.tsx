@@ -1,6 +1,5 @@
 ﻿import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Agentation } from 'agentation';
 
 import type {
   AppConfig,
@@ -55,7 +54,7 @@ import { ScrollArea } from './components/ui/scroll-area';
 import { OpenClawGatewayClient } from './lib/openclaw-gateway-client';
 import { createFileService, LocalFileService } from './lib/file-service';
 import { buildMemoryContext, loadMemoryEntries } from './lib/memory-context';
-import { accumulateTodayUsage, addUsage, estimateTokens, loadTodayUsage, parseUsageFromPayload } from './lib/token-usage';
+import { accumulateTodayUsage, addUsage, loadTodayUsage, parseUsageFromPayload } from './lib/token-usage';
 import {
   compileResearchOperatorPlan,
   createDefaultResearchInputSchema,
@@ -102,6 +101,7 @@ import {
   normalizeCoworkMessage,
 } from './lib/chat-utils';
 
+const ChatPage = lazy(() => import('./features/chat/chat-page').then((module) => ({ default: module.ChatPage })));
 const CoworkPage = lazy(() => import('./features/cowork/cowork-page').then((module) => ({ default: module.CoworkPage })));
 const ProjectPage = lazy(() => import('./features/cowork/project-page').then((module) => ({ default: module.ProjectPage })));
 const SettingsPage = lazy(() => import('./features/settings/settings-page').then((module) => ({ default: module.SettingsPage })));
@@ -122,8 +122,6 @@ const COWORK_ACTIVE_PROJECT_STORAGE_KEY = 'relay.cowork.projects.active.v1';
 const COWORK_TASKS_STORAGE_KEY = 'relay.cowork.tasks.v1';
 const COWORK_PROJECT_KNOWLEDGE_STORAGE_KEY = 'relay.cowork.project.knowledge.v1';
 const COWORK_WEB_SEARCH_MODE_STORAGE_KEY = 'relay.cowork.websearch.v1';
-const COWORK_APPROVAL_MODE_STORAGE_KEY = 'relay.cowork.approvals.v1';
-const COWORK_SCOPE_MODE_STORAGE_KEY = 'relay.cowork.scope.v1';
 const CHAT_DRAFT_STORAGE_KEY = 'relay.chat.draft.v1';
 const COWORK_DRAFT_STORAGE_KEY = 'relay.cowork.draft.v1';
 const SCHEDULED_JOB_PROJECT_LINKS_STORAGE_KEY = 'relay.scheduled.project-links.v1';
@@ -186,8 +184,6 @@ type CoworkRunProjectContext = {
   projectId: string;
   projectTitle: string;
   rootFolder: string;
-  scopeMode: 'local' | 'project' | 'workspace';
-  approvalMode: 'standard' | 'project' | 'none';
   startedAt: number;
 };
 
@@ -213,7 +209,7 @@ function validateProjectRelativePath(inputPath: string, options?: { allowEmpty?:
   }
 
   if (normalized === '.' || normalized === './') {
-    return options?.allowEmpty ? { ok: true } : { ok: false, reason: 'A concrete relative path is required.' };
+    return { ok: false, reason: 'A concrete relative path is required.' };
   }
 
   const segments = normalized.split('/').filter((segment) => segment.length > 0);
@@ -251,37 +247,6 @@ function extractProjectFileMentions(inputText: string): string[] {
   return Array.from(mentions);
 }
 
-function normalizeProjectPathForStorage(inputPath: string): { ok: true; path: string } | { ok: false; reason: string } {
-  const raw = (inputPath ?? '').trim();
-  if (!raw) {
-    return { ok: false, reason: 'Path is required.' };
-  }
-
-  let normalized = raw.replace(/\\/g, '/').replace(/\/+$/, '');
-  const hasControlChars = Array.from(normalized).some((char) => char.charCodeAt(0) < 32);
-  if (hasControlChars) {
-    return { ok: false, reason: 'Path contains invalid control characters.' };
-  }
-  if (!normalized) {
-    return { ok: false, reason: 'Path is required.' };
-  }
-
-  const isAbsolute =
-    normalized.startsWith('/') ||
-    normalized.startsWith('//') ||
-    /^[a-zA-Z]:\//.test(normalized);
-
-  if (isAbsolute) {
-    return { ok: true, path: normalized };
-  }
-
-  const validation = validateProjectRelativePath(normalized);
-  if (!validation.ok) {
-    return { ok: false, reason: validation.reason };
-  }
-  return { ok: true, path: normalized };
-}
-
 function loadCoworkProjects(): CoworkProject[] {
   try {
     const raw = localStorage.getItem(COWORK_PROJECTS_STORAGE_KEY);
@@ -305,26 +270,6 @@ function loadCoworkProjects(): CoworkProject[] {
         const description = typeof record.description === 'string' ? record.description.trim() : '';
         const instructionsRaw = typeof record.instructions === 'string' ? record.instructions.trim() : '';
         const workspaceFolder = typeof record.workspaceFolder === 'string' ? record.workspaceFolder.trim() : '';
-        const contextPaths = Array.isArray(record.contextPaths)
-          ? (record.contextPaths as unknown[])
-              .map((entry) => {
-                if (!entry || typeof entry !== 'object') {
-                  return null;
-                }
-                const pathRecord = entry as Record<string, unknown>;
-                const rawPath = typeof pathRecord.path === 'string' ? pathRecord.path.trim() : '';
-                const kind = pathRecord.kind === 'directory' ? 'directory' : pathRecord.kind === 'file' ? 'file' : null;
-                if (!rawPath || !kind) {
-                  return null;
-                }
-                const normalized = normalizeProjectPathForStorage(rawPath);
-                if (!normalized.ok) {
-                  return null;
-                }
-                return { path: normalized.path, kind } as ProjectPathReference;
-              })
-              .filter((entry): entry is ProjectPathReference => entry !== null)
-          : [];
         const createdAt = typeof record.createdAt === 'number' ? record.createdAt : Date.now();
         const updatedAt = typeof record.updatedAt === 'number' ? record.updatedAt : createdAt;
         if (!id || !name || !workspaceFolder) {
@@ -336,7 +281,6 @@ function loadCoworkProjects(): CoworkProject[] {
           description: description || undefined,
           instructions: instructionsRaw || description || undefined,
           workspaceFolder,
-          contextPaths,
           createdAt,
           updatedAt,
         };
@@ -864,7 +808,7 @@ declare global {
 
 
 export default function App() {
-  /* â”€â”€ Initialize connectors once â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── Initialize connectors once ──────────────────────────────────────── */
   useMemo(() => {
     registerConnector(createFilesystemConnector());
     registerConnector(createShellConnector());
@@ -877,7 +821,6 @@ export default function App() {
   const activeSessionKeyRef = useRef('');
   const coworkSessionKeyRef = useRef('');
   const workingFolderRef = useRef('');
-  const coworkProjectsRef = useRef<CoworkProject[]>([]);
   const chatLoadRequestRef = useRef(0);
   const coworkLoadRequestRef = useRef(0);
   const skipNextChatEffectLoadRef = useRef(false);
@@ -978,22 +921,6 @@ export default function App() {
       return localStorage.getItem(COWORK_WEB_SEARCH_MODE_STORAGE_KEY) === 'true';
     } catch {
       return false;
-    }
-  });
-  const [coworkApprovalMode, setCoworkApprovalMode] = useState<'standard' | 'project' | 'none'>(() => {
-    try {
-      const raw = localStorage.getItem(COWORK_APPROVAL_MODE_STORAGE_KEY);
-      return raw === 'project' || raw === 'none' ? raw : 'standard';
-    } catch {
-      return 'standard';
-    }
-  });
-  const [coworkScopeMode, setCoworkScopeMode] = useState<'local' | 'project' | 'workspace'>(() => {
-    try {
-      const raw = localStorage.getItem(COWORK_SCOPE_MODE_STORAGE_KEY);
-      return raw === 'project' || raw === 'workspace' ? raw : 'local';
-    } catch {
-      return 'local';
     }
   });
   const [coworkProjectPathReferences, setCoworkProjectPathReferences] = useState<ProjectPathReference[]>([]);
@@ -1104,53 +1031,6 @@ export default function App() {
     const folders = [activeCoworkProject?.workspaceFolder?.trim() || '', workingFolder.trim()].filter(Boolean);
     return Array.from(new Set(folders));
   }, [activeCoworkProject?.workspaceFolder, workingFolder]);
-  const activeProjectRootFolder = useMemo(
-    () => activeCoworkProject?.workspaceFolder?.trim() || '',
-    [activeCoworkProject?.workspaceFolder],
-  );
-  const effectiveCoworkRootFolder = useMemo(() => {
-    const localFolder = workingFolder.trim();
-    if (coworkScopeMode === 'project') {
-      return activeProjectRootFolder || localFolder;
-    }
-    if (coworkScopeMode === 'workspace') {
-      return activeProjectRootFolder || localFolder;
-    }
-    return localFolder;
-  }, [activeProjectRootFolder, coworkScopeMode, workingFolder]);
-  const latestCoworkUsage = useMemo(() => {
-    for (let index = coworkMessages.length - 1; index >= 0; index -= 1) {
-      const usage = coworkMessages[index]?.usage;
-      if (usage && Number.isFinite(usage.inputTokens) && Number.isFinite(usage.outputTokens)) {
-        return usage;
-      }
-    }
-    return null;
-  }, [coworkMessages]);
-  const coworkContextWindowTotalTokens = useMemo(() => {
-    const normalizedModel = (coworkModel || selectedModel || '').toLowerCase();
-    if (normalizedModel.includes('gpt-4.1') || normalizedModel.includes('gpt-4o')) {
-      return 128_000;
-    }
-    if (normalizedModel.includes('claude')) {
-      return 200_000;
-    }
-    return 256_000;
-  }, [coworkModel, selectedModel]);
-  const coworkContextWindowUsedTokens = useMemo(() => {
-    if (latestCoworkUsage) {
-      return latestCoworkUsage.inputTokens + latestCoworkUsage.outputTokens;
-    }
-    const recentConversation = coworkMessages
-      .slice(-20)
-      .map((message) => message.text)
-      .join('\n\n');
-    const estimationSource = [recentConversation, coworkDraftPrompt]
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-      .join('\n');
-    return estimationSource ? estimateTokens(estimationSource) : 0;
-  }, [coworkDraftPrompt, coworkMessages, latestCoworkUsage]);
 
   const contextDocuments = useMemo(() => {
     const docs = localActionReceipts
@@ -1381,9 +1261,7 @@ export default function App() {
     const fallback: CoworkRunProjectContext = {
       projectId: activeCoworkProject?.id ?? '',
       projectTitle: activeCoworkProject?.name ?? '',
-      rootFolder: effectiveCoworkRootFolder || workingFolderRef.current,
-      scopeMode: coworkScopeMode,
-      approvalMode: coworkApprovalMode,
+      rootFolder: workingFolderRef.current,
       startedAt: Date.now(),
     };
     const resolved = nextFromQueue ?? fallback;
@@ -1772,22 +1650,6 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(COWORK_APPROVAL_MODE_STORAGE_KEY, coworkApprovalMode);
-    } catch {
-      // ignore persistence failures
-    }
-  }, [coworkApprovalMode]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(COWORK_SCOPE_MODE_STORAGE_KEY, coworkScopeMode);
-    } catch {
-      // ignore persistence failures
-    }
-  }, [coworkScopeMode]);
-
-  useEffect(() => {
-    try {
       localStorage.setItem(CHAT_DRAFT_STORAGE_KEY, chatDraftPrompt);
     } catch {
       // ignore persistence failures
@@ -1935,19 +1797,6 @@ export default function App() {
     const loadProjectFileReferences = async () => {
       const rootPath = activeCoworkProject?.workspaceFolder?.trim() ?? '';
       if (!rootPath || !bridge?.listDirInFolder) {
-        const externalRefs =
-          (activeCoworkProject?.contextPaths ?? [])
-            .filter((entry) => entry.path?.trim())
-            .map((entry) => ({
-              path: entry.path.trim(),
-              kind: entry.kind,
-              source: 'external' as const,
-            })) ?? [];
-        setCoworkProjectPathReferences(externalRefs.slice(0, 500));
-        return;
-      }
-
-      if (!activeCoworkProject) {
         setCoworkProjectPathReferences([]);
         return;
       }
@@ -1979,7 +1828,6 @@ export default function App() {
           pathRefs.push({
             path: item.path,
             kind: item.kind,
-            source: 'project',
           });
           if (pathRefs.length >= MAX_ITEMS) {
             break;
@@ -2007,27 +1855,9 @@ export default function App() {
         }
       }
 
-      for (const external of activeCoworkProject.contextPaths ?? []) {
-        const normalizedPath = external.path?.trim();
-        if (!normalizedPath) {
-          continue;
-        }
-        const key = `${external.kind}:${normalizedPath}`;
-        if (!deduped.has(key)) {
-          deduped.set(key, {
-            path: normalizedPath,
-            kind: external.kind,
-            source: 'external',
-          });
-        }
-      }
-
       setCoworkProjectPathReferences(
         Array.from(deduped.values())
           .sort((a, b) => {
-            if ((a.source ?? 'project') !== (b.source ?? 'project')) {
-              return (a.source ?? 'project') === 'external' ? -1 : 1;
-            }
             if (a.kind !== b.kind) {
               return a.kind === 'directory' ? -1 : 1;
             }
@@ -2042,7 +1872,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeCoworkProject?.id, activeCoworkProject?.workspaceFolder, activeCoworkProject?.contextPaths, bridge]);
+  }, [activeCoworkProject?.id, activeCoworkProject?.workspaceFolder, bridge]);
 
   const loadChatSession = async (sessionKeyInput: string, statusMessage?: string) => {
     const client = gatewayClientRef.current;
@@ -2475,7 +2305,7 @@ export default function App() {
       const mod = event.ctrlKey || event.metaKey;
       if (!mod) return;
 
-      // Ctrl+N â€” new chat / new task
+      // Ctrl+N — new chat / new task
       if (event.key === 'n') {
         event.preventDefault();
         if (activePage === 'cowork') {
@@ -2494,7 +2324,7 @@ export default function App() {
         return;
       }
 
-      // Ctrl+K â€” open search
+      // Ctrl+K — open search
       if (event.key === 'k') {
         event.preventDefault();
         setSearchOpen((prev) => !prev);
@@ -2505,14 +2335,14 @@ export default function App() {
         return;
       }
 
-      // Ctrl+Shift+S â€” settings
+      // Ctrl+Shift+S — settings
       if (event.key === 'S' && event.shiftKey) {
         event.preventDefault();
         setActivePage('settings');
         return;
       }
 
-      // Ctrl+, â€” settings (common IDE shortcut)
+      // Ctrl+, — settings (common IDE shortcut)
       if (event.key === ',') {
         event.preventDefault();
         setActivePage('settings');
@@ -2656,10 +2486,6 @@ export default function App() {
   useEffect(() => {
     workingFolderRef.current = workingFolder.trim();
   }, [workingFolder]);
-
-  useEffect(() => {
-    coworkProjectsRef.current = coworkProjects;
-  }, [coworkProjects]);
 
   useEffect(() => {
     const client = new OpenClawGatewayClient();
@@ -2850,7 +2676,6 @@ export default function App() {
                   previews: string[],
                   errors: string[],
                 ) => {
-                  setCoworkRunPhase('completed');
                   setCoworkRunStatus(summary);
                   setCoworkProgressStage('deliverables', {
                     completeThrough: true,
@@ -2884,91 +2709,28 @@ export default function App() {
                     '```',
                   ];
 
-                  const verbForReceiptType = (type: LocalActionReceipt['type']) =>
-                    type === 'create_file' ? 'Created' :
-                    type === 'append_file' ? 'Appended' :
-                    type === 'read_file' ? 'Read' :
-                    type === 'list_dir' ? 'Listed' :
-                    type === 'exists' ? 'Checked' :
-                    type === 'rename' ? 'Renamed' :
-                    type === 'delete' ? 'Deleted' :
-                    type === 'shell_exec' ? 'Executed' :
-                    type === 'web_fetch' ? 'Fetched' :
-                    'Completed';
-
-                  const grouped = new Map<string, { type: LocalActionReceipt['type']; entries: LocalActionReceipt[] }>();
-                  for (const receipt of actionReceipts) {
-                    const key = `${receipt.type}`;
-                    const existing = grouped.get(key);
-                    if (existing) {
-                      existing.entries.push(receipt);
-                    } else {
-                      grouped.set(key, {
-                        type: receipt.type,
-                        entries: [receipt],
-                      });
-                    }
-                  }
-
-                  const activityItems: ChatActivityItem[] = Array.from(grouped.values()).map((group, index) => {
-                    const successCount = group.entries.filter((entry) => entry.status === 'ok').length;
-                    const failureCount = group.entries.length - successCount;
-                    const tone: ChatActivityItem['tone'] =
-                      failureCount === 0 ? 'success' : successCount === 0 ? 'danger' : 'neutral';
-                    const verb = verbForReceiptType(group.type);
-                    const count = group.entries.length;
-                    const summarySuffix =
-                      failureCount === 0
-                        ? `${successCount} ok`
-                        : successCount === 0
-                          ? `${failureCount} failed`
-                          : `${successCount} ok, ${failureCount} failed`;
-                    const label = count === 1
-                      ? `${successCount === 0 ? `${verb} failed` : verb}: ${group.entries[0].path}`
-                      : `${failureCount === count ? `${verb} failed` : verb}: ${count} items (${summarySuffix})`;
-                    const details =
-                      group.type === 'list_dir'
-                        ? group.entries
-                            .slice(0, 20)
-                            .map((entry) => {
-                              const headingPath = entry.path.replace(/`/g, '\\`');
-                              if (entry.status !== 'ok') {
-                                return `#### \`${headingPath}\`\n- ❌ ${entry.message || 'List failed.'}`;
-                              }
-
-                              const rawMessage = entry.message ?? '';
-                              const lines = rawMessage.split('\n');
-                              const summaryLine = lines[0]?.trim() ?? '';
-                              const listBlock = lines
-                                .slice(1)
-                                .join('\n')
-                                .trim();
-
-                              return [
-                                `#### \`${headingPath}\``,
-                                summaryLine ? `_${summaryLine}_` : '',
-                                listBlock || '- (empty)',
-                              ]
-                                .filter(Boolean)
-                                .join('\n');
-                            })
-                            .join('\n\n')
-                        : group.entries
-                            .slice(0, 40)
-                            .map((entry) => {
-                              const statusPrefix = entry.status === 'ok' ? 'OK' : 'FAILED';
-                              const suffix = entry.message ? ` - ${entry.message}` : '';
-                              return `[${statusPrefix}] ${entry.path}${suffix}`;
-                            })
-                            .join('\n');
-                    const truncated = group.entries.length > 40 ? '\n...truncated...' : '';
-                    return {
-                      id: `activity-receipt-group-${runId}-${index + 1}`,
-                      label,
-                      details: `${details}${truncated}` || (group.entries[0]?.message ?? group.entries[0]?.path ?? ''),
-                      tone,
-                    };
-                  });
+                  const activityItems: ChatActivityItem[] = [
+                    ...actionReceipts.map((receipt, index): ChatActivityItem => {
+                      const tone: ChatActivityItem['tone'] = receipt.status === 'ok' ? 'success' : 'danger';
+                      const verb =
+                        receipt.type === 'create_file' ? 'Created' :
+                        receipt.type === 'append_file' ? 'Appended' :
+                        receipt.type === 'read_file' ? 'Read' :
+                        receipt.type === 'list_dir' ? 'Listed' :
+                        receipt.type === 'exists' ? 'Checked' :
+                        receipt.type === 'rename' ? 'Renamed' :
+                        receipt.type === 'delete' ? 'Deleted' :
+                        receipt.type === 'shell_exec' ? 'Executed' :
+                        receipt.type === 'web_fetch' ? 'Fetched' :
+                        'Completed';
+                      return {
+                        id: `activity-receipt-${runId}-${index + 1}`,
+                        label: `${receipt.status === 'ok' ? verb : `${verb} failed`}: ${receipt.path}`,
+                        details: receipt.message || receipt.errorCode || receipt.path,
+                        tone,
+                      };
+                    }),
+                  ];
                   if (activityItems.length === 0) {
                     activityItems.push({
                       id: `activity-summary-${runId}`,
@@ -3015,100 +2777,15 @@ export default function App() {
                 }
 
                 setCoworkRunStatus('Applying AI file actions...');
-                setCoworkRunPhase('streaming');
                 setCoworkProgressStage('executing_workstreams', {
                   details: 'Applying local actions in scoped workspace.',
                 });
-                const pushLiveExecutionUpdate = (line: string) => {
-                  const next = line.trim();
-                  if (!next) {
-                    return;
-                  }
-                  setCoworkRunStatus(next);
-                  setCoworkProgressStage('executing_workstreams', {
-                    details: next,
-                  });
-                };
 
                 const boundedActions = relayActions.slice(0, MAX_LOCAL_ACTIONS_PER_RUN);
                 const safetyScopes = loadSafetyScopes(runContext.projectId || undefined);
                 const actionReceipts: LocalActionReceipt[] = [];
                 const previews: string[] = [];
                 const errors: string[] = [];
-                const projectForRun = runContext.projectId
-                  ? coworkProjectsRef.current.find((project) => project.id === runContext.projectId) ?? null
-                  : null;
-                const configuredExternalContextPaths = (projectForRun?.contextPaths ?? [])
-                  .map((entry) => entry.path)
-                  .filter(Boolean);
-
-                const normalizeFsPathForMatch = (inputPath: string): string => {
-                  let normalized = inputPath.replace(/\\/g, '/').trim();
-                  if (/^[a-zA-Z]:$/.test(normalized)) {
-                    normalized = `${normalized}/`;
-                  }
-                  if (normalized.length > 1) {
-                    normalized = normalized.replace(/\/+$/, '');
-                  }
-                  return normalized;
-                };
-
-                const isAbsolutePath = (inputPath: string) =>
-                  inputPath.startsWith('/') || inputPath.startsWith('//') || /^[a-zA-Z]:\//.test(inputPath);
-
-                const isPathWithin = (basePath: string, targetPath: string) => {
-                  const normalizedBase = normalizeFsPathForMatch(basePath).toLowerCase();
-                  const normalizedTarget = normalizeFsPathForMatch(targetPath).toLowerCase();
-                  if (!normalizedBase || !normalizedTarget) {
-                    return false;
-                  }
-                  if (normalizedTarget === normalizedBase) {
-                    return true;
-                  }
-                  return normalizedTarget.startsWith(`${normalizedBase}/`);
-                };
-
-                const isAllowedExternalReadPath = (candidatePath: string) =>
-                  configuredExternalContextPaths.some((entryPath) => isPathWithin(entryPath, candidatePath));
-
-                const resolveAbsoluteBridgeTarget = (
-                  actionType: (typeof boundedActions)[number]['type'],
-                  absolutePath: string,
-                ): { bridgeRootPath: string; bridgeRelativePath: string } | null => {
-                  const normalizedPath = normalizeFsPathForMatch(absolutePath);
-                  if (!normalizedPath) {
-                    return null;
-                  }
-                  if (actionType === 'list_dir') {
-                    return {
-                      bridgeRootPath: normalizedPath,
-                      bridgeRelativePath: '',
-                    };
-                  }
-
-                  const lastSlashIndex = normalizedPath.lastIndexOf('/');
-                  if (lastSlashIndex < 0) {
-                    return null;
-                  }
-                  let parent = normalizedPath.slice(0, lastSlashIndex);
-                  const leaf = normalizedPath.slice(lastSlashIndex + 1);
-                  if (!leaf) {
-                    return null;
-                  }
-                  if (!parent && normalizedPath.startsWith('/')) {
-                    parent = '/';
-                  }
-                  if (/^[a-zA-Z]:$/.test(parent)) {
-                    parent = `${parent}/`;
-                  }
-                  if (!parent) {
-                    return null;
-                  }
-                  return {
-                    bridgeRootPath: parent,
-                    bridgeRelativePath: leaf,
-                  };
-                };
 
                 if (relayActions.length > MAX_LOCAL_ACTIONS_PER_RUN) {
                   errors.push(
@@ -3201,92 +2878,28 @@ export default function App() {
                   const policy = resolveLocalActionPolicy(action.type, safetyScopes);
                   let createFileOverwriteApproved = false;
                   let approvedByOperator = false;
-                  const normalizedActionPath = normalizeFsPathForMatch(actionPath);
-                  const absoluteActionPath = isAbsolutePath(normalizedActionPath);
-                  const externalReadAllowed = absoluteActionPath && isAllowedExternalReadPath(normalizedActionPath);
-                  const readOnlyExternalAction =
-                    action.type === 'read_file' || action.type === 'list_dir' || action.type === 'exists';
-                  let executionRootPath = rootPath;
-                  let executionPath = action.path;
-                  pushLiveExecutionUpdate(
-                    `Action ${index + 1}/${boundedActions.length}: ${action.type} ${actionPath || '.'}`,
-                  );
 
-                  if (absoluteActionPath) {
-                    if (!externalReadAllowed) {
-                      const message = 'Blocked: absolute path is outside configured External Context.';
-                      pushLiveExecutionUpdate(`Blocked ${action.type} ${actionPath}: outside External Context`);
-                      errors.push(`${actionPath}: ${message}`);
-                      actionReceipts.push({
-                        id: actionId,
-                        type: action.type,
-                        path: actionPath,
-                        status: 'error',
-                        errorCode: 'PROJECT_BOUNDARY_BLOCK',
-                        message,
-                      });
-                      continue;
-                    }
-
-                    if (!readOnlyExternalAction) {
-                      const message = 'Blocked: External Context is read-only protected.';
-                      pushLiveExecutionUpdate(`Blocked ${action.type} ${actionPath}: External Context is read-only`);
-                      errors.push(`${actionPath}: ${message}`);
-                      actionReceipts.push({
-                        id: actionId,
-                        type: action.type,
-                        path: actionPath,
-                        status: 'error',
-                        errorCode: 'BLOCKED_BY_POLICY',
-                        message,
-                      });
-                      continue;
-                    }
-
-                    const target = resolveAbsoluteBridgeTarget(action.type, normalizedActionPath);
-                    if (!target) {
-                      const message = 'Blocked: invalid absolute path target.';
-                      pushLiveExecutionUpdate(`Blocked ${action.type} ${actionPath}: invalid absolute path`);
-                      errors.push(`${actionPath}: ${message}`);
-                      actionReceipts.push({
-                        id: actionId,
-                        type: action.type,
-                        path: actionPath,
-                        status: 'error',
-                        errorCode: 'PROJECT_BOUNDARY_BLOCK',
-                        message,
-                      });
-                      continue;
-                    }
-                    executionRootPath = target.bridgeRootPath;
-                    executionPath = target.bridgeRelativePath;
-                  }
-
-                  if (!absoluteActionPath) {
-                    const pathValidation = validateProjectRelativePath(actionPath, {
-                      allowEmpty: action.type === 'list_dir',
+                  const pathValidation = validateProjectRelativePath(actionPath, {
+                    allowEmpty: action.type === 'list_dir',
+                  });
+                  if (!pathValidation.ok) {
+                    const message = `Blocked by project boundary: ${pathValidation.reason}`;
+                    errors.push(`${actionPath || '.'}: ${message}`);
+                    actionReceipts.push({
+                      id: actionId,
+                      type: action.type,
+                      path: actionPath || '.',
+                      status: 'error',
+                      errorCode: 'PROJECT_BOUNDARY_BLOCK',
+                      message,
                     });
-                    if (!pathValidation.ok) {
-                      const message = `Blocked by project boundary: ${pathValidation.reason}`;
-                      pushLiveExecutionUpdate(`Blocked ${action.type} ${actionPath}: ${pathValidation.reason}`);
-                      errors.push(`${actionPath || '.'}: ${message}`);
-                      actionReceipts.push({
-                        id: actionId,
-                        type: action.type,
-                        path: actionPath || '.',
-                        status: 'error',
-                        errorCode: 'PROJECT_BOUNDARY_BLOCK',
-                        message,
-                      });
-                      continue;
-                    }
+                    continue;
                   }
 
                   if (action.type === 'rename') {
                     const targetValidation = validateProjectRelativePath(action.newPath);
                     if (!targetValidation.ok) {
                       const message = `Blocked by project boundary: ${targetValidation.reason}`;
-                      pushLiveExecutionUpdate(`Blocked rename ${actionPath}: ${targetValidation.reason}`);
                       errors.push(`${action.newPath}: ${message}`);
                       actionReceipts.push({
                         id: actionId,
@@ -3302,7 +2915,6 @@ export default function App() {
 
                   if ((action.type === 'create_file' || action.type === 'append_file' || action.type === 'rename' || action.type === 'delete') && !runContext.projectId) {
                     const message = 'Blocked: write actions require an active project context.';
-                    pushLiveExecutionUpdate(`Blocked ${action.type} ${actionPath}: project required`);
                     errors.push(`${actionPath}: ${message}`);
                     actionReceipts.push({
                       id: actionId,
@@ -3317,7 +2929,6 @@ export default function App() {
 
                   if (!policy.enabled) {
                     const message = `Blocked by safety policy: ${policy.scopeName} is disabled.`;
-                    pushLiveExecutionUpdate(`Blocked ${action.type} ${actionPath}: ${policy.scopeName} disabled`);
                     errors.push(`${actionPath}: ${message}`);
                     actionReceipts.push({
                       id: actionId,
@@ -3333,15 +2944,13 @@ export default function App() {
                   if (
                     action.type === 'create_file' &&
                     !action.overwrite &&
-                    bridge.existsInFolder &&
-                    runContext.approvalMode !== 'none'
+                    bridge.existsInFolder
                   ) {
                     try {
                       const existing = await bridge.existsInFolder(rootPath, action.path);
                       if (existing.exists) {
                         const overwriteApprovalId = `${runId}-${actionId}-${index + 1}-overwrite`;
                         setCoworkRunStatus(`Awaiting overwrite approval for ${actionPath}...`);
-                        pushLiveExecutionUpdate(`Awaiting overwrite approval: ${actionPath}`);
                         setCoworkProgressStage('executing_workstreams', {
                           details: `File exists at ${actionPath}. Awaiting overwrite approval.`,
                         });
@@ -3370,7 +2979,6 @@ export default function App() {
 
                         if (!overwriteDecision.approved) {
                           const reason = overwriteDecision.reason || 'Overwrite rejected by operator.';
-                          pushLiveExecutionUpdate(`Overwrite rejected: ${actionPath}`);
                           const code = overwriteDecision.expired ? 'APPROVAL_TIMEOUT' : 'REJECTED_BY_OPERATOR';
                           errors.push(`${actionPath}: ${reason}`);
                           actionReceipts.push({
@@ -3386,7 +2994,6 @@ export default function App() {
 
                         approvedByOperator = true;
                         createFileOverwriteApproved = true;
-                        pushLiveExecutionUpdate(`Overwrite approved: ${actionPath}`);
                         previews.push(`Approved overwrite create_file -> ${actionPath}`);
                         if (taskEntry) {
                           setCoworkTaskStatus(taskEntry.taskId, 'approved', {
@@ -3397,7 +3004,6 @@ export default function App() {
                       }
                     } catch (error) {
                       const message = error instanceof Error ? error.message : 'Unable to verify file existence.';
-                      pushLiveExecutionUpdate(`Pre-check failed ${action.type} ${actionPath}: ${message}`);
                       errors.push(`${actionPath}: ${message}`);
                       actionReceipts.push({
                         id: actionId,
@@ -3411,22 +3017,11 @@ export default function App() {
                     }
                   }
 
-                  const standardApprovals = runContext.approvalMode === 'standard';
-                  const projectApprovals = runContext.approvalMode === 'project';
-                  const noApprovals = runContext.approvalMode === 'none';
-                  const autoApproved = standardApprovals && policy.requiresApproval && isLowRiskTextWriteAction(action);
+                  const autoApproved = policy.requiresApproval && isLowRiskTextWriteAction(action);
 
-                  const requiresHardApproval =
-                    isDestructiveLocalAction(action.type) || policy.riskLevel === 'critical' || action.type === 'list_dir';
-                  const requiresApprovalByMode =
-                    !noApprovals &&
-                    (projectApprovals
-                      ? policy.requiresApproval || requiresHardApproval
-                      : standardApprovals
-                        ? policy.requiresApproval || requiresHardApproval
-                        : false);
+                  const requiresHardApproval = isDestructiveLocalAction(action.type) || policy.riskLevel === 'critical';
 
-                  if (requiresApprovalByMode && !autoApproved && !approvedByOperator) {
+                  if ((policy.requiresApproval || requiresHardApproval) && !autoApproved && !approvedByOperator) {
                     const approvalId = `${runId}-${actionId}-${index + 1}`;
                     const previewBody =
                       action.type === 'create_file' || action.type === 'append_file'
@@ -3434,7 +3029,6 @@ export default function App() {
                         : summarizeActionPreview(action);
 
                     setCoworkRunStatus(`Awaiting approval for ${action.type} (${actionPath})...`);
-                    pushLiveExecutionUpdate(`Awaiting approval: ${action.type} ${actionPath}`);
                     setCoworkProgressStage('executing_workstreams', {
                       details: `Awaiting operator approval for ${action.type} on ${actionPath}.`,
                     });
@@ -3463,7 +3057,6 @@ export default function App() {
 
                     if (!decision.approved) {
                       const reason = decision.reason || 'Rejected by operator.';
-                      pushLiveExecutionUpdate(`Rejected by operator: ${action.type} ${actionPath}`);
                       const code = decision.expired ? 'APPROVAL_TIMEOUT' : 'REJECTED_BY_OPERATOR';
                       errors.push(`${actionPath}: ${reason}`);
                       if (taskEntry) {
@@ -3484,7 +3077,6 @@ export default function App() {
                       continue;
                     }
 
-                    pushLiveExecutionUpdate(`Approved by operator: ${action.type} ${actionPath}`);
                     previews.push(`Approved ${action.type} -> ${actionPath}`);
                     if (taskEntry) {
                       setCoworkTaskStatus(taskEntry.taskId, 'approved', {
@@ -3493,7 +3085,6 @@ export default function App() {
                       });
                     }
                   } else if (autoApproved) {
-                    pushLiveExecutionUpdate(`Auto-approved: ${action.type} ${actionPath}`);
                     previews.push(`Auto-approved ${action.type} -> ${actionPath}`);
                     if (taskEntry) {
                       setCoworkTaskStatus(taskEntry.taskId, 'approved', {
@@ -3520,12 +3111,11 @@ export default function App() {
                       }
 
                       const result = await bridge.createFileInFolder(
-                        executionRootPath,
+                        rootPath,
                         action.path,
                         action.content,
                         createFileOverwriteApproved ? true : action.overwrite,
                       );
-                      pushLiveExecutionUpdate(`Created file: ${result.filePath}`);
                       actionReceipts.push({
                         id: actionId,
                         type: 'create_file',
@@ -3551,8 +3141,7 @@ export default function App() {
                         continue;
                       }
 
-                      const result = await bridge.appendFileInFolder(executionRootPath, executionPath, action.content);
-                      pushLiveExecutionUpdate(`Appended file: ${result.filePath}`);
+                      const result = await bridge.appendFileInFolder(rootPath, action.path, action.content);
                       actionReceipts.push({
                         id: actionId,
                         type: 'append_file',
@@ -3579,8 +3168,7 @@ export default function App() {
                         continue;
                       }
 
-                      const result = await bridge.readFileInFolder(executionRootPath, executionPath);
-                      pushLiveExecutionUpdate(`Read file: ${result.filePath}`);
+                      const result = await bridge.readFileInFolder(rootPath, action.path);
                       actionReceipts.push({
                         id: actionId,
                         type: 'read_file',
@@ -3609,65 +3197,13 @@ export default function App() {
                         continue;
                       }
 
-                      const result = await bridge.listDirInFolder(executionRootPath, executionPath || '');
-                      pushLiveExecutionUpdate(`Listed directory: ${action.path || '.'} (${result.items.length} items)`);
-                      const directories = result.items
-                        .filter((item) => item.kind === 'directory')
-                        .map((item) => item.path)
-                        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-                      const files = result.items
-                        .filter((item) => item.kind === 'file')
-                        .map((item) => item.path)
-                        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-
-                      const MAX_LIST_SECTION_ITEMS = 80;
-                      const visibleDirectories = directories.slice(0, MAX_LIST_SECTION_ITEMS);
-                      const visibleFiles = files.slice(0, MAX_LIST_SECTION_ITEMS);
-                      const hiddenDirectoryCount = Math.max(0, directories.length - visibleDirectories.length);
-                      const hiddenFileCount = Math.max(0, files.length - visibleFiles.length);
-                      const totalHiddenCount = hiddenDirectoryCount + hiddenFileCount;
-
-                      const directoryList =
-                        visibleDirectories.length > 0
-                          ? visibleDirectories.map((entry) => `- \`${entry}/\``).join('\n')
-                          : '- _(none)_';
-                      const fileList =
-                        visibleFiles.length > 0
-                          ? visibleFiles.map((entry) => `- \`${entry}\``).join('\n')
-                          : '- _(none)_';
-                      const hiddenNote =
-                        result.truncated || totalHiddenCount > 0
-                          ? `\n_Showing partial results (${totalHiddenCount > 0 ? `${totalHiddenCount} hidden` : 'truncated by backend'})._`
-                          : '';
-
-                      const listSummary = [
-                        `**Folders:** ${directories.length}`,
-                        `**Files:** ${files.length}`,
-                      ].join(' · ');
-                      const listedBody = [
-                        listSummary,
-                        '',
-                        '##### Folders',
-                        directoryList,
-                        '',
-                        '##### Files',
-                        fileList,
-                        hiddenNote,
-                      ]
-                        .filter(Boolean)
-                        .join('\n');
+                      const result = await bridge.listDirInFolder(rootPath, action.path || '');
                       actionReceipts.push({
                         id: actionId,
                         type: 'list_dir',
                         path: action.path || '.',
                         status: 'ok',
-                        message: [
-                          `Listed ${result.items.length} items${result.truncated ? ' (truncated)' : ''}`,
-                          '',
-                          listedBody,
-                        ]
-                          .filter(Boolean)
-                          .join('\n'),
+                        message: `Listed ${result.items.length} items${result.truncated ? ' (truncated)' : ''}`,
                       });
                       previews.push(`# list_dir ${action.path || '.'}`);
                       previews.push(...result.items.slice(0, 20).map((item) => `${item.kind === 'directory' ? '[dir]' : '[file]'} ${item.path}`));
@@ -3692,8 +3228,7 @@ export default function App() {
                         continue;
                       }
 
-                      const result = await bridge.existsInFolder(executionRootPath, executionPath);
-                      pushLiveExecutionUpdate(`Checked exists: ${result.path} => ${result.exists ? result.kind : 'none'}`);
+                      const result = await bridge.existsInFolder(rootPath, action.path);
                       actionReceipts.push({
                         id: actionId,
                         type: 'exists',
@@ -3720,7 +3255,6 @@ export default function App() {
                       }
 
                       const result = await bridge.renameInFolder(rootPath, action.path, action.newPath);
-                      pushLiveExecutionUpdate(`Renamed: ${result.oldPath} -> ${result.newPath}`);
                       actionReceipts.push({
                         id: actionId,
                         type: 'rename',
@@ -3748,7 +3282,6 @@ export default function App() {
                       }
 
                       const result = await bridge.deleteInFolder(rootPath, action.path);
-                      pushLiveExecutionUpdate(`Deleted: ${result.path}`);
                       actionReceipts.push({
                         id: actionId,
                         type: 'delete',
@@ -3777,7 +3310,6 @@ export default function App() {
 
                       const timeoutMs = typeof action.timeoutMs === 'number' ? action.timeoutMs : 30_000;
                       const result = await bridge.shellExec(rootPath, action.command, timeoutMs);
-                      pushLiveExecutionUpdate(`Shell command ${result.exitCode === 0 ? 'completed' : 'failed'}: ${action.command}`);
                       const ok = result.exitCode === 0;
                       actionReceipts.push({
                         id: actionId,
@@ -3820,7 +3352,6 @@ export default function App() {
                       const headers: Record<string, string> = {};
                       if (typeof action.contentType === 'string') headers['Content-Type'] = action.contentType;
                       const result = await bridge.webFetch(action.url, { method, headers, body: action.body });
-                      pushLiveExecutionUpdate(`Fetched ${action.url} (${result.status})`);
                       const ok = result.status >= 200 && result.status < 400;
                       actionReceipts.push({
                         id: actionId,
@@ -3839,7 +3370,6 @@ export default function App() {
                     }
                   } catch (error) {
                     const message = error instanceof Error ? error.message : 'Unknown local file action error.';
-                    pushLiveExecutionUpdate(`Failed ${action.type} ${actionPath}: ${message}`);
                     const fullMessage = `${actionPath}: ${message}`;
                     errors.push(fullMessage);
                     actionReceipts.push({
@@ -3872,7 +3402,7 @@ export default function App() {
 
                 // Fire desktop notification when cowork task completes
                 if (bridge?.notify) {
-                  const title = errorCount > 0 ? 'Relay â€” Task completed with errors' : 'Relay â€” Task completed';
+                  const title = errorCount > 0 ? 'Relay — Task completed with errors' : 'Relay — Task completed';
                   const body = runContext.projectTitle
                     ? `${runContext.projectTitle}: ${okCount} action${okCount === 1 ? '' : 's'} executed`
                     : `${okCount} action${okCount === 1 ? '' : 's'} executed`;
@@ -3893,57 +3423,45 @@ export default function App() {
                 finalizeCoworkTaskRun(eventSessionKey || coworkSessionKeyRef.current, taskEntry.taskId);
 
                 if (bridge?.notify) {
-                  bridge.notify('Relay â€” Task completed', runContext.projectTitle || 'Cowork run finished.').catch(() => {});
+                  bridge.notify('Relay — Task completed', runContext.projectTitle || 'Cowork run finished.').catch(() => {});
                 }
               }
 
-              const activeCoworkSessionKey = eventSessionKey || coworkSessionKeyRef.current;
-              const sessionMessages = activeCoworkSessionKey ? coworkMessageCache.current.get(activeCoworkSessionKey) ?? [] : [];
-              const lastUserPrompt = [...sessionMessages]
-                .reverse()
-                .find((entry) => entry.role === 'user')
-                ?.text?.trim() ?? '';
-              const likelyFileOperationRequest =
-                /@project:"[^"]+"/i.test(lastUserPrompt) ||
-                /\b(file|files|folder|folders|directory|directories|create|write|edit|rename|delete|remove|read|list)\b/i.test(lastUserPrompt);
+              const noActionMessage: ChatMessage = {
+                id: `cowork-actions-missing-${runId}`,
+                role: 'system',
+                text: [
+                  'No executable relay_actions were found in the cowork final event.',
+                  runContext.projectTitle ? `Project: ${runContext.projectTitle}` : 'Project: (none)',
+                  `Folder: ${runContext.rootFolder || '(not set)'}`,
+                ].join('\n'),
+                meta: {
+                  kind: 'activity',
+                  items: [
+                    {
+                      id: `activity-no-actions-${runId}`,
+                      label: 'No executable relay_actions were found.',
+                      details: [
+                        runContext.projectTitle ? `Project: ${runContext.projectTitle}` : 'Project: (none)',
+                        `Folder: ${runContext.rootFolder || '(not set)'}`,
+                      ].join('\n'),
+                      tone: 'neutral',
+                    },
+                  ],
+                },
+              };
 
-              if (likelyFileOperationRequest) {
-                const noActionMessage: ChatMessage = {
-                  id: `cowork-actions-missing-${runId}`,
-                  role: 'system',
-                  text: [
-                    'No executable relay_actions were found in the cowork final event.',
-                    runContext.projectTitle ? `Project: ${runContext.projectTitle}` : 'Project: (none)',
-                    `Folder: ${runContext.rootFolder || '(not set)'}`,
-                  ].join('\n'),
-                  meta: {
-                    kind: 'activity',
-                    items: [
-                      {
-                        id: `activity-no-actions-${runId}`,
-                        label: 'No executable relay_actions were found.',
-                        details: [
-                          runContext.projectTitle ? `Project: ${runContext.projectTitle}` : 'Project: (none)',
-                          `Folder: ${runContext.rootFolder || '(not set)'}`,
-                        ].join('\n'),
-                        tone: 'neutral',
-                      },
-                    ],
-                  },
-                };
+              setCoworkMessages((current) => {
+                if (current.some((entry) => entry.id === noActionMessage.id)) {
+                  return current;
+                }
 
-                setCoworkMessages((current) => {
-                  if (current.some((entry) => entry.id === noActionMessage.id)) {
-                    return current;
-                  }
-
-                  const next = [...current, noActionMessage];
-                  if (eventSessionKey) {
-                    coworkMessageCache.current.set(eventSessionKey, next);
-                  }
-                  return next;
-                });
-              }
+                const next = [...current, noActionMessage];
+                if (eventSessionKey) {
+                  coworkMessageCache.current.set(eventSessionKey, next);
+                }
+                return next;
+              });
             }
             return;
           }
@@ -4333,134 +3851,67 @@ export default function App() {
         await withTimeout(client.setSessionModel(sessionKey, coworkModel.trim()), 'Session model update');
       }
 
-      const localFolderContext = workingFolderRef.current.trim();
-      const projectFolderContext = activeCoworkProject?.workspaceFolder?.trim() || '';
-      const folderContext =
-        coworkScopeMode === 'project'
-          ? projectFolderContext || localFolderContext
-          : coworkScopeMode === 'workspace'
-            ? projectFolderContext || localFolderContext
-            : localFolderContext;
-      const selectedKindByPath = new Map(coworkProjectPathReferences.map((entry) => [entry.path, entry.kind] as const));
-      const projectContextKindByPath = new Map((activeCoworkProject?.contextPaths ?? []).map((entry) => [entry.path, entry.kind] as const));
+      const folderContext = workingFolderRef.current;
+      const selectedKindByPath = new Map(
+        coworkProjectPathReferences.map((entry) => [entry.path, entry.kind] as const),
+      );
       const referencedProjectPaths = Array.from(new Set(extractProjectFileMentions(text))).slice(0, 8);
-      const configuredProjectContextPaths = Array.from(
-        new Set((activeCoworkProject?.contextPaths ?? []).map((entry) => entry.path).filter(Boolean)),
-      ).slice(0, 8);
-
-      const buildProjectReferenceContext = async (
-        heading: string,
-        paths: string[],
-        kindByPath: Map<string, ProjectPathReference['kind']>,
-      ): Promise<string> => {
-        if (paths.length === 0) {
-          return '';
-        }
+      let referencedProjectFilesContext = '';
+      if (referencedProjectPaths.length > 0 && folderContext) {
         const snippets: string[] = [];
         const MAX_FILE_CHARS = 8_000;
         const MAX_FOLDER_LIST_ITEMS = 40;
 
-        const toBridgeTarget = (
-          inputPath: string,
-          options?: { forceDirectory?: boolean },
-        ): { rootPath: string; relativePath: string; normalizedPath: string } | null => {
-          const normalizedInput = inputPath.replace(/\\/g, '/').replace(/\/+$/, '').trim();
-          if (!normalizedInput) {
-            return null;
+        for (const rawPath of referencedProjectPaths) {
+          const mentionsDirectory = /\/+$/.test(rawPath) || selectedKindByPath.get(rawPath) === 'directory';
+          const relPath = rawPath.replace(/\/+$/, '').trim();
+          if (!relPath) {
+            continue;
           }
 
-          const isAbsolute =
-            normalizedInput.startsWith('/') ||
-            normalizedInput.startsWith('//') ||
-            /^[a-zA-Z]:\//.test(normalizedInput);
-          const forceDirectory = Boolean(options?.forceDirectory);
-
-          if (isAbsolute) {
-            if (forceDirectory) {
-              return { rootPath: normalizedInput, relativePath: '', normalizedPath: normalizedInput };
-            }
-            const lastSlashIndex = normalizedInput.lastIndexOf('/');
-            if (lastSlashIndex < 0) {
-              return null;
-            }
-
-            let rootPath = normalizedInput.slice(0, lastSlashIndex);
-            const relativePath = normalizedInput.slice(lastSlashIndex + 1);
-            if (!rootPath && normalizedInput.startsWith('/')) {
-              rootPath = '/';
-            }
-            if (/^[a-zA-Z]:$/.test(rootPath)) {
-              rootPath = `${rootPath}/`;
-            }
-            if (!rootPath || !relativePath) {
-              return null;
-            }
-            return { rootPath, relativePath, normalizedPath: normalizedInput };
-          }
-
-          const validated = validateProjectRelativePath(normalizedInput);
-          if (!validated.ok || !folderContext) {
-            return null;
-          }
-          return { rootPath: folderContext, relativePath: normalizedInput, normalizedPath: normalizedInput };
-        };
-
-        for (const rawPath of paths) {
-          const mentionsDirectory = /\/+$/.test(rawPath) || kindByPath.get(rawPath) === 'directory';
-          const target = toBridgeTarget(rawPath, { forceDirectory: mentionsDirectory });
-          if (!target) {
-            snippets.push(`- ${rawPath}: skipped (invalid or unsupported path)`);
+          const validated = validateProjectRelativePath(relPath);
+          if (!validated.ok) {
+            snippets.push(`- ${relPath}: skipped (${validated.reason})`);
             continue;
           }
 
           if (mentionsDirectory && bridge?.listDirInFolder) {
             try {
-              const listing = await bridge.listDirInFolder(target.rootPath, target.relativePath);
+              const listing = await bridge.listDirInFolder(folderContext, relPath);
               const listed = listing.items
                 .slice(0, MAX_FOLDER_LIST_ITEMS)
                 .map((item) => `- ${item.kind === 'directory' ? '[dir]' : '[file]'} ${item.path}`)
                 .join('\n');
               const truncated = listing.items.length > MAX_FOLDER_LIST_ITEMS ? '\n- ...truncated...' : '';
-              snippets.push(`### ${target.normalizedPath}/\n${listed || '- (empty)'}${truncated}`);
+              snippets.push(`### ${relPath}/\n${listed || '- (empty)'}${truncated}`);
             } catch (error) {
               const message = error instanceof Error ? error.message : 'Failed to list folder';
-              snippets.push(`- ${target.normalizedPath}/: list failed (${message})`);
+              snippets.push(`- ${relPath}/: list failed (${message})`);
             }
             continue;
           }
 
           if (!bridge?.readFileInFolder) {
-            snippets.push(`- ${target.normalizedPath}: read unavailable in this mode`);
+            snippets.push(`- ${relPath}: read unavailable in this mode`);
             continue;
           }
 
           try {
-            const fileResult = await bridge.readFileInFolder(target.rootPath, target.relativePath);
+            const fileResult = await bridge.readFileInFolder(folderContext, relPath);
             const fullContent = fileResult.content ?? '';
             const snippet = fullContent.slice(0, MAX_FILE_CHARS);
             const truncated = fullContent.length > MAX_FILE_CHARS ? '\n[...truncated...]' : '';
-            snippets.push(`### ${target.normalizedPath}\n\`\`\`\n${snippet}${truncated}\n\`\`\``);
+            snippets.push(`### ${relPath}\n\`\`\`\n${snippet}${truncated}\n\`\`\``);
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to read file';
-            snippets.push(`- ${target.normalizedPath}: read failed (${message})`);
+            snippets.push(`- ${relPath}: read failed (${message})`);
           }
         }
 
-        if (snippets.length === 0) {
-          return '';
+        if (snippets.length > 0) {
+          referencedProjectFilesContext = `Referenced project files:\n${snippets.join('\n\n')}`;
         }
-        return `${heading}\n${snippets.join('\n\n')}`;
-      };
-      const configuredProjectContext = await buildProjectReferenceContext(
-        'External context (read-only):',
-        configuredProjectContextPaths,
-        projectContextKindByPath,
-      );
-      const referencedProjectFilesContext = await buildProjectReferenceContext(
-        'Referenced project files:',
-        referencedProjectPaths,
-        selectedKindByPath,
-      );
+      }
 
       setCoworkTaskStatus(queuedTaskId, 'running', {
         summary: 'Sending task to cowork.',
@@ -4470,37 +3921,16 @@ export default function App() {
         projectId: activeCoworkProject?.id ?? '',
         projectTitle: activeCoworkProject?.name ?? '',
         rootFolder: folderContext,
-        scopeMode: coworkScopeMode,
-        approvalMode: coworkApprovalMode,
         startedAt: Date.now(),
       });
       const relayFileInstruction = [
-        'Only when the user explicitly requests local file/folder operations, your response MUST be ONE JSON code block with relay_actions and no prose.',
+        'If the user request involves local files/folders in any way, your response MUST be ONE JSON code block with relay_actions and no prose.',
         '```json',
         '{"relay_actions":[{"id":"a1","type":"list_dir","path":"."},{"id":"a2","type":"create_file","path":"relative/path.ext","content":"file contents","overwrite":false},{"id":"a3","type":"append_file","path":"relative/path.ext","content":"more text"},{"id":"a4","type":"read_file","path":"relative/path.ext"},{"id":"a5","type":"exists","path":"relative/path.ext"},{"id":"a6","type":"rename","path":"old.ext","newPath":"new.ext"},{"id":"a7","type":"delete","path":"obsolete.ext"}]}',
         '```',
-        'Never run discovery actions (list_dir/read_file/exists) only to gather context.',
-        'If filenames are unknown and the user explicitly asked to inspect/list/search files, first emit a list_dir action.',
-        'If file inspection was not explicitly requested, ask one short clarifying question instead of emitting relay_actions.',
-        'When the prompt contains @project:"...": treat each referenced path as actionable filesystem context.',
-        'For absolute referenced paths (e.g. C:/... or /...), use that exact absolute path in read-only actions (list_dir/read_file/exists).',
-        'Do not claim a referenced @project path is inaccessible before attempting relay_actions for it.',
+        'If filenames are unknown, first emit a list_dir action and do not ask follow-up questions.',
         'Never respond with natural language explanations for file-operation requests.',
       ].join('\n');
-      const explicitReferencedPathsInstruction =
-        referencedProjectPaths.length > 0
-          ? [
-              'Explicit @project references were provided by the user.',
-              `You must process these paths first via relay_actions: ${referencedProjectPaths.join(', ')}`,
-            ].join('\n')
-          : '';
-      const externalContextProtectionInstruction = configuredProjectContextPaths.length > 0
-        ? [
-            'External context is protected and read-only.',
-            'Do not create, modify, rename, or delete any file/folder from external context paths.',
-            'Use external context only for reading and referencing.',
-          ].join('\n')
-        : '';
       const projectKnowledgeContext = activeCoworkProject
         ? projectKnowledgeItems
             .filter((item) => item.projectId === activeCoworkProject.id)
@@ -4515,15 +3945,6 @@ export default function App() {
             'Always include a Sources section with markdown links for any factual claims from external sources.',
           ].join('\n')
         : '';
-      const approvalInstruction =
-        coworkApprovalMode === 'none'
-          ? 'Approval mode is none. Do not wait for operator approval prompts.'
-          : coworkApprovalMode === 'project'
-            ? 'Approval mode is project. Follow project safety policy for approval checks.'
-            : 'Approval mode is standard. High-risk actions still require explicit approval.';
-      const scopeInstruction = `Folder scope mode: ${coworkScopeMode}. ${
-        folderContext ? `Primary folder: ${folderContext}` : 'No folder context available.'
-      }`;
       const coworkMemoryContext = preferences.injectMemory
         ? buildMemoryContext(loadMemoryEntries(), preferences.systemPrompt)
         : preferences.systemPrompt.trim();
@@ -4532,12 +3953,7 @@ export default function App() {
         activeCoworkProject ? `Project context: ${activeCoworkProject.name}` : '',
         projectKnowledgeContext ? `Project knowledge:\n${projectKnowledgeContext}` : '',
         folderContext ? `Working folder context: ${folderContext}` : '',
-        scopeInstruction,
-        approvalInstruction,
-        configuredProjectContext,
         referencedProjectFilesContext,
-        explicitReferencedPathsInstruction,
-        externalContextProtectionInstruction,
         webSearchInstruction,
         relayFileInstruction,
         '',
@@ -4863,26 +4279,6 @@ export default function App() {
     return selected?.trim() ? selected.trim() : undefined;
   };
 
-  const handlePickExternalContextPathsForProject = async (
-    initialPath?: string,
-  ): Promise<Array<{ path: string; kind: 'file' | 'directory' }>> => {
-    if (!bridge?.selectContextPaths) {
-      setStatus('External context picker requires the Electron desktop app.');
-      return [];
-    }
-    try {
-      const selected = await bridge.selectContextPaths(initialPath?.trim() || workingFolderRef.current || undefined);
-      if (selected.length > 0) {
-        setStatus(`Selected ${selected.length} external context item${selected.length === 1 ? '' : 's'}.`);
-      }
-      return selected;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to open external context picker.';
-      setStatus(message);
-      return [];
-    }
-  };
-
   const handleApplyLocalPlan = async () => {
     if (!bridge?.applyOrganizeFolderPlan) {
       setStatus('Local file organizer is available in the Electron desktop app only.');
@@ -5057,104 +4453,6 @@ export default function App() {
 
     if (updatedProjectName) {
       setStatus(`Project updated: ${updatedProjectName}`);
-    }
-  };
-
-  const handleAddProjectContextPath = (projectId: string, path: string, kind: ProjectPathReference['kind']) => {
-    const normalizedProjectId = projectId.trim();
-    if (!normalizedProjectId || !path.trim()) {
-      setStatus('Context path is required.');
-      return;
-    }
-    const normalized = normalizeProjectPathForStorage(path);
-    if (!normalized.ok) {
-      setStatus(`Invalid context path: ${normalized.reason}`);
-      return;
-    }
-    const normalizedPath = normalized.path;
-
-    let added = false;
-    setCoworkProjects((current) =>
-      current.map((project) => {
-        if (project.id !== normalizedProjectId) {
-          return project;
-        }
-        const existing = project.contextPaths ?? [];
-        if (existing.some((entry) => entry.path === normalizedPath && entry.kind === kind)) {
-          return project;
-        }
-        added = true;
-        return {
-          ...project,
-          contextPaths: [...existing, { path: normalizedPath, kind }],
-          updatedAt: Date.now(),
-        };
-      }),
-    );
-    if (added) {
-      setStatus(`Added external context ${kind}: ${normalizedPath}`);
-    }
-  };
-
-  const handleRemoveProjectContextPath = (projectId: string, path: string, kind: ProjectPathReference['kind']) => {
-    const normalizedProjectId = projectId.trim();
-    if (!normalizedProjectId || !path.trim()) {
-      return;
-    }
-    const normalized = normalizeProjectPathForStorage(path);
-    if (!normalized.ok) {
-      return;
-    }
-    const normalizedPath = normalized.path;
-    let removed = false;
-    setCoworkProjects((current) =>
-      current.map((project) => {
-        if (project.id !== normalizedProjectId) {
-          return project;
-        }
-        const existing = project.contextPaths ?? [];
-        const next = existing.filter((entry) => !(entry.path === normalizedPath && entry.kind === kind));
-        if (next.length === existing.length) {
-          return project;
-        }
-        removed = true;
-        return {
-          ...project,
-          contextPaths: next,
-          updatedAt: Date.now(),
-        };
-      }),
-    );
-    if (removed) {
-      setStatus(`Removed external context ${kind}: ${normalizedPath}`);
-    }
-  };
-
-  const handleListProjectPathEntries = async (rootPath: string, relativePath?: string) => {
-    const normalizedRoot = rootPath.trim();
-    if (!normalizedRoot) {
-      return [] as Array<{ path: string; kind: 'file' | 'directory'; size?: number; modifiedMs?: number }>;
-    }
-    if (!bridge?.listDirInFolder) {
-      setStatus('Project path browser requires the Electron desktop bridge.');
-      return [] as Array<{ path: string; kind: 'file' | 'directory'; size?: number; modifiedMs?: number }>;
-    }
-    try {
-      const listing = await bridge.listDirInFolder(normalizedRoot, relativePath?.trim() || '');
-      return listing.items
-        .map((item) => {
-          const normalized = normalizeProjectPathForStorage(item.path);
-          if (!normalized.ok) {
-            return null;
-          }
-          return { ...item, path: normalized.path };
-        })
-        .filter((item): item is typeof listing.items[number] => item !== null)
-        .slice(0, 500);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to browse project paths.';
-      setStatus(message);
-      return [] as Array<{ path: string; kind: 'file' | 'directory'; size?: number; modifiedMs?: number }>;
     }
   };
 
@@ -6217,7 +5515,7 @@ export default function App() {
 
   const handleCompleteOnboarding = () => {
     completeOnboarding();
-    setActivePage('cowork');
+    setActivePage('chat');
   };
 
   const handleStartNewTask = () => {
@@ -6237,12 +5535,6 @@ export default function App() {
     setCoworkResetKey((current) => current + 1);
   };
 
-  useEffect(() => {
-    if (activePage === 'chat') {
-      setActivePage('cowork');
-    }
-  }, [activePage]);
-
   const handleRerunLastCoworkTask = () => {
     if (!latestVisibleCoworkTaskPrompt) {
       setStatus('No previous task prompt available to rerun.');
@@ -6260,6 +5552,7 @@ export default function App() {
   );
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const allThreadsForSearch = [
+    ...chatThreads.map((t) => ({ ...t, label: t.title, kind: 'chat' as const })),
     ...coworkThreads.map((t) => ({ ...t, label: t.title, kind: 'cowork' as const })),
   ];
   const searchCandidates = (normalizedSearchQuery ? allThreadsForSearch : recentItems).map((item) => ({
@@ -6289,7 +5582,7 @@ export default function App() {
       const speaker = m.role === 'user' ? 'You' : m.role === 'system' ? 'System' : 'Assistant';
       return `## ${speaker}\n\n${m.text}`;
     });
-    const markdown = `# Chat Export â€” ${new Date().toLocaleDateString()}\n\n${lines.join('\n\n---\n\n')}\n`;
+    const markdown = `# Chat Export — ${new Date().toLocaleDateString()}\n\n${lines.join('\n\n---\n\n')}\n`;
     const blob = new Blob([markdown], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -6307,6 +5600,7 @@ export default function App() {
         coworkRightPanelOpen={coworkRightPanelOpen}
         isMaximized={isMaximized}
         usageModeLabel={usageModeLabel}
+        gatewayConnected={gatewayConnected}
         coworkRunPhase={coworkRunPhase}
         coworkRunStatus={coworkRunStatus}
         coworkProgressSteps={coworkProgressSteps}
@@ -6322,6 +5616,10 @@ export default function App() {
         onToggleMaximize={handleToggleMaximize}
         onClose={handleClose}
         onShowSystemMenu={handleShowSystemMenu}
+        onOpenGatewaySettings={() => {
+          setActivePage('settings');
+          setSettingsSection('Gateway');
+        }}
       />
 
       {needsOnboarding ? (
@@ -6359,7 +5657,6 @@ export default function App() {
             scheduledItems={scheduledJobs}
             scheduledLoading={scheduledLoading}
             sessionUsage={sessionUsage}
-            gatewayConnected={gatewayConnected}
             onSelectRecentItem={(item) => {
               if (item.kind === 'cowork') {
                 handleOpenRecentCowork(item.sessionKey);
@@ -6374,7 +5671,7 @@ export default function App() {
             onRenameCoworkProject={handleRenameCoworkProject}
             onDeleteCoworkProject={handleDeleteCoworkProject}
             onPickWorkingFolder={handlePickWorkingFolderForProject}
-            onStartNewChat={handleStartNewTask}
+            onStartNewChat={handleStartNewChat}
             onStartNewTask={handleStartNewTask}
             onSelectMenuItem={setActiveMenuItem}
             onSelectPage={(page) => setActivePage(page)}
@@ -6385,7 +5682,7 @@ export default function App() {
             onLogout={handleLogout}
           />
 
-          <main className="relative min-h-0 overflow-hidden rounded-l-xl border-l border-t border-border bg-background p-0">
+          <main className="relative min-h-0 overflow-hidden p-0">
             <Dialog
               open={Boolean(recentRenameTarget)}
               onOpenChange={(nextOpen) => {
@@ -6520,16 +5817,10 @@ export default function App() {
                   changingModel={changingCoworkModel}
                   pendingApprovals={visiblePendingApprovals}
                   projectTasks={visibleCoworkTasks}
-                  runPhase={coworkRunPhase}
-                  runStatus={coworkRunStatus}
-                  progressSteps={coworkProgressSteps}
                   sending={coworkSending}
                   gatewayConnected={gatewayConnected}
                   webSearchEnabled={coworkWebSearchEnabled}
-                  approvalMode={coworkApprovalMode}
                   projectPathReferences={coworkProjectPathReferences}
-                  contextWindowUsedTokens={coworkContextWindowUsedTokens}
-                  contextWindowTotalTokens={coworkContextWindowTotalTokens}
                   onOpenGatewaySettings={() => {
                     setActivePage('settings');
                     setSettingsSection('Gateway');
@@ -6537,7 +5828,6 @@ export default function App() {
                   onTaskPromptChange={handleCoworkPromptChange}
                   onModelChange={handleCoworkModelChange}
                   onWebSearchEnabledChange={setCoworkWebSearchEnabled}
-                  onApprovalModeChange={setCoworkApprovalMode}
                   onSubmit={handlePlanTask}
                   onApprovePendingAction={handleApprovePendingAction}
                   onRejectPendingAction={handleRejectPendingAction}
@@ -6556,7 +5846,6 @@ export default function App() {
                   projectKnowledge={visibleProjectKnowledge}
                   webSearchEnabled={coworkWebSearchEnabled}
                   onPickFolder={handlePickWorkingFolderForProject}
-                  onPickExternalContextPaths={handlePickExternalContextPathsForProject}
                   onUpdateProject={handleUpdateCoworkProject}
                   onCreatePipeline={handleCreateOutcomePipeline}
                   onUpdatePipeline={handleUpdateOutcomePipeline}
@@ -6567,7 +5856,6 @@ export default function App() {
                   onOpenArtifact={handleOpenCoworkArtifact}
                   onAddKnowledge={handleAddProjectKnowledge}
                   onDeleteKnowledge={handleDeleteProjectKnowledge}
-                  onAddContextPath={handleAddProjectContextPath}
                   onWebSearchEnabledChange={setCoworkWebSearchEnabled}
                   onSelectPage={(page) => setActivePage(page)}
                 />
@@ -6620,6 +5908,36 @@ export default function App() {
                   </section>
                 )
               ) : (
+                <>
+                {activePage === 'chat' && (
+                  <ChatPage
+                    taskPrompt={chatDraftPrompt}
+                    messages={chatMessages}
+                    sending={sendingChat}
+                    awaitingStream={awaitingChatStream}
+                    sessionKey={activeSessionKey}
+                    userDisplayName={preferences.displayName || preferences.fullName}
+                    models={chatModels}
+                    selectedModel={selectedModel}
+                    modelsLoading={modelsLoading}
+                    changingModel={changingModel}
+                    gatewayConnected={gatewayConnected}
+                    status={status}
+                    onTaskPromptChange={handleChatPromptChange}
+                    onModelChange={handleModelChange}
+                    onSubmit={handleSendChat}
+                    onExport={handleExportChat}
+                    onNewChat={handleStartNewChat}
+                    onClearChat={() => setChatMessages([])}
+                    onOpenSettings={() => setActivePage('settings')}
+                    onOpenGatewaySettings={() => {
+                      setActivePage('settings');
+                      setSettingsSection('Gateway');
+                    }}
+                  />
+                )}
+
+                {activePage !== 'chat' && (
                   <ScrollArea className="h-full">
                     {activePage === 'activity' && (
                       <ActivityPage
@@ -6695,14 +6013,13 @@ export default function App() {
                       />
                     )}
                   </ScrollArea>
+                )}
+                </>
               )}
             </Suspense>
           </main>
         </SidebarProvider>
       )}
-      {import.meta.env.DEV ? <Agentation /> : null}
     </div>
   );
 }
-
-

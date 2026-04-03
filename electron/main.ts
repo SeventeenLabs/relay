@@ -1061,42 +1061,6 @@ app.whenReady().then(async () => {
 
     return result.filePaths[0];
   });
-  ipcMain.handle('local:select-file', async (_event, initialPath?: string) => {
-    const result = await dialog.showOpenDialog({
-      title: 'Select file',
-      defaultPath: typeof initialPath === 'string' && initialPath.trim() ? initialPath : app.getPath('downloads'),
-      properties: ['openFile'],
-    });
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return null;
-    }
-
-    return result.filePaths[0];
-  });
-  ipcMain.handle('local:select-context-paths', async (_event, initialPath?: string) => {
-    const result = await dialog.showOpenDialog({
-      title: 'Add external context',
-      defaultPath: typeof initialPath === 'string' && initialPath.trim() ? initialPath : app.getPath('downloads'),
-      properties: ['openFile', 'openDirectory', 'multiSelections'],
-    });
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return [] as Array<{ path: string; kind: 'file' | 'directory' }>;
-    }
-
-    const entries = await Promise.all(
-      result.filePaths.map(async (selectedPath) => {
-        const stat = await fs.stat(selectedPath);
-        return {
-          path: selectedPath,
-          kind: stat.isDirectory() ? ('directory' as const) : ('file' as const),
-        };
-      }),
-    );
-
-    return entries;
-  });
   ipcMain.handle('local:plan-organize-folder', async (_event, rootPath: string) => {
     if (typeof rootPath !== 'string' || !rootPath.trim()) {
       throw new Error('A folder path is required.');
