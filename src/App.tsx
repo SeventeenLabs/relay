@@ -5657,6 +5657,7 @@ export default function App() {
             scheduledItems={scheduledJobs}
             scheduledLoading={scheduledLoading}
             sessionUsage={sessionUsage}
+            gatewayConnected={gatewayConnected}
             onSelectRecentItem={(item) => {
               if (item.kind === 'cowork') {
                 handleOpenRecentCowork(item.sessionKey);
@@ -5820,7 +5821,13 @@ export default function App() {
                   sending={coworkSending}
                   gatewayConnected={gatewayConnected}
                   webSearchEnabled={coworkWebSearchEnabled}
+                  runPhase={coworkRunPhase}
+                  runStatus={coworkRunStatus}
+                  progressSteps={coworkProgressSteps}
+                  approvalMode="standard"
                   projectPathReferences={coworkProjectPathReferences}
+                  contextWindowUsedTokens={0}
+                  contextWindowTotalTokens={1}
                   onOpenGatewaySettings={() => {
                     setActivePage('settings');
                     setSettingsSection('Gateway');
@@ -5828,6 +5835,7 @@ export default function App() {
                   onTaskPromptChange={handleCoworkPromptChange}
                   onModelChange={handleCoworkModelChange}
                   onWebSearchEnabledChange={setCoworkWebSearchEnabled}
+                  onApprovalModeChange={() => {}}
                   onSubmit={handlePlanTask}
                   onApprovePendingAction={handleApprovePendingAction}
                   onRejectPendingAction={handleRejectPendingAction}

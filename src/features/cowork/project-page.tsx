@@ -22,7 +22,7 @@ type ProjectPageProps = {
   projectKnowledge: ProjectKnowledgeItem[];
   webSearchEnabled: boolean;
   onPickFolder: () => Promise<string | undefined>;
-  onPickExternalContextPaths: (initialPath?: string) => Promise<Array<{ path: string; kind: 'file' | 'directory' }>>;
+  onPickExternalContextPaths?: (initialPath?: string) => Promise<Array<{ path: string; kind: 'file' | 'directory' }>>;
   onUpdateProject: (projectId: string, name: string, workspaceFolder: string, description?: string, instructions?: string) => void;
   onCreatePipeline: (
     projectId: string,
@@ -64,7 +64,7 @@ type ProjectPageProps = {
   onOpenArtifact: (artifact: CoworkArtifact) => void;
   onAddKnowledge: (projectId: string, title: string, content: string) => void;
   onDeleteKnowledge: (knowledgeId: string) => void;
-  onAddContextPath: (projectId: string, path: string, kind: 'file' | 'directory') => void;
+  onAddContextPath?: (projectId: string, path: string, kind: 'file' | 'directory') => void;
   onWebSearchEnabledChange: (enabled: boolean) => void;
   onSelectPage: (page: ProjectPageTarget) => void;
 };
@@ -154,22 +154,6 @@ export function ProjectPage(props: ProjectPageProps) {
     }
   };
 
-  const handlePickContextFolder = async () => {
-    if (!project) return;
-    const selected = await props.onPickContextFolder(project.workspaceFolder);
-    if (selected?.trim()) {
-      props.onAddContextPath(project.id, selected.trim(), 'directory');
-    }
-  };
-
-  const handlePickContextFile = async () => {
-    if (!project) return;
-    const selected = await props.onPickContextFile(project.workspaceFolder);
-    if (selected?.trim()) {
-      props.onAddContextPath(project.id, selected.trim(), 'file');
-    }
-  };
-
   const handleSaveProjectSettings = () => {
     if (!draftName.trim() || !draftFolder.trim()) return;
     props.onUpdateProject(project.id, draftName.trim(), draftFolder.trim(), draftDescription.trim() || undefined, draftInstructions.trim() || undefined);
@@ -177,12 +161,13 @@ export function ProjectPage(props: ProjectPageProps) {
   };
 
   const handleAddExternalContext = async () => {
-    if (!project) return;
+    if (!project || !props.onPickExternalContextPaths || !props.onAddContextPath) return;
+    const addContextPath = props.onAddContextPath;
     setExternalContextAdding(true);
     try {
       const selectedItems = await props.onPickExternalContextPaths(project.workspaceFolder);
       selectedItems.forEach((item) => {
-        props.onAddContextPath(project.id, item.path, item.kind);
+        addContextPath(project.id, item.path, item.kind);
       });
     } finally {
       setExternalContextAdding(false);
@@ -279,7 +264,12 @@ export function ProjectPage(props: ProjectPageProps) {
               Add files or folders with your system file picker. External context is read-only protected during cowork runs.
             </p>
             <div className="mt-2 flex items-center gap-2">
-              <Button type="button" size="sm" onClick={() => void handleAddExternalContext()} disabled={externalContextAdding}>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void handleAddExternalContext()}
+                disabled={externalContextAdding || !props.onPickExternalContextPaths || !props.onAddContextPath}
+              >
                 {externalContextAdding ? 'Adding…' : 'Add files or folders'}
               </Button>
             </div>

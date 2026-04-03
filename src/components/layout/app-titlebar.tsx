@@ -6,7 +6,7 @@ import type { CoworkProgressStep, CoworkRunPhase } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
-type AppPage = 'cowork' | 'project' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'approvals' | 'safety' | 'settings';
+type AppPage = 'chat' | 'cowork' | 'project' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'approvals' | 'safety' | 'settings';
 
 type AppTitlebarProps = {
   sidebarOpen: boolean;
@@ -14,6 +14,7 @@ type AppTitlebarProps = {
   coworkRightPanelOpen?: boolean;
   isMaximized: boolean;
   usageModeLabel: string;
+  gatewayConnected?: boolean;
   coworkRunPhase?: CoworkRunPhase;
   coworkRunStatus?: string;
   coworkProgressSteps?: CoworkProgressStep[];
@@ -29,6 +30,7 @@ type AppTitlebarProps = {
   onToggleMaximize: () => void | Promise<void>;
   onClose: () => void | Promise<void>;
   onShowSystemMenu: (x: number, y: number) => void | Promise<void>;
+  onOpenGatewaySettings?: () => void;
 };
 
 export function AppTitlebar({

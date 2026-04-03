@@ -1,5 +1,23 @@
 # Changelog
 
+## v2026.4.3 - 2026-04-03
+
+### Added
+- External context references in cowork with @ mention insertion and project/external source labeling.
+- Cowork approvals mode wiring and context window fallback plumbing in the cowork UI surface.
+- CI workflow hardening for release validation with manual dispatch, concurrency guards, explicit permissions, timeout limits, and post-verify build checks.
+
+### Changed
+- Cowork is now the primary workspace flow; legacy chat mode routing was removed from the main app experience.
+- Sidebar and settings chrome refined for clearer operator navigation and gateway status visibility.
+- Cowork composer and streaming UX updated for smoother run feedback and centered layout stability.
+- Project home external context actions now tolerate optional picker callbacks without type errors.
+
+### Fixed
+- TypeScript prop contract drift between app shell and cowork/project pages that blocked `npm run verify`.
+- Keyboard event typing mismatch on global window listeners in cowork page effects.
+- Release candidate verification path now passes lint/typecheck plus file safety and local action smoke tests.
+
 ## v2026.3.28 - 2026-03-28
 
 ### Added

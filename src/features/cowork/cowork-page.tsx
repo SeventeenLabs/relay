@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { FormEvent, KeyboardEvent } from 'react';
+import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 import { ArrowUp, ChevronDown, ChevronRight, FileText, FolderOpen, Loader2, Plus, Shield, WifiOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -378,7 +378,7 @@ export function CoworkPage({
     setMentionMenuOpen(false);
   };
 
-  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleComposerKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (mentionMenuOpen && mentionCommands.length > 0) {
       if (event.key === 'ArrowDown') {
         event.preventDefault();
