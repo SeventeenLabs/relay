@@ -1,5 +1,6 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { Agentation } from 'agentation';
 
 import type {
   AppConfig,
@@ -212,7 +213,7 @@ function validateProjectRelativePath(inputPath: string, options?: { allowEmpty?:
   }
 
   if (normalized === '.' || normalized === './') {
-    return { ok: false, reason: 'A concrete relative path is required.' };
+    return options?.allowEmpty ? { ok: true } : { ok: false, reason: 'A concrete relative path is required.' };
   }
 
   const segments = normalized.split('/').filter((segment) => segment.length > 0);
@@ -863,7 +864,7 @@ declare global {
 
 
 export default function App() {
-  /* ── Initialize connectors once ──────────────────────────────────────── */
+  /* â”€â”€ Initialize connectors once â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   useMemo(() => {
     registerConnector(createFilesystemConnector());
     registerConnector(createShellConnector());
@@ -2474,7 +2475,7 @@ export default function App() {
       const mod = event.ctrlKey || event.metaKey;
       if (!mod) return;
 
-      // Ctrl+N — new chat / new task
+      // Ctrl+N â€” new chat / new task
       if (event.key === 'n') {
         event.preventDefault();
         if (activePage === 'cowork') {
@@ -2493,7 +2494,7 @@ export default function App() {
         return;
       }
 
-      // Ctrl+K — open search
+      // Ctrl+K â€” open search
       if (event.key === 'k') {
         event.preventDefault();
         setSearchOpen((prev) => !prev);
@@ -2504,14 +2505,14 @@ export default function App() {
         return;
       }
 
-      // Ctrl+Shift+S — settings
+      // Ctrl+Shift+S â€” settings
       if (event.key === 'S' && event.shiftKey) {
         event.preventDefault();
         setActivePage('settings');
         return;
       }
 
-      // Ctrl+, — settings (common IDE shortcut)
+      // Ctrl+, â€” settings (common IDE shortcut)
       if (event.key === ',') {
         event.preventDefault();
         setActivePage('settings');
@@ -2849,6 +2850,7 @@ export default function App() {
                   previews: string[],
                   errors: string[],
                 ) => {
+                  setCoworkRunPhase('completed');
                   setCoworkRunStatus(summary);
                   setCoworkProgressStage('deliverables', {
                     completeThrough: true,
@@ -2882,28 +2884,91 @@ export default function App() {
                     '```',
                   ];
 
-                  const activityItems: ChatActivityItem[] = [
-                    ...actionReceipts.map((receipt, index): ChatActivityItem => {
-                      const tone: ChatActivityItem['tone'] = receipt.status === 'ok' ? 'success' : 'danger';
-                      const verb =
-                        receipt.type === 'create_file' ? 'Created' :
-                        receipt.type === 'append_file' ? 'Appended' :
-                        receipt.type === 'read_file' ? 'Read' :
-                        receipt.type === 'list_dir' ? 'Listed' :
-                        receipt.type === 'exists' ? 'Checked' :
-                        receipt.type === 'rename' ? 'Renamed' :
-                        receipt.type === 'delete' ? 'Deleted' :
-                        receipt.type === 'shell_exec' ? 'Executed' :
-                        receipt.type === 'web_fetch' ? 'Fetched' :
-                        'Completed';
-                      return {
-                        id: `activity-receipt-${runId}-${index + 1}`,
-                        label: `${receipt.status === 'ok' ? verb : `${verb} failed`}: ${receipt.path}`,
-                        details: receipt.message || receipt.errorCode || receipt.path,
-                        tone,
-                      };
-                    }),
-                  ];
+                  const verbForReceiptType = (type: LocalActionReceipt['type']) =>
+                    type === 'create_file' ? 'Created' :
+                    type === 'append_file' ? 'Appended' :
+                    type === 'read_file' ? 'Read' :
+                    type === 'list_dir' ? 'Listed' :
+                    type === 'exists' ? 'Checked' :
+                    type === 'rename' ? 'Renamed' :
+                    type === 'delete' ? 'Deleted' :
+                    type === 'shell_exec' ? 'Executed' :
+                    type === 'web_fetch' ? 'Fetched' :
+                    'Completed';
+
+                  const grouped = new Map<string, { type: LocalActionReceipt['type']; entries: LocalActionReceipt[] }>();
+                  for (const receipt of actionReceipts) {
+                    const key = `${receipt.type}`;
+                    const existing = grouped.get(key);
+                    if (existing) {
+                      existing.entries.push(receipt);
+                    } else {
+                      grouped.set(key, {
+                        type: receipt.type,
+                        entries: [receipt],
+                      });
+                    }
+                  }
+
+                  const activityItems: ChatActivityItem[] = Array.from(grouped.values()).map((group, index) => {
+                    const successCount = group.entries.filter((entry) => entry.status === 'ok').length;
+                    const failureCount = group.entries.length - successCount;
+                    const tone: ChatActivityItem['tone'] =
+                      failureCount === 0 ? 'success' : successCount === 0 ? 'danger' : 'neutral';
+                    const verb = verbForReceiptType(group.type);
+                    const count = group.entries.length;
+                    const summarySuffix =
+                      failureCount === 0
+                        ? `${successCount} ok`
+                        : successCount === 0
+                          ? `${failureCount} failed`
+                          : `${successCount} ok, ${failureCount} failed`;
+                    const label = count === 1
+                      ? `${successCount === 0 ? `${verb} failed` : verb}: ${group.entries[0].path}`
+                      : `${failureCount === count ? `${verb} failed` : verb}: ${count} items (${summarySuffix})`;
+                    const details =
+                      group.type === 'list_dir'
+                        ? group.entries
+                            .slice(0, 20)
+                            .map((entry) => {
+                              const headingPath = entry.path.replace(/`/g, '\\`');
+                              if (entry.status !== 'ok') {
+                                return `#### \`${headingPath}\`\n- ❌ ${entry.message || 'List failed.'}`;
+                              }
+
+                              const rawMessage = entry.message ?? '';
+                              const lines = rawMessage.split('\n');
+                              const summaryLine = lines[0]?.trim() ?? '';
+                              const listBlock = lines
+                                .slice(1)
+                                .join('\n')
+                                .trim();
+
+                              return [
+                                `#### \`${headingPath}\``,
+                                summaryLine ? `_${summaryLine}_` : '',
+                                listBlock || '- (empty)',
+                              ]
+                                .filter(Boolean)
+                                .join('\n');
+                            })
+                            .join('\n\n')
+                        : group.entries
+                            .slice(0, 40)
+                            .map((entry) => {
+                              const statusPrefix = entry.status === 'ok' ? 'OK' : 'FAILED';
+                              const suffix = entry.message ? ` - ${entry.message}` : '';
+                              return `[${statusPrefix}] ${entry.path}${suffix}`;
+                            })
+                            .join('\n');
+                    const truncated = group.entries.length > 40 ? '\n...truncated...' : '';
+                    return {
+                      id: `activity-receipt-group-${runId}-${index + 1}`,
+                      label,
+                      details: `${details}${truncated}` || (group.entries[0]?.message ?? group.entries[0]?.path ?? ''),
+                      tone,
+                    };
+                  });
                   if (activityItems.length === 0) {
                     activityItems.push({
                       id: `activity-summary-${runId}`,
@@ -2950,9 +3015,20 @@ export default function App() {
                 }
 
                 setCoworkRunStatus('Applying AI file actions...');
+                setCoworkRunPhase('streaming');
                 setCoworkProgressStage('executing_workstreams', {
                   details: 'Applying local actions in scoped workspace.',
                 });
+                const pushLiveExecutionUpdate = (line: string) => {
+                  const next = line.trim();
+                  if (!next) {
+                    return;
+                  }
+                  setCoworkRunStatus(next);
+                  setCoworkProgressStage('executing_workstreams', {
+                    details: next,
+                  });
+                };
 
                 const boundedActions = relayActions.slice(0, MAX_LOCAL_ACTIONS_PER_RUN);
                 const safetyScopes = loadSafetyScopes(runContext.projectId || undefined);
@@ -3132,10 +3208,14 @@ export default function App() {
                     action.type === 'read_file' || action.type === 'list_dir' || action.type === 'exists';
                   let executionRootPath = rootPath;
                   let executionPath = action.path;
+                  pushLiveExecutionUpdate(
+                    `Action ${index + 1}/${boundedActions.length}: ${action.type} ${actionPath || '.'}`,
+                  );
 
                   if (absoluteActionPath) {
                     if (!externalReadAllowed) {
                       const message = 'Blocked: absolute path is outside configured External Context.';
+                      pushLiveExecutionUpdate(`Blocked ${action.type} ${actionPath}: outside External Context`);
                       errors.push(`${actionPath}: ${message}`);
                       actionReceipts.push({
                         id: actionId,
@@ -3150,6 +3230,7 @@ export default function App() {
 
                     if (!readOnlyExternalAction) {
                       const message = 'Blocked: External Context is read-only protected.';
+                      pushLiveExecutionUpdate(`Blocked ${action.type} ${actionPath}: External Context is read-only`);
                       errors.push(`${actionPath}: ${message}`);
                       actionReceipts.push({
                         id: actionId,
@@ -3165,6 +3246,7 @@ export default function App() {
                     const target = resolveAbsoluteBridgeTarget(action.type, normalizedActionPath);
                     if (!target) {
                       const message = 'Blocked: invalid absolute path target.';
+                      pushLiveExecutionUpdate(`Blocked ${action.type} ${actionPath}: invalid absolute path`);
                       errors.push(`${actionPath}: ${message}`);
                       actionReceipts.push({
                         id: actionId,
@@ -3186,6 +3268,7 @@ export default function App() {
                     });
                     if (!pathValidation.ok) {
                       const message = `Blocked by project boundary: ${pathValidation.reason}`;
+                      pushLiveExecutionUpdate(`Blocked ${action.type} ${actionPath}: ${pathValidation.reason}`);
                       errors.push(`${actionPath || '.'}: ${message}`);
                       actionReceipts.push({
                         id: actionId,
@@ -3203,6 +3286,7 @@ export default function App() {
                     const targetValidation = validateProjectRelativePath(action.newPath);
                     if (!targetValidation.ok) {
                       const message = `Blocked by project boundary: ${targetValidation.reason}`;
+                      pushLiveExecutionUpdate(`Blocked rename ${actionPath}: ${targetValidation.reason}`);
                       errors.push(`${action.newPath}: ${message}`);
                       actionReceipts.push({
                         id: actionId,
@@ -3218,6 +3302,7 @@ export default function App() {
 
                   if ((action.type === 'create_file' || action.type === 'append_file' || action.type === 'rename' || action.type === 'delete') && !runContext.projectId) {
                     const message = 'Blocked: write actions require an active project context.';
+                    pushLiveExecutionUpdate(`Blocked ${action.type} ${actionPath}: project required`);
                     errors.push(`${actionPath}: ${message}`);
                     actionReceipts.push({
                       id: actionId,
@@ -3232,6 +3317,7 @@ export default function App() {
 
                   if (!policy.enabled) {
                     const message = `Blocked by safety policy: ${policy.scopeName} is disabled.`;
+                    pushLiveExecutionUpdate(`Blocked ${action.type} ${actionPath}: ${policy.scopeName} disabled`);
                     errors.push(`${actionPath}: ${message}`);
                     actionReceipts.push({
                       id: actionId,
@@ -3255,6 +3341,7 @@ export default function App() {
                       if (existing.exists) {
                         const overwriteApprovalId = `${runId}-${actionId}-${index + 1}-overwrite`;
                         setCoworkRunStatus(`Awaiting overwrite approval for ${actionPath}...`);
+                        pushLiveExecutionUpdate(`Awaiting overwrite approval: ${actionPath}`);
                         setCoworkProgressStage('executing_workstreams', {
                           details: `File exists at ${actionPath}. Awaiting overwrite approval.`,
                         });
@@ -3283,6 +3370,7 @@ export default function App() {
 
                         if (!overwriteDecision.approved) {
                           const reason = overwriteDecision.reason || 'Overwrite rejected by operator.';
+                          pushLiveExecutionUpdate(`Overwrite rejected: ${actionPath}`);
                           const code = overwriteDecision.expired ? 'APPROVAL_TIMEOUT' : 'REJECTED_BY_OPERATOR';
                           errors.push(`${actionPath}: ${reason}`);
                           actionReceipts.push({
@@ -3298,6 +3386,7 @@ export default function App() {
 
                         approvedByOperator = true;
                         createFileOverwriteApproved = true;
+                        pushLiveExecutionUpdate(`Overwrite approved: ${actionPath}`);
                         previews.push(`Approved overwrite create_file -> ${actionPath}`);
                         if (taskEntry) {
                           setCoworkTaskStatus(taskEntry.taskId, 'approved', {
@@ -3308,6 +3397,7 @@ export default function App() {
                       }
                     } catch (error) {
                       const message = error instanceof Error ? error.message : 'Unable to verify file existence.';
+                      pushLiveExecutionUpdate(`Pre-check failed ${action.type} ${actionPath}: ${message}`);
                       errors.push(`${actionPath}: ${message}`);
                       actionReceipts.push({
                         id: actionId,
@@ -3326,7 +3416,8 @@ export default function App() {
                   const noApprovals = runContext.approvalMode === 'none';
                   const autoApproved = standardApprovals && policy.requiresApproval && isLowRiskTextWriteAction(action);
 
-                  const requiresHardApproval = isDestructiveLocalAction(action.type) || policy.riskLevel === 'critical';
+                  const requiresHardApproval =
+                    isDestructiveLocalAction(action.type) || policy.riskLevel === 'critical' || action.type === 'list_dir';
                   const requiresApprovalByMode =
                     !noApprovals &&
                     (projectApprovals
@@ -3343,6 +3434,7 @@ export default function App() {
                         : summarizeActionPreview(action);
 
                     setCoworkRunStatus(`Awaiting approval for ${action.type} (${actionPath})...`);
+                    pushLiveExecutionUpdate(`Awaiting approval: ${action.type} ${actionPath}`);
                     setCoworkProgressStage('executing_workstreams', {
                       details: `Awaiting operator approval for ${action.type} on ${actionPath}.`,
                     });
@@ -3371,6 +3463,7 @@ export default function App() {
 
                     if (!decision.approved) {
                       const reason = decision.reason || 'Rejected by operator.';
+                      pushLiveExecutionUpdate(`Rejected by operator: ${action.type} ${actionPath}`);
                       const code = decision.expired ? 'APPROVAL_TIMEOUT' : 'REJECTED_BY_OPERATOR';
                       errors.push(`${actionPath}: ${reason}`);
                       if (taskEntry) {
@@ -3391,6 +3484,7 @@ export default function App() {
                       continue;
                     }
 
+                    pushLiveExecutionUpdate(`Approved by operator: ${action.type} ${actionPath}`);
                     previews.push(`Approved ${action.type} -> ${actionPath}`);
                     if (taskEntry) {
                       setCoworkTaskStatus(taskEntry.taskId, 'approved', {
@@ -3399,6 +3493,7 @@ export default function App() {
                       });
                     }
                   } else if (autoApproved) {
+                    pushLiveExecutionUpdate(`Auto-approved: ${action.type} ${actionPath}`);
                     previews.push(`Auto-approved ${action.type} -> ${actionPath}`);
                     if (taskEntry) {
                       setCoworkTaskStatus(taskEntry.taskId, 'approved', {
@@ -3430,6 +3525,7 @@ export default function App() {
                         action.content,
                         createFileOverwriteApproved ? true : action.overwrite,
                       );
+                      pushLiveExecutionUpdate(`Created file: ${result.filePath}`);
                       actionReceipts.push({
                         id: actionId,
                         type: 'create_file',
@@ -3456,6 +3552,7 @@ export default function App() {
                       }
 
                       const result = await bridge.appendFileInFolder(executionRootPath, executionPath, action.content);
+                      pushLiveExecutionUpdate(`Appended file: ${result.filePath}`);
                       actionReceipts.push({
                         id: actionId,
                         type: 'append_file',
@@ -3483,6 +3580,7 @@ export default function App() {
                       }
 
                       const result = await bridge.readFileInFolder(executionRootPath, executionPath);
+                      pushLiveExecutionUpdate(`Read file: ${result.filePath}`);
                       actionReceipts.push({
                         id: actionId,
                         type: 'read_file',
@@ -3512,12 +3610,64 @@ export default function App() {
                       }
 
                       const result = await bridge.listDirInFolder(executionRootPath, executionPath || '');
+                      pushLiveExecutionUpdate(`Listed directory: ${action.path || '.'} (${result.items.length} items)`);
+                      const directories = result.items
+                        .filter((item) => item.kind === 'directory')
+                        .map((item) => item.path)
+                        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+                      const files = result.items
+                        .filter((item) => item.kind === 'file')
+                        .map((item) => item.path)
+                        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+                      const MAX_LIST_SECTION_ITEMS = 80;
+                      const visibleDirectories = directories.slice(0, MAX_LIST_SECTION_ITEMS);
+                      const visibleFiles = files.slice(0, MAX_LIST_SECTION_ITEMS);
+                      const hiddenDirectoryCount = Math.max(0, directories.length - visibleDirectories.length);
+                      const hiddenFileCount = Math.max(0, files.length - visibleFiles.length);
+                      const totalHiddenCount = hiddenDirectoryCount + hiddenFileCount;
+
+                      const directoryList =
+                        visibleDirectories.length > 0
+                          ? visibleDirectories.map((entry) => `- \`${entry}/\``).join('\n')
+                          : '- _(none)_';
+                      const fileList =
+                        visibleFiles.length > 0
+                          ? visibleFiles.map((entry) => `- \`${entry}\``).join('\n')
+                          : '- _(none)_';
+                      const hiddenNote =
+                        result.truncated || totalHiddenCount > 0
+                          ? `\n_Showing partial results (${totalHiddenCount > 0 ? `${totalHiddenCount} hidden` : 'truncated by backend'})._`
+                          : '';
+
+                      const listSummary = [
+                        `**Folders:** ${directories.length}`,
+                        `**Files:** ${files.length}`,
+                      ].join(' · ');
+                      const listedBody = [
+                        listSummary,
+                        '',
+                        '##### Folders',
+                        directoryList,
+                        '',
+                        '##### Files',
+                        fileList,
+                        hiddenNote,
+                      ]
+                        .filter(Boolean)
+                        .join('\n');
                       actionReceipts.push({
                         id: actionId,
                         type: 'list_dir',
                         path: action.path || '.',
                         status: 'ok',
-                        message: `Listed ${result.items.length} items${result.truncated ? ' (truncated)' : ''}`,
+                        message: [
+                          `Listed ${result.items.length} items${result.truncated ? ' (truncated)' : ''}`,
+                          '',
+                          listedBody,
+                        ]
+                          .filter(Boolean)
+                          .join('\n'),
                       });
                       previews.push(`# list_dir ${action.path || '.'}`);
                       previews.push(...result.items.slice(0, 20).map((item) => `${item.kind === 'directory' ? '[dir]' : '[file]'} ${item.path}`));
@@ -3543,6 +3693,7 @@ export default function App() {
                       }
 
                       const result = await bridge.existsInFolder(executionRootPath, executionPath);
+                      pushLiveExecutionUpdate(`Checked exists: ${result.path} => ${result.exists ? result.kind : 'none'}`);
                       actionReceipts.push({
                         id: actionId,
                         type: 'exists',
@@ -3569,6 +3720,7 @@ export default function App() {
                       }
 
                       const result = await bridge.renameInFolder(rootPath, action.path, action.newPath);
+                      pushLiveExecutionUpdate(`Renamed: ${result.oldPath} -> ${result.newPath}`);
                       actionReceipts.push({
                         id: actionId,
                         type: 'rename',
@@ -3596,6 +3748,7 @@ export default function App() {
                       }
 
                       const result = await bridge.deleteInFolder(rootPath, action.path);
+                      pushLiveExecutionUpdate(`Deleted: ${result.path}`);
                       actionReceipts.push({
                         id: actionId,
                         type: 'delete',
@@ -3624,6 +3777,7 @@ export default function App() {
 
                       const timeoutMs = typeof action.timeoutMs === 'number' ? action.timeoutMs : 30_000;
                       const result = await bridge.shellExec(rootPath, action.command, timeoutMs);
+                      pushLiveExecutionUpdate(`Shell command ${result.exitCode === 0 ? 'completed' : 'failed'}: ${action.command}`);
                       const ok = result.exitCode === 0;
                       actionReceipts.push({
                         id: actionId,
@@ -3666,6 +3820,7 @@ export default function App() {
                       const headers: Record<string, string> = {};
                       if (typeof action.contentType === 'string') headers['Content-Type'] = action.contentType;
                       const result = await bridge.webFetch(action.url, { method, headers, body: action.body });
+                      pushLiveExecutionUpdate(`Fetched ${action.url} (${result.status})`);
                       const ok = result.status >= 200 && result.status < 400;
                       actionReceipts.push({
                         id: actionId,
@@ -3684,6 +3839,7 @@ export default function App() {
                     }
                   } catch (error) {
                     const message = error instanceof Error ? error.message : 'Unknown local file action error.';
+                    pushLiveExecutionUpdate(`Failed ${action.type} ${actionPath}: ${message}`);
                     const fullMessage = `${actionPath}: ${message}`;
                     errors.push(fullMessage);
                     actionReceipts.push({
@@ -3716,7 +3872,7 @@ export default function App() {
 
                 // Fire desktop notification when cowork task completes
                 if (bridge?.notify) {
-                  const title = errorCount > 0 ? 'Relay — Task completed with errors' : 'Relay — Task completed';
+                  const title = errorCount > 0 ? 'Relay â€” Task completed with errors' : 'Relay â€” Task completed';
                   const body = runContext.projectTitle
                     ? `${runContext.projectTitle}: ${okCount} action${okCount === 1 ? '' : 's'} executed`
                     : `${okCount} action${okCount === 1 ? '' : 's'} executed`;
@@ -3737,45 +3893,57 @@ export default function App() {
                 finalizeCoworkTaskRun(eventSessionKey || coworkSessionKeyRef.current, taskEntry.taskId);
 
                 if (bridge?.notify) {
-                  bridge.notify('Relay — Task completed', runContext.projectTitle || 'Cowork run finished.').catch(() => {});
+                  bridge.notify('Relay â€” Task completed', runContext.projectTitle || 'Cowork run finished.').catch(() => {});
                 }
               }
 
-              const noActionMessage: ChatMessage = {
-                id: `cowork-actions-missing-${runId}`,
-                role: 'system',
-                text: [
-                  'No executable relay_actions were found in the cowork final event.',
-                  runContext.projectTitle ? `Project: ${runContext.projectTitle}` : 'Project: (none)',
-                  `Folder: ${runContext.rootFolder || '(not set)'}`,
-                ].join('\n'),
-                meta: {
-                  kind: 'activity',
-                  items: [
-                    {
-                      id: `activity-no-actions-${runId}`,
-                      label: 'No executable relay_actions were found.',
-                      details: [
-                        runContext.projectTitle ? `Project: ${runContext.projectTitle}` : 'Project: (none)',
-                        `Folder: ${runContext.rootFolder || '(not set)'}`,
-                      ].join('\n'),
-                      tone: 'neutral',
-                    },
-                  ],
-                },
-              };
+              const activeCoworkSessionKey = eventSessionKey || coworkSessionKeyRef.current;
+              const sessionMessages = activeCoworkSessionKey ? coworkMessageCache.current.get(activeCoworkSessionKey) ?? [] : [];
+              const lastUserPrompt = [...sessionMessages]
+                .reverse()
+                .find((entry) => entry.role === 'user')
+                ?.text?.trim() ?? '';
+              const likelyFileOperationRequest =
+                /@project:"[^"]+"/i.test(lastUserPrompt) ||
+                /\b(file|files|folder|folders|directory|directories|create|write|edit|rename|delete|remove|read|list)\b/i.test(lastUserPrompt);
 
-              setCoworkMessages((current) => {
-                if (current.some((entry) => entry.id === noActionMessage.id)) {
-                  return current;
-                }
+              if (likelyFileOperationRequest) {
+                const noActionMessage: ChatMessage = {
+                  id: `cowork-actions-missing-${runId}`,
+                  role: 'system',
+                  text: [
+                    'No executable relay_actions were found in the cowork final event.',
+                    runContext.projectTitle ? `Project: ${runContext.projectTitle}` : 'Project: (none)',
+                    `Folder: ${runContext.rootFolder || '(not set)'}`,
+                  ].join('\n'),
+                  meta: {
+                    kind: 'activity',
+                    items: [
+                      {
+                        id: `activity-no-actions-${runId}`,
+                        label: 'No executable relay_actions were found.',
+                        details: [
+                          runContext.projectTitle ? `Project: ${runContext.projectTitle}` : 'Project: (none)',
+                          `Folder: ${runContext.rootFolder || '(not set)'}`,
+                        ].join('\n'),
+                        tone: 'neutral',
+                      },
+                    ],
+                  },
+                };
 
-                const next = [...current, noActionMessage];
-                if (eventSessionKey) {
-                  coworkMessageCache.current.set(eventSessionKey, next);
-                }
-                return next;
-              });
+                setCoworkMessages((current) => {
+                  if (current.some((entry) => entry.id === noActionMessage.id)) {
+                    return current;
+                  }
+
+                  const next = [...current, noActionMessage];
+                  if (eventSessionKey) {
+                    coworkMessageCache.current.set(eventSessionKey, next);
+                  }
+                  return next;
+                });
+              }
             }
             return;
           }
@@ -4307,11 +4475,13 @@ export default function App() {
         startedAt: Date.now(),
       });
       const relayFileInstruction = [
-        'If the user request involves local files/folders in any way, your response MUST be ONE JSON code block with relay_actions and no prose.',
+        'Only when the user explicitly requests local file/folder operations, your response MUST be ONE JSON code block with relay_actions and no prose.',
         '```json',
         '{"relay_actions":[{"id":"a1","type":"list_dir","path":"."},{"id":"a2","type":"create_file","path":"relative/path.ext","content":"file contents","overwrite":false},{"id":"a3","type":"append_file","path":"relative/path.ext","content":"more text"},{"id":"a4","type":"read_file","path":"relative/path.ext"},{"id":"a5","type":"exists","path":"relative/path.ext"},{"id":"a6","type":"rename","path":"old.ext","newPath":"new.ext"},{"id":"a7","type":"delete","path":"obsolete.ext"}]}',
         '```',
-        'If filenames are unknown, first emit a list_dir action and do not ask follow-up questions.',
+        'Never run discovery actions (list_dir/read_file/exists) only to gather context.',
+        'If filenames are unknown and the user explicitly asked to inspect/list/search files, first emit a list_dir action.',
+        'If file inspection was not explicitly requested, ask one short clarifying question instead of emitting relay_actions.',
         'When the prompt contains @project:"...": treat each referenced path as actionable filesystem context.',
         'For absolute referenced paths (e.g. C:/... or /...), use that exact absolute path in read-only actions (list_dir/read_file/exists).',
         'Do not claim a referenced @project path is inaccessible before attempting relay_actions for it.',
@@ -6119,7 +6289,7 @@ export default function App() {
       const speaker = m.role === 'user' ? 'You' : m.role === 'system' ? 'System' : 'Assistant';
       return `## ${speaker}\n\n${m.text}`;
     });
-    const markdown = `# Chat Export — ${new Date().toLocaleDateString()}\n\n${lines.join('\n\n---\n\n')}\n`;
+    const markdown = `# Chat Export â€” ${new Date().toLocaleDateString()}\n\n${lines.join('\n\n---\n\n')}\n`;
     const blob = new Blob([markdown], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -6530,6 +6700,9 @@ export default function App() {
           </main>
         </SidebarProvider>
       )}
+      {import.meta.env.DEV ? <Agentation /> : null}
     </div>
   );
 }
+
+

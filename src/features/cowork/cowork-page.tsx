@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Menu, MenuGroup, MenuItem } from '@/components/ui/menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { chatMarkdownComponents } from '@/lib/chat-markdown';
 import {
   approvalRiskClasses,
@@ -614,19 +615,30 @@ export function CoworkPage({
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-1 font-sans text-[12px] text-muted-foreground">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <div className="composer-dropdown relative inline-flex items-center">
-            <button
-              type="button"
-              className={`inline-flex h-6 items-center gap-1 rounded-md px-1.5 font-sans text-[11px] transition ${
-                openDropdown === 'approvals'
-                  ? 'bg-muted text-foreground'
-                  : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
-              }`}
-              onClick={() => setOpenDropdown((current) => (current === 'approvals' ? null : 'approvals'))}
-            >
-              <Shield className="h-3.5 w-3.5" />
-              <span>{approvalMode === 'project' ? 'Project' : approvalMode === 'none' ? 'No approvals' : 'Standard'}</span>
-              <ChevronDown className="h-3 w-3 opacity-80" />
-            </button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className={`inline-flex h-6 items-center gap-1 rounded-md px-1.5 font-sans text-[11px] transition ${
+                      openDropdown === 'approvals'
+                        ? 'bg-muted text-foreground'
+                        : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                    }`}
+                    onClick={() => setOpenDropdown((current) => (current === 'approvals' ? null : 'approvals'))}
+                  >
+                    <Shield className="h-3.5 w-3.5" />
+                    <span>{approvalMode === 'project' ? 'Project' : approvalMode === 'none' ? 'No approvals' : 'Standard'}</span>
+                    <ChevronDown className="h-3 w-3 opacity-80" />
+                  </button>
+                </TooltipTrigger>
+                {approvalMode === 'standard' ? (
+                  <TooltipContent>
+                    Standard approvals: asks for high-risk actions.
+                  </TooltipContent>
+                ) : null}
+              </Tooltip>
+            </TooltipProvider>
             {openDropdown === 'approvals' ? (
               <div className="absolute bottom-[calc(100%+0.3rem)] left-0 z-30 w-[176px] rounded-lg border border-border bg-popover p-1 shadow-xl">
                 <Menu>
