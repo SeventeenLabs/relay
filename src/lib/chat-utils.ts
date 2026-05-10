@@ -3,7 +3,7 @@
  * No React imports — safe to use anywhere.
  */
 import type { ChatActivityItem, ChatMessage } from '@/app-types';
-import { GatewayRequestError } from './openclaw-gateway-client';
+import { GatewayRequestError } from './hermes-gateway-client';
 
 /* ── Exported types ──────────────────────────────────────────────────────── */
 
@@ -24,6 +24,7 @@ export type RecentWorkspaceEntry = {
   label: string;
   sessionKey: string;
   kind: 'chat' | 'cowork';
+  updatedAt?: number;
 };
 
 export type RelayFileAction =
@@ -39,6 +40,14 @@ export type RelayFileAction =
       type: 'append_file';
       path: string;
       content: string;
+    }
+  | {
+      id: string | undefined;
+      type: 'replace_in_file';
+      path: string;
+      oldString: string;
+      newString: string;
+      replaceAll?: boolean;
     }
   | {
       id: string | undefined;
@@ -238,11 +247,8 @@ export function findMatchingSessionKey(sessionKeys: string[], requestedKey: stri
 /* ── Thread utilities ────────────────────────────────────────────────────── */
 
 export function deriveThreadTitleFromMessages(messages: ChatMessage[]): string {
-  const firstUserMessage = messages.find((message) => message.role === 'user');
-  if (!firstUserMessage) {
-    return '';
-  }
-  return toRecentSidebarLabel(firstUserMessage.text);
+  const firstUserMessage = messages.find((message) => message.role === 'user' && message.text.trim())?.text ?? '';
+  return toRecentSidebarLabel(firstUserMessage);
 }
 
 export function toFallbackThreadTitle(sessionKey: string, kind: 'chat' | 'cowork' = 'chat'): string {
@@ -344,6 +350,7 @@ export function toRecentSidebarItems(threads: ChatThread[], kind: 'chat' | 'cowo
       label: thread.title,
       sessionKey: thread.sessionKey,
       kind,
+      updatedAt: thread.updatedAt,
     }));
 }
 
@@ -411,6 +418,7 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
         if (
           type !== 'create_file' &&
           type !== 'append_file' &&
+          type !== 'replace_in_file' &&
           type !== 'read_file' &&
           type !== 'list_dir' &&
           type !== 'exists' &&
@@ -426,7 +434,7 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
         if (filePath && hasUnsafePathChars(filePath)) {
           return acc;
         }
-        if ((type === 'create_file' || type === 'append_file' || type === 'read_file' || type === 'exists' || type === 'delete') && !filePath) {
+        if ((type === 'create_file' || type === 'append_file' || type === 'replace_in_file' || type === 'read_file' || type === 'exists' || type === 'delete') && !filePath) {
           return acc;
         }
 
@@ -476,6 +484,31 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
 
         if (type === 'append_file') {
           acc.push({ id, type: 'append_file' as const, path: filePath, content });
+          return acc;
+        }
+
+        if (type === 'replace_in_file') {
+          const oldString = typeof record.oldString === 'string'
+            ? record.oldString
+            : typeof record.old_string === 'string'
+              ? record.old_string
+              : '';
+          const newString = typeof record.newString === 'string'
+            ? record.newString
+            : typeof record.new_string === 'string'
+              ? record.new_string
+              : '';
+          const replaceAll = typeof record.replaceAll === 'boolean'
+            ? record.replaceAll
+            : typeof record.replace_all === 'boolean'
+              ? record.replace_all
+              : undefined;
+
+          if (!filePath || !oldString) {
+            return acc;
+          }
+
+          acc.push({ id, type: 'replace_in_file' as const, path: filePath, oldString, newString, replaceAll });
           return acc;
         }
 

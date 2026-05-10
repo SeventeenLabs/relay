@@ -2,7 +2,6 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type {
   AppConfig,
   HealthCheckResult,
-  GatewayDiscoveryResult,
   LocalFileApplyResult,
   LocalFileAppendResult,
   LocalFileCreateResult,
@@ -11,6 +10,7 @@ import type {
   LocalFileListResult,
   LocalFileReadResult,
   LocalFileRenameResult,
+  LocalFileReplaceResult,
   LocalFileStatResult,
   LocalFilePlanAction,
   LocalFilePlanResult,
@@ -21,12 +21,16 @@ const api = {
   saveConfig: (config: AppConfig) => ipcRenderer.invoke('config:save', config) as Promise<AppConfig>,
   healthCheck: (baseUrl: string) =>
     ipcRenderer.invoke('backend:health-check', baseUrl) as Promise<HealthCheckResult>,
-  discoverGateway: () =>
-    ipcRenderer.invoke('gateway:discover') as Promise<GatewayDiscoveryResult>,
-  checkWorkspacePlugin: () =>
-    ipcRenderer.invoke('plugin:check-workspace') as Promise<{ installed: boolean; error?: string }>,
-  installWorkspacePlugin: () =>
-    ipcRenderer.invoke('plugin:install-workspace') as Promise<{ ok: boolean; output?: string; error?: string }>,
+  backendHttpRequest: (payload: { baseUrl: string; path: string; method?: string; token?: string; body?: string }) =>
+    ipcRenderer.invoke('backend:http-request', payload) as Promise<{ ok: boolean; status: number; statusText: string; body: string }>,
+  hermesModelOptions: (payload?: { gatewayUrl?: string }) =>
+    ipcRenderer.invoke('hermes:model-options', payload) as Promise<{ providers: Array<{ slug: string; name: string; is_current?: boolean; models: string[] }>; model?: string; provider?: string }>,
+  hermesSetMainModel: (payload: { gatewayUrl?: string; provider: string; model: string }) =>
+    ipcRenderer.invoke('hermes:model-set-main', payload) as Promise<{ ok: boolean; provider: string; model: string; confirmedProvider?: string; confirmedModel?: string }>,
+  hermesServiceStatus: () =>
+    ipcRenderer.invoke('hermes:service-status') as Promise<{ gateway: boolean; apiServer: boolean; dashboard: boolean }>,
+  hermesStartAllServices: () =>
+    ipcRenderer.invoke('hermes:start-all-services') as Promise<{ ok: boolean; gateway: boolean; apiServer: boolean; dashboard: boolean; message?: string }>,
   minimizeWindow: () => ipcRenderer.invoke('window:minimize') as Promise<void>,
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggle-maximize') as Promise<boolean>,
   isWindowMaximized: () => ipcRenderer.invoke('window:is-maximized') as Promise<boolean>,
@@ -57,6 +61,14 @@ const api = {
       relativePath,
       content,
     }) as Promise<LocalFileAppendResult>,
+  replaceInFile: (rootPath: string, relativePath: string, oldString: string, newString: string, replaceAll?: boolean) =>
+    ipcRenderer.invoke('local:replace-in-file', {
+      rootPath,
+      relativePath,
+      oldString,
+      newString,
+      replaceAll,
+    }) as Promise<LocalFileReplaceResult>,
   readFileInFolder: (rootPath: string, relativePath: string) =>
     ipcRenderer.invoke('local:read-file-in-folder', {
       rootPath,

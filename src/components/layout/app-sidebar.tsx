@@ -2,7 +2,6 @@
 import type { CoworkProject, MessageUsage } from '@/app-types';
 import { formatCostUsd, formatTokenCount } from '@/lib/token-usage';
 import {
-  Brain,
   CalendarClock,
   Check,
   ChevronDown,
@@ -12,20 +11,22 @@ import {
   Download,
   FolderOpen,
   Globe,
-  HardDrive,
   HelpCircle,
   KeyRound,
   Link2,
   LogOut,
   MessageSquareText,
+  MoreHorizontal,
   Palette,
   Pencil,
+  Pin,
   Play,
   Plus,
+  SlidersHorizontal,
+  SquarePen,
   Search,
   Settings,
   Shield,
-  ShieldAlert,
   Trash2,
   User,
   Wifi,
@@ -67,6 +68,7 @@ type RecentSidebarItem = {
   label: string;
   sessionKey: string;
   kind: 'chat' | 'cowork';
+  updatedAt?: number;
 };
 
 type ScheduledSidebarItem = {
@@ -86,7 +88,8 @@ type AppSidebarProps = {
   guestMode: boolean;
   language: AppLanguage;
   settingsSection: SettingsSection;
-  recentItems: RecentSidebarItem[];
+  chatRecentItems: RecentSidebarItem[];
+  projectRecentItemsByProjectId: Record<string, RecentSidebarItem[]>;
   coworkProjects: CoworkProject[];
   activeCoworkProjectId: string;
   workingFolder: string;
@@ -115,16 +118,9 @@ type AppSidebarProps = {
 
 const coworkNavItems = [
   { label: 'Search', icon: Search },
+  { label: 'Plugins', icon: Globe },
+  { label: 'Automations', icon: CalendarClock },
 ] as const;
-
-const projectFolderNavItems: { label: string; icon: typeof FolderOpen; page: AppPage }[] = [
-  { label: 'Project Folder', icon: FolderOpen, page: 'local-files' },
-  { label: 'Activity', icon: Zap, page: 'activity' },
-  { label: 'Memory', icon: Brain, page: 'memory' },
-  { label: 'Schedule', icon: CalendarClock, page: 'scheduled' },
-  { label: 'Approvals', icon: ShieldAlert, page: 'approvals' },
-  { label: 'Safety', icon: Shield, page: 'safety' },
-];
 
 const settingsNavItems: { label: SettingsSection; icon: typeof User }[] = [
   { label: 'Profile', icon: User },
@@ -158,7 +154,8 @@ export function AppSidebar({
   guestMode,
   language,
   settingsSection,
-  recentItems,
+  chatRecentItems,
+  projectRecentItemsByProjectId,
   coworkProjects,
   activeCoworkProjectId,
   workingFolder,
@@ -187,21 +184,15 @@ export function AppSidebar({
   const t = (en: string, de: string) => (language === 'de' ? de : en);
   const isChatView = false;
   const isSettingsView = activePage === 'settings';
-  const isWorkspacePage = ['project', 'files', 'local-files', 'activity', 'memory', 'scheduled', 'approvals', 'safety'].includes(activePage);
+  const isWorkspacePage = ['cowork', 'project'].includes(activePage);
   const compact = !sidebarOpen;
   const navItems = coworkNavItems;
-  const safeRecentItems = recentItems ?? [];
+  const safeChatRecentItems = chatRecentItems ?? [];
   const safeScheduledItems = scheduledItems ?? [];
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
-  const [createProjectOpen, setCreateProjectOpen] = useState(false);
-  const [createProjectStep, setCreateProjectStep] = useState<'chooser' | 'form'>('chooser');
-  const [createProjectMode, setCreateProjectMode] = useState<'scratch' | 'existing'>('scratch');
-  const [projectTitleDraft, setProjectTitleDraft] = useState('');
-  const [projectFolderDraft, setProjectFolderDraft] = useState('');
-  const [projectDescriptionDraft, setProjectDescriptionDraft] = useState('');
-  const [projectInstructionsDraft, setProjectInstructionsDraft] = useState('');
-  const [projectFolderBrowsing, setProjectFolderBrowsing] = useState(false);
+  const [projectCreateMenuOpen, setProjectCreateMenuOpen] = useState(false);
+  const projectCreateMenuRef = useRef<HTMLDivElement | null>(null);
   const [renameProjectOpen, setRenameProjectOpen] = useState(false);
   const [renameProjectId, setRenameProjectId] = useState('');
   const [renameProjectTitleDraft, setRenameProjectTitleDraft] = useState('');
@@ -209,6 +200,7 @@ export function AppSidebar({
   const [renameProjectInstructionsDraft, setRenameProjectInstructionsDraft] = useState('');
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [deleteProjectId, setDeleteProjectId] = useState('');
+  const [projectRowMenuId, setProjectRowMenuId] = useState<string | null>(null);
   const [expandedProjectId, setExpandedProjectId] = useState(activeCoworkProjectId);
   const languageMenuCloseTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
@@ -234,6 +226,16 @@ export function AppSidebar({
     { value: 'en', label: 'English (United States)' },
     { value: 'de', label: 'Deutsch (Deutschland)' },
   ];
+  const formatRelativeAge = (updatedAt?: number) => {
+    if (!updatedAt) return '';
+    const deltaMs = Math.max(0, Date.now() - updatedAt);
+    const hours = Math.max(1, Math.floor(deltaMs / 3_600_000));
+    if (hours < 24) return language === 'de' ? `${hours} Std.` : `${hours}h`;
+    const days = Math.max(1, Math.floor(hours / 24));
+    if (days < 7) return language === 'de' ? `${days} Tag(e)` : `${days}d`;
+    const weeks = Math.max(1, Math.floor(days / 7));
+    return language === 'de' ? `${weeks} W` : `${weeks}w`;
+  };
 
   const safeCoworkProjects = coworkProjects ?? [];
   const renameProjectTarget = safeCoworkProjects.find((project) => project.id === renameProjectId) ?? null;
@@ -273,6 +275,21 @@ export function AppSidebar({
   }, [profileMenuOpen]);
 
   useEffect(() => {
+    if (!projectRowMenuId) {
+      return;
+    }
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('[data-project-row-menu="true"]')) {
+        return;
+      }
+      setProjectRowMenuId(null);
+    };
+    window.addEventListener('mousedown', handleClick);
+    return () => window.removeEventListener('mousedown', handleClick);
+  }, [projectRowMenuId]);
+
+  useEffect(() => {
     return () => {
       if (languageMenuCloseTimerRef.current) {
         clearTimeout(languageMenuCloseTimerRef.current);
@@ -298,51 +315,52 @@ export function AppSidebar({
     }, 130);
   };
 
-  const handleOpenCreateProject = () => {
-    setCreateProjectStep('chooser');
-    setCreateProjectMode('scratch');
-    setProjectTitleDraft('');
-    setProjectFolderDraft(workingFolder || '');
-    setProjectDescriptionDraft('');
-    setProjectInstructionsDraft('');
-    setCreateProjectOpen(true);
+  const toProjectNameFromFolder = (folderPath: string) => {
+    const normalized = folderPath.replace(/[\\/]+$/, '');
+    const parts = normalized.split(/[\\/]/).filter(Boolean);
+    return parts[parts.length - 1] || `project-${Date.now()}`;
   };
 
-  const handleChooseCreateProjectMode = (mode: 'scratch' | 'existing') => {
-    setCreateProjectMode(mode);
-    setCreateProjectStep('form');
-    if (mode === 'scratch') {
-      setProjectFolderDraft(workingFolder || '');
-    }
-  };
-
-  const handleConfirmCreateProject = () => {
-    const trimmedTitle = projectTitleDraft.trim();
-    const trimmedFolder = projectFolderDraft.trim();
-    if (!trimmedTitle || !trimmedFolder) {
+  const handleCreateProjectFromExistingFolder = async () => {
+    setProjectCreateMenuOpen(false);
+    const selected = await onPickWorkingFolder();
+    const folder = selected?.trim();
+    if (!folder) {
       return;
     }
-    const trimmedDescription = projectDescriptionDraft.trim();
-    const trimmedInstructions = projectInstructionsDraft.trim();
-    onCreateCoworkProject(trimmedTitle, trimmedFolder, trimmedDescription || undefined, trimmedInstructions || undefined);
-    setCreateProjectOpen(false);
-    setProjectTitleDraft('');
-    setProjectFolderDraft('');
-    setProjectDescriptionDraft('');
-    setProjectInstructionsDraft('');
+    onCreateCoworkProject(toProjectNameFromFolder(folder), folder);
   };
 
-  const handleBrowseProjectFolder = async () => {
-    setProjectFolderBrowsing(true);
-    try {
-      const selected = await onPickWorkingFolder();
-      if (selected?.trim()) {
-        setProjectFolderDraft(selected.trim());
-      }
-    } finally {
-      setProjectFolderBrowsing(false);
+  const handleCreateProjectFromScratch = async () => {
+    setProjectCreateMenuOpen(false);
+    const currentFolder = workingFolder.trim();
+    if (currentFolder) {
+      onCreateCoworkProject(`new-${toProjectNameFromFolder(currentFolder)}`, currentFolder);
+      return;
     }
+    const selected = await onPickWorkingFolder();
+    const folder = selected?.trim();
+    if (!folder) {
+      return;
+    }
+    onCreateCoworkProject(`new-${toProjectNameFromFolder(folder)}`, folder);
   };
+
+  useEffect(() => {
+    if (!projectCreateMenuOpen) {
+      return;
+    }
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!projectCreateMenuRef.current || !(event.target instanceof Node)) {
+        return;
+      }
+      if (!projectCreateMenuRef.current.contains(event.target)) {
+        setProjectCreateMenuOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => window.removeEventListener('mousedown', handleClickOutside);
+  }, [projectCreateMenuOpen]);
 
   const handleOpenRenameProject = (project: CoworkProject) => {
     setRenameProjectId(project.id);
@@ -387,7 +405,7 @@ export function AppSidebar({
 
   return (
     <Sidebar
-      className="w-full rounded-none border-y-0 border-l-0 transition-all duration-200"
+      className="w-full border-y-0 border-l-0 transition-all duration-200 [&_button]:border-0 [&_button]:shadow-none"
     >
       <SidebarContent>
         {isSettingsView ? (
@@ -426,12 +444,12 @@ export function AppSidebar({
                     <SidebarMenuButton
                       type="button"
                       className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
-                      title="New Run"
-                      aria-label="Start a new run"
-                      onClick={onStartNewTask}
+                      title="New Chat"
+                      aria-label="Start a new chat"
+                      onClick={activePage === 'cowork' ? onStartNewTask : onStartNewChat}
                     >
                       <Plus data-icon="inline-start" />
-                      {!compact && <span className="min-w-0 flex-1 truncate">New Run</span>}
+                      {!compact && <span className="min-w-0 flex-1 truncate">Neuer Chat</span>}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   {navItems.map((item) => (
@@ -459,115 +477,51 @@ export function AppSidebar({
               </SidebarGroupContent>
             </SidebarGroup>
 
-            {/* Project and global pages */}
-            {!isChatView && (
-              <>
-                {!compact && (
-                  <SidebarGroup className="mt-3">
-                    <SidebarGroupLabel>Workspace</SidebarGroupLabel>
-                    <SidebarGroupContent>
-                      <SidebarMenu>
-                        <SidebarMenuItem>
-                          <SidebarMenuButton
-                            type="button"
-                            active={activePage === 'files'}
-                            aria-current={activePage === 'files' ? 'page' : undefined}
-                            onClick={() => onSelectPage('files')}
-                            className="gap-2 font-sans text-[13px]"
-                            title="Workspace"
-                          >
-                            <HardDrive data-icon="inline-start" />
-                            <span className="min-w-0 flex-1 truncate">Workspace</span>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      </SidebarMenu>
-                    </SidebarGroupContent>
-                  </SidebarGroup>
-                )}
-              </>
-            )}
-
-            {!compact && (
-              <SidebarGroup className="mt-3 grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-                <SidebarGroupLabel>Recents</SidebarGroupLabel>
-                <SidebarGroupContent className="min-h-0">
-                  <ScrollArea className="h-full min-h-0">
-                    <SidebarMenu className="pr-0.5">
-                      {safeRecentItems.length === 0 ? (
-                        <SidebarMenuItem>
-                          <SidebarMenuButton type="button" className="w-full justify-start truncate font-sans text-[12px] text-muted-foreground" disabled>
-                            No recent runs yet
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ) : (
-                        safeRecentItems.map((item) => (
-                          <SidebarMenuItem key={item.id}>
-                            <div className="group grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-1">
-                              <SidebarMenuButton
-                                type="button"
-                                active={
-                                  item.kind === 'cowork' && item.sessionKey === activeCoworkSessionKey
-                                }
-                                aria-current={
-                                  item.kind === 'cowork' && item.sessionKey === activeCoworkSessionKey
-                                    ? 'page'
-                                    : undefined
-                                }
-                                aria-label={`Open task ${item.label}`}
-                                className="min-w-0 w-full gap-2 font-sans text-[12px]"
-                                title={item.label}
-                                onClick={() => onSelectRecentItem(item)}
-                              >
-                                <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-                                  Task
-                                </span>
-                                <span className="block min-w-0 flex-1 truncate">{item.label}</span>
-                              </SidebarMenuButton>
-                              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="ghost"
-                                  className="size-6"
-                                  title="Rename task"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    onRenameRecentItem(item);
-                                  }}
-                                >
-                                  <Pencil className="size-3.5" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="ghost"
-                                  className="size-6 text-destructive hover:text-destructive"
-                                  title="Delete task"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    onDeleteRecentItem(item);
-                                  }}
-                                >
-                                  <Trash2 className="size-3.5" />
-                                </Button>
-                              </div>
-                            </div>
-                          </SidebarMenuItem>
-                        ))
-                      )}
-                    </SidebarMenu>
-                  </ScrollArea>
-                </SidebarGroupContent>
-              </SidebarGroup>
-            )}
-
             {!isChatView && !compact && (
               <SidebarGroup className="mt-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-                <div className="flex items-center justify-between px-2 pb-1">
+                <div className="group relative flex items-center justify-between px-2 pb-1">
                   <SidebarGroupLabel className="px-0">Projects</SidebarGroupLabel>
-                  <Button type="button" size="icon" variant="ghost" className="size-7" onClick={handleOpenCreateProject} title="Add project">
-                    <Plus className="size-4" />
-                  </Button>
+                  <div ref={projectCreateMenuRef} className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 border-0 bg-transparent shadow-none hover:bg-[#232c3a]"
+                      title="Project options"
+                    >
+                      <SlidersHorizontal className="size-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 border-0 bg-transparent shadow-none hover:bg-[#232c3a]"
+                      onClick={() => setProjectCreateMenuOpen((current) => !current)}
+                      title="Add project"
+                    >
+                      <Plus className="size-4" />
+                    </Button>
+                    {projectCreateMenuOpen ? (
+                      <div className="absolute top-[calc(100%-0.1rem)] right-0 z-50 w-56 rounded-2xl border border-border bg-popover p-1.5 shadow-xl">
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left font-sans text-[13px] hover:bg-muted"
+                          onClick={() => void handleCreateProjectFromScratch()}
+                        >
+                          <FolderOpen className="size-4 text-muted-foreground" />
+                          <span>Von vorne anfangen</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left font-sans text-[13px] hover:bg-muted"
+                          onClick={() => void handleCreateProjectFromExistingFolder()}
+                        >
+                          <FolderOpen className="size-4 text-muted-foreground" />
+                          <span>Vorhandenen Ordner verwenden</span>
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
                 <SidebarGroupContent className="min-h-0">
                   <ScrollArea className="h-full min-h-0">
@@ -579,103 +533,199 @@ export function AppSidebar({
                           </SidebarMenuButton>
                         </SidebarMenuItem>
                       ) : (
-                        safeCoworkProjects.map((project) => (
+                        safeCoworkProjects.map((project) => {
+                          const projectChats = (projectRecentItemsByProjectId[project.id] ?? []).slice(0, 6);
+                          const hasProjectChats = projectChats.length > 0;
+                          const isExpanded = expandedProjectId === project.id;
+                          return (
                           <SidebarMenuItem key={project.id}>
-                            <div className="group rounded-xl border border-border/70 bg-card/40 px-1 py-1">
-                              <div className="flex items-center gap-1">
+                            <div className="group rounded-xl px-1 py-1">
+                              <div className="flex items-center gap-1 rounded-lg px-1 py-0.5 transition-colors hover:bg-[#232c3a]">
                                 <SidebarMenuButton
                                   type="button"
-                                  active={project.id === activeCoworkProjectId}
+                                  active={false}
                                   aria-current={project.id === activeCoworkProjectId ? 'page' : undefined}
                                   data-testid={`project-select-${project.id}`}
-                                  className="min-w-0 w-full gap-2 font-sans text-[12px]"
-                                  title={`${project.name}${project.description ? ` - ${project.description}` : ''} (${project.workspaceFolder})`}
+                                  className="min-w-0 w-full gap-2 rounded-lg px-2 py-1.5 font-sans text-[12px] text-foreground/95 transition-colors hover:bg-transparent data-[active=true]:bg-transparent"
                                   onClick={() => {
                                     onSelectCoworkProject(project.id);
-                                    onSelectPage('project');
+                                    onSelectPage('cowork');
+                                    if (!hasProjectChats) {
+                                      return;
+                                    }
                                     setExpandedProjectId((current) => (current === project.id ? '' : project.id));
                                   }}
                                 >
-                                  {expandedProjectId === project.id ? (
-                                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                                  ) : (
-                                    <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-                                  )}
+                                  <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
                                   <span className="block min-w-0 flex-1 truncate">{project.name}</span>
                                 </SidebarMenuButton>
-                                <div className="flex shrink-0 items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                                <div data-project-row-menu="true" className="relative flex shrink-0 items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
                                   <Button
                                     type="button"
                                     size="icon"
                                     variant="ghost"
-                                    className="size-6"
-                                    title={`New task in ${project.name}`}
+                                    className="size-6 hover:bg-transparent"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setProjectRowMenuId((current) => (current === project.id ? null : project.id));
+                                    }}
+                                  >
+                                    <MoreHorizontal className="size-3.5" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="size-6 hover:bg-transparent"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       onSelectCoworkProject(project.id);
                                       onStartNewTask();
                                     }}
                                   >
-                                    <Play className="size-3.5" />
+                                    <SquarePen className="size-3.5" />
                                   </Button>
-                                  <Button
-                                    type="button"
-                                    size="icon"
-                                    variant="ghost"
-                                    className="size-6"
-                                    data-testid={`project-rename-${project.id}`}
-                                    title={`Rename project ${project.name}`}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      handleOpenRenameProject(project);
-                                    }}
-                                  >
-                                    <Pencil className="size-3.5" />
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    size="icon"
-                                    variant="ghost"
-                                    className="size-6 text-destructive hover:text-destructive"
-                                    data-testid={`project-delete-${project.id}`}
-                                    title={`Delete project ${project.name}`}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      handleOpenDeleteProject(project);
-                                    }}
-                                  >
-                                    <Trash2 className="size-3.5" />
-                                  </Button>
+                                  {projectRowMenuId === project.id ? (
+                                    <div data-project-row-menu="true" className="absolute top-[calc(100%+0.2rem)] right-0 z-50 w-40 rounded-xl border border-border bg-popover p-1 shadow-lg">
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-muted"
+                                        data-testid={`project-rename-${project.id}`}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setProjectRowMenuId(null);
+                                          handleOpenRenameProject(project);
+                                        }}
+                                      >
+                                        <Pencil className="size-3.5" />
+                                        Rename
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
+                                        data-testid={`project-delete-${project.id}`}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setProjectRowMenuId(null);
+                                          handleOpenDeleteProject(project);
+                                        }}
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                        Delete
+                                      </button>
+                                    </div>
+                                  ) : null}
                                 </div>
                               </div>
 
-                              {expandedProjectId === project.id && (
-                                <div className="mt-1 border-l border-border/70 pl-2">
-                                  <SidebarMenu>
-                                    {projectFolderNavItems.map((item) => (
-                                      <SidebarMenuItem key={`${project.id}-${item.page}`}>
-                                        <SidebarMenuButton
+                              {hasProjectChats && isExpanded ? (
+                                <div className="mt-1 pb-1">
+                                  <div className="grid gap-0.5">
+                                    {projectChats.map((item) => {
+                                      const isActiveCoworkItem =
+                                        activePage === 'cowork'
+                                        && item.sessionKey.trim().length > 0
+                                        && item.sessionKey === activeCoworkSessionKey;
+                                      return (
+                                      <div key={item.id} className="group/item relative">
+                                        <button
                                           type="button"
-                                          active={project.id === activeCoworkProjectId && activePage === item.page}
-                                          aria-current={project.id === activeCoworkProjectId && activePage === item.page ? 'page' : undefined}
-                                          className="gap-2 font-sans text-[12px]"
-                                          title={`${item.label} Â· ${project.name}`}
-                                          onClick={() => {
-                                            onSelectCoworkProject(project.id);
-                                            onSelectPage(item.page);
+                                          className={`flex w-full items-center justify-between rounded-xl py-1.5 pl-8 pr-2 text-left font-sans text-[12px] transition-colors ${
+                                            isActiveCoworkItem ? 'bg-[#2b3444] text-foreground' : 'text-foreground/90 hover:bg-[#232c3a]'
+                                          }`}
+                                          onClick={() => onSelectRecentItem(item)}
+                                        >
+                                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                          <span className="ml-2 flex shrink-0 items-center gap-2">
+                                            {typeof item.updatedAt === 'number' ? (
+                                              <span className="text-[11px] text-muted-foreground">{formatRelativeAge(item.updatedAt)}</span>
+                                            ) : null}
+                                            {isActiveCoworkItem ? <span className="h-2 w-2 rounded-full border border-border bg-muted-foreground/40" /> : null}
+                                          </span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          aria-label="Pin chat"
+                                          title="Pin chat"
+                                          className="absolute left-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground/70 opacity-0 transition-opacity hover:text-foreground group-hover/item:opacity-100 focus-visible:opacity-100"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
                                           }}
                                         >
-                                          <item.icon data-icon="inline-start" className="size-3.5" />
-                                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                                        </SidebarMenuButton>
-                                      </SidebarMenuItem>
-                                    ))}
-                                  </SidebarMenu>
+                                          <Pin className="size-3" />
+                                        </button>
+                                      </div>
+                                    )})}
+                                  </div>
                                 </div>
-                              )}
+                              ) : null}
                             </div>
                           </SidebarMenuItem>
-                        ))
+                        )})
+                      )}
+                    </SidebarMenu>
+                  </ScrollArea>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            )}
+
+            {!compact && (
+              <SidebarGroup className="mt-3 grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+                <div className="group flex items-center justify-between px-2 pb-1">
+                  <SidebarGroupLabel className="px-0">Chats</SidebarGroupLabel>
+                  <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 border-0 bg-transparent shadow-none hover:bg-[#232c3a]"
+                      title="Filter chats"
+                    >
+                      <SlidersHorizontal className="size-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 border-0 bg-transparent shadow-none hover:bg-[#232c3a]"
+                      title="New chat"
+                      onClick={onStartNewChat}
+                    >
+                      <SquarePen className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+                <SidebarGroupContent className="min-h-0">
+                  <ScrollArea className="h-full min-h-0">
+                    <SidebarMenu className="pr-0.5">
+                      {safeChatRecentItems.length === 0 ? (
+                        <SidebarMenuItem>
+                          <SidebarMenuButton type="button" className="w-full justify-start truncate font-sans text-[12px] text-muted-foreground" disabled>
+                            No chats yet
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ) : (
+                        safeChatRecentItems.map((item) => {
+                          const isActiveChatItem =
+                            activePage === 'chat'
+                            && item.sessionKey.trim().length > 0
+                            && item.sessionKey === activeSessionKey;
+                          return (
+                          <SidebarMenuItem key={item.id}>
+                            <button
+                              type="button"
+                              className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left font-sans text-[12px] transition-colors ${
+                                isActiveChatItem ? 'bg-[#2b3444] text-foreground' : 'text-foreground/90 hover:bg-[#232c3a]'
+                              }`}
+                              onClick={() => onSelectRecentItem(item)}
+                            >
+                              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                              {typeof item.updatedAt === 'number' ? (
+                                <span className="shrink-0 pl-2 text-[11px] text-muted-foreground">{formatRelativeAge(item.updatedAt)}</span>
+                              ) : null}
+                            </button>
+                          </SidebarMenuItem>
+                        )})
                       )}
                     </SidebarMenu>
                   </ScrollArea>
@@ -684,124 +734,6 @@ export function AppSidebar({
             )}
           </>
         )}
-
-        <Dialog
-          open={createProjectOpen}
-          onOpenChange={(nextOpen) => {
-            setCreateProjectOpen(nextOpen);
-            if (!nextOpen) {
-              setCreateProjectStep('chooser');
-              setCreateProjectMode('scratch');
-              setProjectTitleDraft('');
-              setProjectFolderDraft('');
-              setProjectDescriptionDraft('');
-              setProjectInstructionsDraft('');
-            }
-          }}
-        >
-          <DialogContent>
-            {createProjectStep === 'chooser' ? (
-              <>
-                <DialogHeader>
-                  <DialogTitle>Create a new project</DialogTitle>
-                  <DialogDescription>
-                    A dedicated place for ongoing work, where context builds over time.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-2">
-                  <button
-                    type="button"
-                    className="rounded-xl border border-border bg-card px-3 py-3 text-left transition-colors hover:bg-muted/60"
-                    onClick={() => handleChooseCreateProjectMode('scratch')}
-                    data-testid="create-project-mode-scratch"
-                  >
-                    <p className="font-sans text-sm font-medium text-foreground">Start from scratch</p>
-                    <p className="font-sans text-xs text-muted-foreground">Set up a new folder with instructions and files.</p>
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-xl border border-border bg-card px-3 py-3 text-left transition-colors hover:bg-muted/60"
-                    onClick={() => handleChooseCreateProjectMode('existing')}
-                    data-testid="create-project-mode-existing"
-                  >
-                    <p className="font-sans text-sm font-medium text-foreground">Use an existing folder</p>
-                    <p className="font-sans text-xs text-muted-foreground">Bind an existing local folder as your project root.</p>
-                  </button>
-                </div>
-                <DialogFooter>
-                  <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-                </DialogFooter>
-              </>
-            ) : (
-              <>
-                <DialogHeader>
-                  <DialogTitle>Start a new project</DialogTitle>
-                  <DialogDescription>
-                    Configure name, instructions, and location for this project workspace.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-3">
-                  <Input
-                    value={projectTitleDraft}
-                    onChange={(event) => setProjectTitleDraft(event.target.value)}
-                    placeholder="Project name"
-                    autoFocus
-                  />
-                  <Textarea
-                    value={projectDescriptionDraft}
-                    onChange={(event) => setProjectDescriptionDraft(event.target.value)}
-                    placeholder="Project description (what this project is about)"
-                    rows={2}
-                    className="font-sans text-sm"
-                  />
-                  <Textarea
-                    value={projectInstructionsDraft}
-                    onChange={(event) => setProjectInstructionsDraft(event.target.value)}
-                    placeholder="Project instructions for cowork runs (role, tone, constraints, output format)"
-                    rows={4}
-                    className="font-sans text-sm"
-                  />
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
-                    <Input
-                      value={projectFolderDraft}
-                      onChange={(event) => setProjectFolderDraft(event.target.value)}
-                      placeholder="Choose project location"
-                    />
-                    <Button type="button" size="sm" variant="outline" onClick={() => setProjectFolderDraft(workingFolder || '')}>
-                      Use current
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void handleBrowseProjectFolder()}
-                      disabled={projectFolderBrowsing}
-                    >
-                      {projectFolderBrowsing ? 'Browsing...' : 'Browse'}
-                    </Button>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setCreateProjectStep('chooser')}
-                  >
-                    Back
-                  </Button>
-                  <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-                  <Button
-                    type="button"
-                    onClick={handleConfirmCreateProject}
-                    disabled={!projectTitleDraft.trim() || !projectFolderDraft.trim()}
-                  >
-                    Create
-                  </Button>
-                </DialogFooter>
-              </>
-            )}
-          </DialogContent>
-        </Dialog>
 
         <Dialog
           open={renameProjectOpen}
@@ -1018,27 +950,10 @@ export function AppSidebar({
               <Settings className="size-4 text-muted-foreground" />
               {!compact && <span>{t('Settings', 'Einstellungen')}</span>}
             </Button>
-            {!compact ? (
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectPage('settings');
-                  onSettingsSectionChange('Gateway');
-                }}
-                className={`footer-gateway-badge h-8 shrink-0 rounded-xl border px-2.5 font-sans text-[11px] font-medium transition ${
-                  gatewayConnected
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/18 dark:text-emerald-300 dark:hover:bg-emerald-500/22'
-                    : 'border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/18 dark:text-amber-300 dark:hover:bg-amber-500/22'
-                }`}
-                title={gatewayConnected ? 'Open Gateway Settings' : 'Connect Gateway'}
-              >
-                {gatewayConnected ? t('Connected', 'Verbunden') : t('Disconnected', 'Getrennt')}
-              </button>
-            ) : null}
+            {null}
           </div>
         </div>
       </SidebarFooter>
     </Sidebar>
   );
 }
-

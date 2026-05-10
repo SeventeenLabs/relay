@@ -59,7 +59,7 @@ function timeAgo(timestamp: number): string {
 }
 
 const TONE_CONFIG = {
-  success: { icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/30', border: 'border-emerald-200 dark:border-emerald-800/50', label: 'Success' },
+  success: { icon: CheckCircle2, color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-950/30', border: 'border-blue-200 dark:border-blue-800/50', label: 'Success' },
   danger: { icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-950/30', border: 'border-red-200 dark:border-red-800/50', label: 'Error' },
   neutral: { icon: Info, color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-950/30', border: 'border-blue-200 dark:border-blue-800/50', label: 'Info' },
 } as const;
@@ -165,7 +165,7 @@ export function ActivityPage({
         </div>
         <Separator orientation="vertical" className="h-4" />
         <div className="flex items-center gap-1.5">
-          <CheckCircle2 className="size-3.5 text-emerald-600" />
+          <CheckCircle2 className="size-3.5 text-blue-600" />
           <span className="font-sans text-[12px] text-muted-foreground">{stats.successes} success</span>
         </div>
         <div className="flex items-center gap-1.5">

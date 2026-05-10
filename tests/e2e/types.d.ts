@@ -8,9 +8,6 @@ interface Window {
     getConfig: () => Promise<any>;
     saveConfig: (config: { gatewayUrl: string; gatewayToken: string }) => Promise<any>;
     healthCheck: (baseUrl: string) => Promise<any>;
-    discoverGateway: () => Promise<any>;
-    checkWorkspacePlugin: () => Promise<{ installed: boolean; error?: string }>;
-    installWorkspacePlugin: () => Promise<{ ok: boolean; output?: string; error?: string }>;
     minimizeWindow: () => Promise<void>;
     toggleMaximizeWindow: () => Promise<boolean>;
     isWindowMaximized: () => Promise<boolean>;

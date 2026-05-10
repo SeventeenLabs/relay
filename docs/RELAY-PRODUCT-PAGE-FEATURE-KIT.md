@@ -19,11 +19,11 @@ Use this as your single source when writing:
 Relay is the governed operator desk for AI agents.
 
 Short version:
-- If OpenClaw is the engine, Relay is the cockpit.
+- If Hermes is the engine, Relay is the cockpit.
 
 Long version:
 - Relay is a desktop control plane for running AI work with human oversight.
-- It is self-hosted and model-agnostic through OpenClaw routing.
+- It is self-hosted and model-agnostic through Hermes routing.
 - It is designed for operators and founder-led teams that need approval control, context, and traceability.
 
 ## Who Relay Is For
@@ -132,7 +132,7 @@ Page copy angle:
 - Understand usage, not just output
 
 #### 10) Endpoint Routing and Configuration
-- Configurable OpenClaw gateway URL and token
+- Configurable Hermes gateway URL and token
 - Health check and connection status flows
 - Supports local, VPS, and custom endpoint routing patterns
 
@@ -163,7 +163,7 @@ Category-level differentiation:
 
 Relay differentiators:
 - Self-hosted or local-first operations model
-- Model-agnostic routing through OpenClaw
+- Model-agnostic routing through Hermes
 - Explicit safety scopes and approval controls
 - Project-bound execution context
 - Desktop operator UX designed for ongoing real work
@@ -179,7 +179,7 @@ Primary CTA: Get Relay
 Secondary CTA: View docs
 
 Option B
-Headline: If OpenClaw is your engine, Relay is your cockpit
+Headline: If Hermes is your engine, Relay is your cockpit
 Subheadline: Run AI work with human oversight, safety controls, and workspace context in a desktop interface built for operators.
 Primary CTA: Start local-first
 Secondary CTA: Explore features
@@ -265,18 +265,18 @@ Card: Schedule visibility
 Body: Monitor recurring jobs and upcoming runs with timeline and calendar views in one place.
 
 Card: Endpoint flexibility
-Body: Connect Relay to local, VPS, or custom OpenClaw endpoints without changing operator workflow.
+Body: Connect Relay to local, VPS, or custom Hermes endpoints without changing operator workflow.
 
 ## FAQ Copy (Ready to Paste)
 
 Q: Is Relay the AI model?
-A: No. Relay is the operator interface and control plane. OpenClaw handles execution and routing.
+A: No. Relay is the operator interface and control plane. Hermes handles execution and routing.
 
 Q: Can Relay run self-hosted?
 A: Yes. Relay is designed for local-first and self-hosted operation models.
 
 Q: Is Relay tied to a single model provider?
-A: No. Relay works through OpenClaw routing and supports model-agnostic operation.
+A: No. Relay works through Hermes routing and supports model-agnostic operation.
 
 Q: How does Relay handle risky actions?
 A: Relay uses safety scopes, risk levels, and approval requirements to gate sensitive operations.
@@ -296,7 +296,7 @@ Objection: We need strict approval controls.
 Response: Relay gives configurable scope-based approvals and risk levels for sensitive actions.
 
 Objection: We cannot lock into one model vendor.
-Response: Relay is model-agnostic through OpenClaw endpoint routing.
+Response: Relay is model-agnostic through Hermes endpoint routing.
 
 Objection: We operate with sensitive customer data.
 Response: Relay is built for self-hosted and sovereignty-oriented operating models.
@@ -306,7 +306,7 @@ Response: Relay is built for self-hosted and sovereignty-oriented operating mode
 Use these confidently:
 - Desktop operator desk for AI work
 - Self-hosted and local-first friendly
-- Model-agnostic through OpenClaw
+- Model-agnostic through Hermes
 - Human-in-the-loop controls
 - Project-scoped cowork context
 
@@ -356,7 +356,7 @@ Instead of juggling chat tabs, terminals, and fragmented tooling, teams run AI w
 - project-scoped execution
 - safety scopes and approvals
 - workspace and artifact visibility
-- model-agnostic endpoint routing via OpenClaw
+- model-agnostic endpoint routing via Hermes
 
 For founder-led teams and operators that need sovereignty, oversight, and practical execution, Relay is the cockpit layer between human judgment and AI runtime.
 
@@ -368,3 +368,4 @@ For founder-led teams and operators that need sovereignty, oversight, and practi
 - Add FAQ block and objection handling snippets
 - Add roadmap section clearly labeled as in development
 - Add docs CTA and install CTA
+

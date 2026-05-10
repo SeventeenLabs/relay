@@ -13,6 +13,7 @@ import type {
   CoworkProjectTaskStatus,
   CoworkProject,
   CoworkRunPhase,
+  FileChangeSummary,
   GatewayConnectionProfile,
   HealthCheckResult,
   LocalActionReceipt,
@@ -49,9 +50,9 @@ import {
   DialogTitle,
 } from './components/ui/dialog';
 import { Input } from './components/ui/input';
-import { SidebarProvider } from './components/ui/sidebar';
+import { SidebarInset, SidebarProvider } from './components/ui/sidebar';
 import { ScrollArea } from './components/ui/scroll-area';
-import { OpenClawGatewayClient } from './lib/openclaw-gateway-client';
+import { createDefaultBackendClient, type AgentBackendClient } from './lib/agent-backend-client';
 import { createFileService, LocalFileService } from './lib/file-service';
 import { buildMemoryContext, loadMemoryEntries } from './lib/memory-context';
 import { accumulateTodayUsage, addUsage, loadTodayUsage, parseUsageFromPayload } from './lib/token-usage';
@@ -101,7 +102,6 @@ import {
   normalizeCoworkMessage,
 } from './lib/chat-utils';
 
-const ChatPage = lazy(() => import('./features/chat/chat-page').then((module) => ({ default: module.ChatPage })));
 const CoworkPage = lazy(() => import('./features/cowork/cowork-page').then((module) => ({ default: module.CoworkPage })));
 const ProjectPage = lazy(() => import('./features/cowork/project-page').then((module) => ({ default: module.ProjectPage })));
 const SettingsPage = lazy(() => import('./features/settings/settings-page').then((module) => ({ default: module.SettingsPage })));
@@ -112,7 +112,7 @@ const SafetyPage = lazy(() => import('./features/workspace/safety-page').then((m
 const ApprovalsPage = lazy(() => import('./features/workspace/approvals-page').then((module) => ({ default: module.ApprovalsPage })));
 const ScheduledPage = lazy(() => import('./features/workspace/scheduled-page').then((module) => ({ default: module.ScheduledPage })));
 
-const DEFAULT_GATEWAY_URL = 'ws://127.0.0.1:18789';
+const DEFAULT_HERMES_GATEWAY_URL = 'http://127.0.0.1:8642/v1';
 
 const LOCAL_CONFIG_KEY = 'relay.config';
 const GATEWAY_CONNECTIONS_STORAGE_KEY = 'relay.gateway.connections.v1';
@@ -131,7 +131,8 @@ const OPERATOR_DEFINITIONS_STORAGE_KEY = 'relay.operators.definitions.v1';
 const OPERATOR_RUNS_STORAGE_KEY = 'relay.operators.runs.v1';
 
 const defaultConfig: AppConfig = {
-  gatewayUrl: DEFAULT_GATEWAY_URL,
+  backendType: 'hermes',
+  gatewayUrl: DEFAULT_HERMES_GATEWAY_URL,
   gatewayToken: '',
 };
 
@@ -163,6 +164,18 @@ function createInitialCoworkProgressSteps(): CoworkProgressStep[] {
 
 function isDestructiveLocalAction(actionType: PendingApprovalAction['actionType']): boolean {
   return actionType === 'delete' || actionType === 'rename';
+}
+
+function normalizeReplaceInput(text: string): string {
+  if (!text) {
+    return '';
+  }
+
+  return text
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t');
 }
 
 type ApprovalResolverEntry = {
@@ -313,7 +326,10 @@ function loadGatewayConnectionProfiles(): GatewayConnectionProfile[] {
         const record = entry as Record<string, unknown>;
         const id = typeof record.id === 'string' ? record.id.trim() : '';
         const name = typeof record.name === 'string' ? record.name.trim() : '';
-        const gatewayUrl = typeof record.gatewayUrl === 'string' ? record.gatewayUrl.trim() : '';
+        const rawGatewayUrl = typeof record.gatewayUrl === 'string' ? record.gatewayUrl.trim() : '';
+        const backendType: AppConfig['backendType'] = 'hermes';
+        const fallbackGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
+        const gatewayUrl = rawGatewayUrl || fallbackGatewayUrl;
         const gatewayToken = typeof record.gatewayToken === 'string' ? record.gatewayToken : '';
         const createdAt = typeof record.createdAt === 'number' ? record.createdAt : Date.now();
         const updatedAt = typeof record.updatedAt === 'number' ? record.updatedAt : createdAt;
@@ -326,6 +342,7 @@ function loadGatewayConnectionProfiles(): GatewayConnectionProfile[] {
         return {
           id,
           name,
+          backendType,
           gatewayUrl,
           gatewayToken,
           createdAt,
@@ -817,7 +834,7 @@ export default function App() {
   }, []);
 
   const bridge = window.relay;
-  const gatewayClientRef = useRef<OpenClawGatewayClient | null>(null);
+  const gatewayClientRef = useRef<AgentBackendClient | null>(null);
   const activeSessionKeyRef = useRef('');
   const coworkSessionKeyRef = useRef('');
   const workingFolderRef = useRef('');
@@ -835,7 +852,7 @@ export default function App() {
 
   const [config, setConfig] = useState<AppConfig>(defaultConfig);
   const [configReady, setConfigReady] = useState(false);
-  const [draftGatewayUrl, setDraftGatewayUrl] = useState(DEFAULT_GATEWAY_URL);
+  const [draftGatewayUrl, setDraftGatewayUrl] = useState(DEFAULT_HERMES_GATEWAY_URL);
   const [draftGatewayToken, setDraftGatewayToken] = useState('');
   const [gatewayConnections, setGatewayConnections] = useState<GatewayConnectionProfile[]>(() => loadGatewayConnectionProfiles());
   const [defaultGatewayConnectionId, setDefaultGatewayConnectionId] = useState(() => loadDefaultGatewayConnectionId());
@@ -865,8 +882,6 @@ export default function App() {
   const [coworkThreads, setCoworkThreads] = useState<ChatThread[]>(() => loadPersistedRecents().coworkThreads ?? []);
 
   const [saving, setSaving] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [pairingRequestId, setPairingRequestId] = useState<string | null>(null);
   const [activeMenuItem, setActiveMenuItem] = useState('');
   const [activePage, setActivePage] = useState<AppPage>('cowork');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('Profile');
@@ -925,11 +940,16 @@ export default function App() {
   });
   const [coworkProjectPathReferences, setCoworkProjectPathReferences] = useState<ProjectPathReference[]>([]);
   const [localActionReceipts, setLocalActionReceipts] = useState<LocalActionReceipt[]>([]);
+  const [fileChangeSummary, setFileChangeSummary] = useState<FileChangeSummary | null>(null);
+  const [undoingFileChanges, setUndoingFileChanges] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalAction[]>([]);
   const [coworkProgressSteps, setCoworkProgressSteps] = useState<CoworkProgressStep[]>(() => createInitialCoworkProgressSteps());
   const [coworkArtifacts, setCoworkArtifacts] = useState<CoworkArtifact[]>([]);
   const [localActionSmokeRunning, setLocalActionSmokeRunning] = useState(false);
   const [gatewayConnected, setGatewayConnected] = useState(false);
+  const showGatewayErrorBadge = useMemo(() => {
+    return !gatewayConnected;
+  }, [gatewayConnected]);
   const [sessionUsage, setSessionUsage] = useState(() => loadTodayUsage());
 
   const handleChatPromptChange = useCallback((value: string) => {
@@ -952,10 +972,30 @@ export default function App() {
     [bridge],
   );
 
-  const recentChatItems = toRecentSidebarItems(chatThreads, 'chat');
   const recentCoworkItems = toRecentSidebarItems(coworkThreads, 'cowork');
-  const isCoworkSidebarContext = ['cowork', 'project', 'files', 'local-files', 'activity', 'memory', 'scheduled', 'approvals', 'safety'].includes(activePage);
-  const recentItems = isCoworkSidebarContext ? recentCoworkItems : recentChatItems;
+  const recentChatItems = useMemo(() => toRecentSidebarItems(chatThreads, 'chat'), [chatThreads]);
+  const projectRecentItemsByProjectId = useMemo(() => {
+    const bySession = new Map(recentCoworkItems.map((item) => [item.sessionKey, item]));
+    const grouped: Record<string, typeof recentCoworkItems> = {};
+    for (const task of coworkTasks) {
+      const recent = bySession.get(task.sessionKey);
+      if (!recent) {
+        continue;
+      }
+      if (!grouped[task.projectId]) {
+        grouped[task.projectId] = [];
+      }
+      if (!grouped[task.projectId].some((entry) => entry.sessionKey === recent.sessionKey)) {
+        grouped[task.projectId].push(recent);
+      }
+    }
+    for (const projectId of Object.keys(grouped)) {
+      grouped[projectId] = grouped[projectId]
+        .slice()
+        .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+    }
+    return grouped;
+  }, [coworkTasks, recentCoworkItems]);
   const activeCoworkProject = useMemo(
     () => coworkProjects.find((project) => project.id === activeCoworkProjectId) ?? null,
     [coworkProjects, activeCoworkProjectId],
@@ -1022,10 +1062,14 @@ export default function App() {
     return coworkArtifacts.filter((artifact) => !artifact.runId || runIds.has(artifact.runId)).slice(0, 40);
   }, [coworkArtifacts, visibleCoworkTasks]);
   const selectedGatewayConnectionId = useMemo(() => {
-    const normalizedUrl = draftGatewayUrl.trim() || DEFAULT_GATEWAY_URL;
+    const normalizedUrl = draftGatewayUrl.trim() || DEFAULT_HERMES_GATEWAY_URL;
     const normalizedToken = draftGatewayToken ?? '';
-    return gatewayConnections.find((profile) => profile.gatewayUrl === normalizedUrl && profile.gatewayToken === normalizedToken)?.id ?? null;
-  }, [draftGatewayToken, draftGatewayUrl, gatewayConnections]);
+    return gatewayConnections.find((profile) => (
+      profile.backendType === config.backendType
+      && profile.gatewayUrl === normalizedUrl
+      && profile.gatewayToken === normalizedToken
+    ))?.id ?? null;
+  }, [config.backendType, draftGatewayToken, draftGatewayUrl, gatewayConnections]);
 
   const contextFolders = useMemo(() => {
     const folders = [activeCoworkProject?.workspaceFolder?.trim() || '', workingFolder.trim()].filter(Boolean);
@@ -1034,7 +1078,7 @@ export default function App() {
 
   const contextDocuments = useMemo(() => {
     const docs = localActionReceipts
-      .filter((entry) => entry.status === 'ok' && (entry.type === 'read_file' || entry.type === 'create_file' || entry.type === 'append_file'))
+      .filter((entry) => entry.status === 'ok' && (entry.type === 'read_file' || entry.type === 'create_file' || entry.type === 'append_file' || entry.type === 'replace_in_file'))
       .map((entry) => entry.path)
       .filter(Boolean);
     return Array.from(new Set(docs)).slice(0, 8);
@@ -1116,7 +1160,7 @@ export default function App() {
 
   const recordCoworkArtifactsFromReceipts = (receipts: LocalActionReceipt[], runId: string) => {
     const artifactReceipts = receipts.filter((receipt) =>
-      receipt.type === 'create_file' || receipt.type === 'append_file' || receipt.type === 'read_file',
+      receipt.type === 'create_file' || receipt.type === 'append_file' || receipt.type === 'replace_in_file' || receipt.type === 'read_file',
     );
 
     if (artifactReceipts.length === 0) {
@@ -1137,7 +1181,7 @@ export default function App() {
           kind: 'file',
           status: receipt.status,
           source:
-            receipt.type === 'create_file' || receipt.type === 'append_file' || receipt.type === 'read_file'
+            receipt.type === 'create_file' || receipt.type === 'append_file' || receipt.type === 'replace_in_file' || receipt.type === 'read_file'
               ? receipt.type
               : undefined,
           updatedAt: now,
@@ -1290,7 +1334,7 @@ export default function App() {
     }
   };
 
-  const upsertChatThread = (sessionKey: string, options?: { title?: string; touchedAt?: number }) => {
+  const upsertChatThread = (sessionKey: string, options?: { title?: string; touchedAt?: number; createIfMissing?: boolean }) => {
     const normalizedSessionKey = normalizeSessionKey(sessionKey);
     if (!normalizedSessionKey) {
       return;
@@ -1298,18 +1342,20 @@ export default function App() {
 
     const incomingTitle = options?.title ? toRecentSidebarLabel(options.title) : '';
     const touchedAt = options?.touchedAt;
+    const createIfMissing = options?.createIfMissing ?? true;
 
     setChatThreads((current) => {
       const existing = current.find((thread) => thread.sessionKey === normalizedSessionKey);
-      // Keep recents list message-driven: don't create a new chat thread without
-      // any usable title signal (typically first user message/history).
-      if (!existing && !incomingTitle) {
+      if (!existing && !createIfMissing) {
         return current;
       }
 
       const canReplaceTitle = !existing || !existing.title || existing.title === DEFAULT_CHAT_THREAD_TITLE;
       const fallbackTitle = toFallbackThreadTitle(normalizedSessionKey, 'chat');
-      const title = canReplaceTitle && incomingTitle ? incomingTitle : existing?.title || fallbackTitle;
+      const title = canReplaceTitle && incomingTitle ? incomingTitle : existing?.title || (createIfMissing ? fallbackTitle : '');
+      if (!title) {
+        return current;
+      }
       const updatedAt = touchedAt ?? existing?.updatedAt ?? Date.now();
 
       const nextThread: ChatThread = {
@@ -1410,6 +1456,154 @@ export default function App() {
 
     setLocalActionReceipts((current) => [...entries, ...current].slice(0, 30));
   };
+
+  const parseGitNumstat = (stdout: string) => {
+    const rows = stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const map = new Map<string, { added: number; deleted: number }>();
+    for (const row of rows) {
+      const [addedRaw, deletedRaw, ...pathParts] = row.split('\t');
+      if (!addedRaw || !deletedRaw || pathParts.length === 0) {
+        continue;
+      }
+      const path = pathParts.join('\t').trim();
+      if (!path) {
+        continue;
+      }
+      const added = Number.parseInt(addedRaw, 10);
+      const deleted = Number.parseInt(deletedRaw, 10);
+      map.set(path, {
+        added: Number.isFinite(added) ? added : 0,
+        deleted: Number.isFinite(deleted) ? deleted : 0,
+      });
+    }
+    return map;
+  };
+
+  const parseGitStatusPorcelain = (stdout: string) => {
+    return stdout
+      .split(/\r?\n/)
+      .map((line) => line.trimEnd())
+      .filter(Boolean)
+      .map((line) => {
+        const code = line.slice(0, 2);
+        const rawPath = line.slice(3).trim();
+        const path = rawPath.includes(' -> ') ? rawPath.split(' -> ').pop()?.trim() || rawPath : rawPath;
+        const status =
+          code.includes('R') ? 'renamed' :
+          code.includes('A') ? 'added' :
+          code.includes('D') ? 'deleted' :
+          code === '??' ? 'untracked' :
+          code.trim() ? 'modified' :
+          'unknown';
+        return { path, status } as const;
+      })
+      .filter((entry) => Boolean(entry.path));
+  };
+
+  const refreshFileChangeSummary = useCallback(async (rootPath: string, receipts: LocalActionReceipt[]) => {
+    const normalizedRoot = rootPath.trim();
+    if (!bridge || !bridge.shellExec || !normalizedRoot) {
+      setFileChangeSummary(null);
+      return;
+    }
+    const candidatePaths = Array.from(
+      new Set(
+        receipts
+          .filter((entry) => entry.status === 'ok')
+          .map((entry) => entry.path?.trim())
+          .filter((value): value is string => Boolean(value && value !== '.')),
+      ),
+    );
+    try {
+      const statusResult = await bridge.shellExec(normalizedRoot, 'git status --porcelain');
+      if (statusResult.exitCode !== 0) {
+        setFileChangeSummary(null);
+        return;
+      }
+
+      const statusEntries = parseGitStatusPorcelain(statusResult.stdout);
+      const filteredStatusEntries =
+        candidatePaths.length > 0
+          ? statusEntries.filter((entry) => candidatePaths.some((candidate) => entry.path === candidate || entry.path.startsWith(`${candidate}/`)))
+          : statusEntries;
+
+      if (filteredStatusEntries.length === 0) {
+        setFileChangeSummary(null);
+        return;
+      }
+
+      const numstatResult = await bridge.shellExec(normalizedRoot, 'git diff --numstat');
+      const numstatMap = parseGitNumstat(numstatResult.stdout);
+
+      const files = filteredStatusEntries.map((entry) => {
+        const stat = numstatMap.get(entry.path);
+        return {
+          path: entry.path,
+          status: entry.status,
+          added: stat?.added ?? 0,
+          deleted: stat?.deleted ?? 0,
+        };
+      });
+
+      const totalAdded = files.reduce((sum, file) => sum + file.added, 0);
+      const totalDeleted = files.reduce((sum, file) => sum + file.deleted, 0);
+      setFileChangeSummary({
+        rootPath: normalizedRoot,
+        files,
+        changedCount: files.length,
+        totalAdded,
+        totalDeleted,
+        generatedAt: Date.now(),
+      });
+    } catch {
+      setFileChangeSummary(null);
+    }
+  }, [bridge]);
+
+  const handleReviewFileChanges = useCallback(() => {
+    setActivePage('files');
+    setStatus('Opened changed files for review.');
+  }, []);
+
+  const handleUndoFileChanges = useCallback(async () => {
+    if (!bridge || !bridge.shellExec || !fileChangeSummary || undoingFileChanges) {
+      return;
+    }
+    const rootPath = fileChangeSummary.rootPath.trim();
+    if (!rootPath) {
+      return;
+    }
+    setUndoingFileChanges(true);
+    try {
+      const tracked = fileChangeSummary.files.filter((entry) => entry.status !== 'untracked').map((entry) => entry.path);
+      const untracked = fileChangeSummary.files.filter((entry) => entry.status === 'untracked').map((entry) => entry.path);
+
+      if (tracked.length > 0) {
+        const quoted = tracked.map((value) => `"${value.replace(/"/g, '\\"')}"`).join(' ');
+        await bridge.shellExec(rootPath, `git restore --staged --worktree -- ${quoted}`);
+      }
+      if (untracked.length > 0) {
+        const quoted = untracked.map((value) => `"${value.replace(/"/g, '\\"')}"`).join(' ');
+        await bridge.shellExec(rootPath, `git clean -f -- ${quoted}`);
+      }
+
+      const statusResult = await bridge.shellExec(rootPath, 'git status --porcelain');
+      if (statusResult.exitCode === 0 && !statusResult.stdout.trim()) {
+        setFileChangeSummary(null);
+      } else {
+        await refreshFileChangeSummary(rootPath, []);
+      }
+      setStatus('Reverted pending file changes.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to undo file changes.';
+      setStatus(message);
+    } finally {
+      setUndoingFileChanges(false);
+    }
+  }, [bridge, fileChangeSummary, refreshFileChangeSummary, undoingFileChanges]);
 
   const resolvePendingApproval = (
     approvalId: string,
@@ -1531,7 +1725,7 @@ export default function App() {
     });
   };
 
-  const loadRecentChatsFromBackend = async (client: OpenClawGatewayClient) => {
+  const loadRecentChatsFromBackend = async (client: AgentBackendClient) => {
     const sessions = await client.listSessions(100);
 
     const filtered = sessions.filter((session) => {
@@ -2032,14 +2226,14 @@ export default function App() {
     }
   };
 
-  const ensureConnectedClient = async (client: OpenClawGatewayClient) => {
+  const ensureConnectedClient = async (client: AgentBackendClient) => {
     await client.connect({
       gatewayUrl: draftGatewayUrl,
       token: draftGatewayToken,
     });
   };
 
-  const getOrResolveSession = async (client: OpenClawGatewayClient) => {
+  const getOrResolveSession = async (client: AgentBackendClient) => {
     try {
       const sessionKey = normalizeSessionKey(await client.getActiveSessionKey());
       if (!sessionKey) {
@@ -2057,7 +2251,7 @@ export default function App() {
   };
 
   const ensureActiveChatSession = async (
-    client: OpenClawGatewayClient,
+    client: AgentBackendClient,
     options?: { createIfMissing?: boolean },
   ) => {
     await ensureConnectedClient(client);
@@ -2082,7 +2276,7 @@ export default function App() {
     throw new Error('No active chat session. Start a new chat first.');
   };
 
-  const loadModelsForSession = async (client: OpenClawGatewayClient, sessionKey: string) => {
+  const loadModelsForSession = async (client: AgentBackendClient, sessionKey: string) => {
     setModelsLoading(true);
     try {
       const [choices, currentModel] = await Promise.all([
@@ -2100,7 +2294,7 @@ export default function App() {
     }
   };
 
-  const loadCoworkModels = async (client: OpenClawGatewayClient, sessionKey?: string) => {
+  const loadCoworkModels = async (client: AgentBackendClient, sessionKey?: string) => {
     setModelsLoading(true);
     try {
       const [choices, currentModel] = await Promise.all([
@@ -2112,11 +2306,13 @@ export default function App() {
       if (sessionKey) {
         setCoworkModel(currentModel ?? '');
       }
-    } catch {
+    } catch (error) {
       setCoworkModels([]);
       if (sessionKey) {
         setCoworkModel('');
       }
+      const message = error instanceof Error ? error.message : 'Unable to load Hermes models.';
+      setStatus(message);
     } finally {
       setModelsLoading(false);
     }
@@ -2130,8 +2326,14 @@ export default function App() {
       }
 
       const parsed = JSON.parse(raw) as Partial<AppConfig>;
+      const backendType: AppConfig['backendType'] = 'hermes';
+      const fallbackGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
+      const parsedGatewayUrl = parsed.gatewayUrl?.trim();
+      const gatewayUrl = parsedGatewayUrl || fallbackGatewayUrl;
+
       return {
-        gatewayUrl: parsed.gatewayUrl?.trim() || DEFAULT_GATEWAY_URL,
+        backendType,
+        gatewayUrl,
         gatewayToken: parsed.gatewayToken ?? '',
       } satisfies AppConfig;
     } catch {
@@ -2158,14 +2360,15 @@ export default function App() {
   }, []);
 
   const markGatewayConnectionLastUsed = useCallback((connectedConfig: AppConfig) => {
-    const gatewayUrl = connectedConfig.gatewayUrl.trim() || DEFAULT_GATEWAY_URL;
+    const backendType: AppConfig['backendType'] = 'hermes';
+    const gatewayUrl = connectedConfig.gatewayUrl.trim() || DEFAULT_HERMES_GATEWAY_URL;
     const gatewayToken = connectedConfig.gatewayToken ?? '';
     const now = Date.now();
     let matchedConnectionId = '';
 
     updateGatewayConnections((prev) =>
       prev.map((profile) => {
-        if (profile.gatewayUrl === gatewayUrl && profile.gatewayToken === gatewayToken) {
+        if (profile.backendType === backendType && profile.gatewayUrl === gatewayUrl && profile.gatewayToken === gatewayToken) {
           matchedConnectionId = profile.id;
           return { ...profile, lastUsedAt: now, updatedAt: now };
         }
@@ -2178,16 +2381,35 @@ export default function App() {
     }
   }, [setGatewayDefaultConnection, updateGatewayConnections]);
 
+  const normalizeGatewayUrl = useCallback((url: string): string => {
+    const trimmed = url.trim();
+    if (!trimmed) return '';
+    if (trimmed.startsWith('ws://')) {
+      return `http://${trimmed.slice('ws://'.length)}`;
+    }
+    if (trimmed.startsWith('wss://')) {
+      return `https://${trimmed.slice('wss://'.length)}`;
+    }
+    return trimmed;
+  }, []);
+
+
   const handleSelectGatewayConnection = useCallback((connectionId: string) => {
     const profile = gatewayConnections.find((entry) => entry.id === connectionId);
     if (!profile) {
       return;
     }
 
-    setDraftGatewayUrl(profile.gatewayUrl);
+    const normalizedUrl = normalizeGatewayUrl(profile.gatewayUrl);
+
+    setConfig((prev) => ({
+      ...prev,
+      backendType: 'hermes',
+    }));
+    setDraftGatewayUrl(normalizedUrl);
     setDraftGatewayToken(profile.gatewayToken);
     setStatus(`Loaded connection "${profile.name}". Click Save and connect to apply it.`);
-  }, [gatewayConnections]);
+  }, [gatewayConnections, normalizeGatewayUrl]);
 
   const handleSaveGatewayConnection = useCallback((name: string) => {
     const trimmedName = name.trim();
@@ -2196,7 +2418,8 @@ export default function App() {
       return;
     }
 
-    const normalizedUrl = draftGatewayUrl.trim() || DEFAULT_GATEWAY_URL;
+    const backendType: AppConfig['backendType'] = 'hermes';
+    const normalizedUrl = normalizeGatewayUrl(draftGatewayUrl);
     const now = Date.now();
     let savedConnectionId = '';
 
@@ -2210,6 +2433,7 @@ export default function App() {
               ? {
                   ...entry,
                   name: trimmedName,
+                  backendType,
                   gatewayUrl: normalizedUrl,
                   gatewayToken: draftGatewayToken,
                   updatedAt: now,
@@ -2229,6 +2453,7 @@ export default function App() {
         {
           id,
           name: trimmedName,
+          backendType,
           gatewayUrl: normalizedUrl,
           gatewayToken: draftGatewayToken,
           createdAt: now,
@@ -2243,10 +2468,11 @@ export default function App() {
     }
 
     setStatus(`Saved connection "${trimmedName}".`);
-  }, [draftGatewayToken, draftGatewayUrl, setGatewayDefaultConnection, updateGatewayConnections]);
+  }, [draftGatewayToken, draftGatewayUrl, normalizeGatewayUrl, setGatewayDefaultConnection, updateGatewayConnections]);
 
   const handleOverwriteGatewayConnection = useCallback((connectionId: string) => {
-    const normalizedUrl = draftGatewayUrl.trim() || DEFAULT_GATEWAY_URL;
+    const backendType: AppConfig['backendType'] = 'hermes';
+    const normalizedUrl = normalizeGatewayUrl(draftGatewayUrl);
     const now = Date.now();
 
     updateGatewayConnections((prev) =>
@@ -2255,6 +2481,7 @@ export default function App() {
           entry.id === connectionId
             ? {
                 ...entry,
+                backendType,
                 gatewayUrl: normalizedUrl,
                 gatewayToken: draftGatewayToken,
                 updatedAt: now,
@@ -2266,7 +2493,7 @@ export default function App() {
     setGatewayDefaultConnection(connectionId);
 
     setStatus('Updated saved connection with current URL/token.');
-  }, [draftGatewayToken, draftGatewayUrl, setGatewayDefaultConnection, updateGatewayConnections]);
+  }, [draftGatewayToken, draftGatewayUrl, normalizeGatewayUrl, setGatewayDefaultConnection, updateGatewayConnections]);
 
   const handleDeleteGatewayConnection = useCallback((connectionId: string) => {
     updateGatewayConnections((prev) => prev.filter((entry) => entry.id !== connectionId));
@@ -2278,25 +2505,9 @@ export default function App() {
 
   const appendGatewayDiscoveryHint = useCallback(
     async (baseMessage: string): Promise<string> => {
-      const fallback = baseMessage.trim() || 'Gateway is offline or unreachable.';
-      if (!bridge?.discoverGateway) {
-        return fallback;
-      }
-      try {
-        const discovery = await bridge.discoverGateway();
-        if (discovery.found && discovery.gatewayUrl) {
-          return `${fallback} Discovered local gateway at ${discovery.gatewayUrl}.`;
-        }
-        if (discovery.binaryFound) {
-          const binaryHint = discovery.binaryPath ? ` (${discovery.binaryPath})` : '';
-          return `${fallback} OpenClaw binary detected${binaryHint}, but no running gateway was found.`;
-        }
-        return `${fallback} No local OpenClaw gateway was detected.`;
-      } catch {
-        return fallback;
-      }
+      return baseMessage.trim() || 'Gateway is offline or unreachable.';
     },
-    [bridge],
+    [],
   );
 
   // Global keyboard shortcuts
@@ -2363,15 +2574,17 @@ export default function App() {
 
     if (!bridge) {
       const localConfig = loadLocalConfig();
+      const normalizedDefaultProfile = defaultProfile
+        ? {
+            backendType: 'hermes' as const,
+            gatewayUrl: normalizeGatewayUrl(defaultProfile.gatewayUrl),
+            gatewayToken: defaultProfile.gatewayToken,
+          }
+        : undefined;
       const resolvedConfig =
         localConfig?.gatewayUrl?.trim()
           ? localConfig
-          : defaultProfile
-            ? {
-                gatewayUrl: defaultProfile.gatewayUrl,
-                gatewayToken: defaultProfile.gatewayToken,
-              }
-            : localConfig;
+          : normalizedDefaultProfile ?? localConfig;
       if (resolvedConfig) {
         setConfig(resolvedConfig);
         setDraftGatewayUrl(resolvedConfig.gatewayUrl);
@@ -2393,15 +2606,21 @@ export default function App() {
           return;
         }
 
+        const normalizedDefaultProfile = defaultProfile
+          ? {
+              backendType: 'hermes' as const,
+              gatewayUrl: normalizeGatewayUrl(defaultProfile.gatewayUrl),
+              gatewayToken: defaultProfile.gatewayToken,
+            }
+          : undefined;
         const resolvedConfig =
           storedConfig?.gatewayUrl?.trim()
-            ? storedConfig
-            : defaultProfile
-              ? {
-                  gatewayUrl: defaultProfile.gatewayUrl,
-                  gatewayToken: defaultProfile.gatewayToken,
-                }
-              : storedConfig;
+            ? ({
+                backendType: 'hermes' as const,
+                gatewayUrl: normalizeGatewayUrl(storedConfig.gatewayUrl),
+                gatewayToken: storedConfig.gatewayToken,
+              } satisfies AppConfig)
+            : normalizedDefaultProfile ?? storedConfig;
 
         setConfig(resolvedConfig);
         setDraftGatewayUrl(resolvedConfig.gatewayUrl);
@@ -2415,15 +2634,17 @@ export default function App() {
         }
 
         const localConfig = loadLocalConfig();
+        const normalizedDefaultProfile = defaultProfile
+          ? {
+              backendType: 'hermes' as const,
+              gatewayUrl: normalizeGatewayUrl(defaultProfile.gatewayUrl),
+              gatewayToken: defaultProfile.gatewayToken,
+            }
+          : undefined;
         const resolvedConfig =
           localConfig?.gatewayUrl?.trim()
             ? localConfig
-            : defaultProfile
-              ? {
-                  gatewayUrl: defaultProfile.gatewayUrl,
-                  gatewayToken: defaultProfile.gatewayToken,
-                }
-              : localConfig;
+            : normalizedDefaultProfile ?? localConfig;
         if (resolvedConfig) {
           setConfig(resolvedConfig);
           setDraftGatewayUrl(resolvedConfig.gatewayUrl);
@@ -2438,7 +2659,12 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [bridge, defaultGatewayConnectionId, gatewayConnections]);
+  }, [
+    bridge,
+    defaultGatewayConnectionId,
+    gatewayConnections,
+    normalizeGatewayUrl,
+  ]);
 
   useEffect(() => {
     if (!bridge?.isWindowMaximized) {
@@ -2488,7 +2714,7 @@ export default function App() {
   }, [workingFolder]);
 
   useEffect(() => {
-    const client = new OpenClawGatewayClient();
+    const client = createDefaultBackendClient();
     client.setConnectionHandler((connected, message) => {
       setStatus(message);
       setGatewayConnected(connected);
@@ -2684,6 +2910,7 @@ export default function App() {
                   setStatus(summary);
                   pushLocalActionReceipts(actionReceipts);
                   recordCoworkArtifactsFromReceipts(actionReceipts, runId);
+                  void refreshFileChangeSummary(runContext.rootFolder, actionReceipts);
 
                   if (taskEntry) {
                     const nextStatus: CoworkProjectTaskStatus =
@@ -2715,6 +2942,7 @@ export default function App() {
                       const verb =
                         receipt.type === 'create_file' ? 'Created' :
                         receipt.type === 'append_file' ? 'Appended' :
+                        receipt.type === 'replace_in_file' ? 'Patched' :
                         receipt.type === 'read_file' ? 'Read' :
                         receipt.type === 'list_dir' ? 'Listed' :
                         receipt.type === 'exists' ? 'Checked' :
@@ -2832,6 +3060,9 @@ export default function App() {
                   if (action.type === 'append_file') {
                     return `Append ${action.path}`;
                   }
+                  if (action.type === 'replace_in_file') {
+                    return `Replace text in ${action.path}${action.replaceAll ? ' (all matches)' : ''}`;
+                  }
                   if (action.type === 'read_file') {
                     return `Read ${action.path}`;
                   }
@@ -2843,6 +3074,12 @@ export default function App() {
                   }
                   if (action.type === 'delete') {
                     return `Delete ${action.path}`;
+                  }
+                  if (action.type === 'shell_exec') {
+                    return `Execute shell command in ${action.path}`;
+                  }
+                  if (action.type === 'web_fetch') {
+                    return `Fetch URL ${action.url}`;
                   }
                   return `Check exists ${action.path}`;
                 };
@@ -2913,7 +3150,7 @@ export default function App() {
                     }
                   }
 
-                  if ((action.type === 'create_file' || action.type === 'append_file' || action.type === 'rename' || action.type === 'delete') && !runContext.projectId) {
+                  if ((action.type === 'create_file' || action.type === 'append_file' || action.type === 'replace_in_file' || action.type === 'rename' || action.type === 'delete') && !runContext.projectId) {
                     const message = 'Blocked: write actions require an active project context.';
                     errors.push(`${actionPath}: ${message}`);
                     actionReceipts.push({
@@ -3026,7 +3263,21 @@ export default function App() {
                     const previewBody =
                       action.type === 'create_file' || action.type === 'append_file'
                         ? formatPreviewContent(action.content)
-                        : summarizeActionPreview(action);
+                        : action.type === 'replace_in_file'
+                          ? [
+                              `File: ${action.path}`,
+                              `Replace all: ${action.replaceAll ? 'yes' : 'no'}`,
+                              '',
+                              'Old string:',
+                              '```',
+                              formatPreviewContent(action.oldString),
+                              '```',
+                              'New string:',
+                              '```',
+                              formatPreviewContent(action.newString),
+                              '```',
+                            ].join('\n')
+                          : summarizeActionPreview(action);
 
                     setCoworkRunStatus(`Awaiting approval for ${action.type} (${actionPath})...`);
                     setCoworkProgressStage('executing_workstreams', {
@@ -3150,6 +3401,41 @@ export default function App() {
                         message: `Appended ${result.bytesAppended} bytes`,
                       });
                       previews.push(`+ appended ${result.bytesAppended} bytes -> ${result.filePath}`);
+                      continue;
+                    }
+
+                    if (action.type === 'replace_in_file') {
+                      if (!bridge.replaceInFile) {
+                        const message = `${actionPath}: replace_in_file is unavailable in this app context.`;
+                        errors.push(message);
+                        actionReceipts.push({
+                          id: actionId,
+                          type: 'replace_in_file',
+                          path: actionPath,
+                          status: 'error',
+                          errorCode: 'UNAVAILABLE',
+                          message,
+                        });
+                        continue;
+                      }
+
+                      const normalizedOldString = normalizeReplaceInput(action.oldString);
+                      const normalizedNewString = normalizeReplaceInput(action.newString);
+                      const result = await bridge.replaceInFile(
+                        rootPath,
+                        action.path,
+                        normalizedOldString,
+                        normalizedNewString,
+                        action.replaceAll,
+                      );
+                      actionReceipts.push({
+                        id: actionId,
+                        type: 'replace_in_file',
+                        path: result.filePath,
+                        status: 'ok',
+                        message: `Replaced ${result.replacedCount} match${result.replacedCount === 1 ? '' : 'es'}`,
+                      });
+                      previews.push(`~ replaced ${result.replacedCount} match${result.replacedCount === 1 ? '' : 'es'} -> ${result.filePath}`);
                       continue;
                     }
 
@@ -3426,42 +3712,6 @@ export default function App() {
                   bridge.notify('Relay — Task completed', runContext.projectTitle || 'Cowork run finished.').catch(() => {});
                 }
               }
-
-              const noActionMessage: ChatMessage = {
-                id: `cowork-actions-missing-${runId}`,
-                role: 'system',
-                text: [
-                  'No executable relay_actions were found in the cowork final event.',
-                  runContext.projectTitle ? `Project: ${runContext.projectTitle}` : 'Project: (none)',
-                  `Folder: ${runContext.rootFolder || '(not set)'}`,
-                ].join('\n'),
-                meta: {
-                  kind: 'activity',
-                  items: [
-                    {
-                      id: `activity-no-actions-${runId}`,
-                      label: 'No executable relay_actions were found.',
-                      details: [
-                        runContext.projectTitle ? `Project: ${runContext.projectTitle}` : 'Project: (none)',
-                        `Folder: ${runContext.rootFolder || '(not set)'}`,
-                      ].join('\n'),
-                      tone: 'neutral',
-                    },
-                  ],
-                },
-              };
-
-              setCoworkMessages((current) => {
-                if (current.some((entry) => entry.id === noActionMessage.id)) {
-                  return current;
-                }
-
-                const next = [...current, noActionMessage];
-                if (eventSessionKey) {
-                  coworkMessageCache.current.set(eventSessionKey, next);
-                }
-                return next;
-              });
             }
             return;
           }
@@ -3531,6 +3781,7 @@ export default function App() {
 
           if (eventSessionKey) {
             upsertChatThread(eventSessionKey, {
+              title: deriveThreadTitleFromMessages([{ id: finalId, role: 'user', text: '' }, ...withoutStream, finalMsg]),
               touchedAt: Date.now(),
             });
           }
@@ -3560,7 +3811,7 @@ export default function App() {
       return;
     }
 
-    const gatewayUrl = config.gatewayUrl?.trim() || DEFAULT_GATEWAY_URL;
+    const gatewayUrl = normalizeGatewayUrl(config.gatewayUrl ?? '');
     const gatewayToken = config.gatewayToken ?? '';
 
     void client
@@ -3570,7 +3821,11 @@ export default function App() {
       })
       .then(async () => {
         setHealth({ ok: true, message: `Connected to ${gatewayUrl}` });
-        markGatewayConnectionLastUsed({ gatewayUrl, gatewayToken });
+        markGatewayConnectionLastUsed({
+          backendType: 'hermes',
+          gatewayUrl,
+          gatewayToken,
+        });
         if (!onboardingComplete) {
           completeOnboarding();
         }
@@ -3578,25 +3833,21 @@ export default function App() {
       })
       .catch((error: unknown) => {
         const info = readGatewayError(error);
-        const isPairing =
-          info.code === 'PAIRING_REQUIRED' ||
-          /pairing.required/i.test(info.message);
-        if (isPairing) {
-          setPairingRequestId(info.requestId ?? null);
-          const approvalHint = info.requestId
-            ? ` Approve with: openclaw devices approve ${info.requestId}`
-            : ' Approve the pending request on the gateway host.';
-          setHealth({ ok: false, message: `Pairing required.${approvalHint}` });
-          setStatus(`Pairing required.${approvalHint}`);
-        } else {
-          const offlineMessage = info.message || 'Gateway is offline or unreachable.';
-          void appendGatewayDiscoveryHint(offlineMessage).then((nextMessage) => {
-            setHealth({ ok: false, message: nextMessage });
-            setStatus(nextMessage);
-          });
-        }
+        const offlineMessage = info.message || 'Gateway is offline or unreachable.';
+        void appendGatewayDiscoveryHint(offlineMessage).then((nextMessage) => {
+          setHealth({ ok: false, message: nextMessage });
+          setStatus(nextMessage);
+        });
       });
-  }, [appendGatewayDiscoveryHint, config.gatewayToken, config.gatewayUrl, onboardingComplete, configReady, markGatewayConnectionLastUsed]);
+  }, [
+    appendGatewayDiscoveryHint,
+    config.gatewayToken,
+    config.gatewayUrl,
+    onboardingComplete,
+    configReady,
+    markGatewayConnectionLastUsed,
+    normalizeGatewayUrl,
+  ]);
 
   useEffect(() => {
     if (activePage !== 'chat') {
@@ -3616,45 +3867,43 @@ export default function App() {
     void loadChatSession(normalized, undefined);
   }, [activePage, activeSessionKey]);
 
-  const handleSave = async (event: FormEvent) => {
-    event.preventDefault();
-
-    const nextConfig: AppConfig = {
-      gatewayUrl: draftGatewayUrl.trim() || DEFAULT_GATEWAY_URL,
-      gatewayToken: draftGatewayToken,
-    };
-
+  const connectWithConfig = useCallback(async (nextConfig: AppConfig, options?: { skipPersist?: boolean; statusPrefix?: string }) => {
     setSaving(true);
-    setStatus('Saving and connecting...');
-    setPairingRequestId(null);
+    setStatus(options?.statusPrefix ? `${options.statusPrefix} Connecting...` : 'Connecting...');
 
-    // Persist config
-    if (bridge) {
-      try {
-        const savedConfig = await bridge.saveConfig(nextConfig);
-        setConfig(savedConfig);
-        setDraftGatewayUrl(savedConfig.gatewayUrl);
-        setDraftGatewayToken(savedConfig.gatewayToken);
-        persistLocalConfig(savedConfig);
-      } catch {
-        setStatus('Failed to save configuration.');
-        setSaving(false);
-        return;
+    if (!options?.skipPersist) {
+      if (bridge) {
+        try {
+          const savedConfig = await bridge.saveConfig(nextConfig);
+          setConfig(savedConfig);
+          setDraftGatewayUrl(savedConfig.gatewayUrl);
+          setDraftGatewayToken(savedConfig.gatewayToken);
+          persistLocalConfig(savedConfig);
+          nextConfig = savedConfig;
+        } catch {
+          setStatus('Failed to save configuration.');
+          setSaving(false);
+          return;
+        }
+      } else {
+        setConfig(nextConfig);
+        persistLocalConfig(nextConfig);
       }
-    } else {
-      setConfig(nextConfig);
-      persistLocalConfig(nextConfig);
     }
 
-    // Connect
     try {
       const client = gatewayClientRef.current;
       if (!client) {
         throw new Error('Gateway client not initialized.');
       }
 
+      let connectGatewayUrl = normalizeGatewayUrl(nextConfig.gatewayUrl);
+      if (!connectGatewayUrl) {
+        throw new Error('Hermes endpoint is required.');
+      }
+
       await client.connect({
-        gatewayUrl: nextConfig.gatewayUrl,
+        gatewayUrl: connectGatewayUrl,
         token: nextConfig.gatewayToken,
       });
 
@@ -3668,86 +3917,53 @@ export default function App() {
         setSelectedModel('');
       }
 
-      setHealth({ ok: true, message: `Connected to ${nextConfig.gatewayUrl}` });
-      setStatus('Configuration saved. Connected to Gateway.');
+      setHealth({ ok: true, message: `Connected to ${connectGatewayUrl}` });
+      setStatus(options?.statusPrefix ? `${options.statusPrefix} Connected.` : 'Connected.');
       markGatewayConnectionLastUsed(nextConfig);
     } catch (error) {
       console.error('[Relay] connect error:', error);
       const info = readGatewayError(error);
-      const isPairing =
-        info.code === 'PAIRING_REQUIRED' ||
-        /pairing.required/i.test(info.message);
-      if (isPairing) {
-        setPairingRequestId(info.requestId ?? null);
-        const approvalHint = info.requestId
-          ? ` Approve with: openclaw devices approve ${info.requestId}`
-          : ' Approve the pending request on the gateway host.';
-        setHealth({ ok: false, message: `Pairing required.${approvalHint}` });
-        setStatus(`Configuration saved. Pairing required.${approvalHint}`);
-      } else {
-        const failureMessage = info.message || 'Gateway connection failed.';
-        const hinted = await appendGatewayDiscoveryHint(failureMessage);
-        setHealth({ ok: false, message: hinted });
-        setStatus(`Configuration saved. ${hinted}`);
-      }
+      const failureMessage = info.message || 'Backend connection failed.';
+      const hinted = await appendGatewayDiscoveryHint(failureMessage);
+      setHealth({ ok: false, message: hinted });
+      setStatus(options?.statusPrefix ? `${options.statusPrefix} ${hinted}` : hinted);
     } finally {
       setSaving(false);
     }
-  };
+  }, [appendGatewayDiscoveryHint, bridge, loadModelsForSession, loadRecentChatsFromBackend, markGatewayConnectionLastUsed]);
 
-  const handleResetPairing = async () => {
-    const client = gatewayClientRef.current;
-    if (!client) {
-      setStatus('Gateway client not initialized.');
+  const handleQuickConnectHermes = useCallback(async () => {
+    const normalizedGatewayUrl = normalizeGatewayUrl(draftGatewayUrl);
+    if (!normalizedGatewayUrl) {
+      setHealth({ ok: false, message: 'Hermes endpoint is required.' });
+      setStatus('Hermes endpoint is required.');
       return;
     }
+    setConfig((prev) => ({ ...prev, backendType: 'hermes' }));
+    setDraftGatewayUrl(normalizedGatewayUrl);
 
-    setChecking(true);
-    setPairingRequestId(null);
-    setStatus('Resetting local device identity and requesting fresh pairing...');
+    const nextConfig: AppConfig = {
+      backendType: 'hermes',
+      gatewayUrl: normalizedGatewayUrl,
+      gatewayToken: draftGatewayToken,
+    };
 
-    try {
-      client.disconnect();
-      const clientWithReset = client as OpenClawGatewayClient & {
-        resetDeviceIdentity?: () => void;
-      };
-      if (typeof clientWithReset.resetDeviceIdentity === 'function') {
-        clientWithReset.resetDeviceIdentity();
-      } else {
-        // Fallback for stale runtime instances that predate resetDeviceIdentity().
-        localStorage.removeItem('openclaw-device-identity-v1');
-      }
-      await client.connect({
-        gatewayUrl: draftGatewayUrl,
-        token: draftGatewayToken,
-      });
+    await connectWithConfig(nextConfig, {
+      statusPrefix: 'Quick connect (hermes)',
+    });
+  }, [connectWithConfig, draftGatewayToken, normalizeGatewayUrl]);
 
-      const sessionKey = normalizeSessionKey(activeSessionKeyRef.current);
-      if (sessionKey) {
-        commitActiveSessionKey(sessionKey);
-      }
-      setHealth({ ok: true, message: `Re-paired and connected to ${draftGatewayUrl}` });
-      setStatus('Re-pair complete. If operator.admin is still missing, approve the new request with admin scope on the gateway host.');
-    } catch (error) {
-      console.error('[Relay] reset pairing error:', error);
-      const info = readGatewayError(error);
-      const isPairing =
-        info.code === 'PAIRING_REQUIRED' ||
-        /pairing.required/i.test(info.message);
-      if (isPairing) {
-        setPairingRequestId(info.requestId ?? null);
-        const approvalHint = info.requestId
-          ? `openclaw devices approve ${info.requestId}`
-          : 'openclaw devices list then openclaw devices approve <requestId>';
-        setHealth({ ok: false, message: 'New pairing request created. Approve it with admin scope.' });
-        setStatus(`New pairing request created. Approve with admin scope: ${approvalHint}`);
-      } else {
-        setHealth({ ok: false, message: info.message || 'Failed to reset pairing.' });
-        setStatus(info.message || 'Failed to reset pairing.');
-      }
-    } finally {
-      setChecking(false);
-    }
+
+  const handleSave = async (event: FormEvent) => {
+    event.preventDefault();
+
+    const nextConfig: AppConfig = {
+      backendType: 'hermes',
+      gatewayUrl: normalizeGatewayUrl(draftGatewayUrl),
+      gatewayToken: draftGatewayToken,
+    };
+
+    await connectWithConfig(nextConfig, { statusPrefix: 'Configuration saved.' });
   };
 
   const handlePlanTask = async (event: FormEvent) => {
@@ -3771,7 +3987,7 @@ export default function App() {
 
     const text = coworkDraftPrompt.trim();
     if (!text) {
-      setStatus('Describe the outcome first so OpenClaw can plan the work.');
+      setStatus('Describe the outcome first so Relay can plan the work.');
       setCoworkSending(false);
       return;
     }
@@ -3843,7 +4059,6 @@ export default function App() {
         return next;
       });
       upsertCoworkThread(sessionKey, {
-        title: text,
         touchedAt: Date.now(),
       });
 
@@ -3923,14 +4138,18 @@ export default function App() {
         rootFolder: folderContext,
         startedAt: Date.now(),
       });
-      const relayFileInstruction = [
-        'If the user request involves local files/folders in any way, your response MUST be ONE JSON code block with relay_actions and no prose.',
-        '```json',
-        '{"relay_actions":[{"id":"a1","type":"list_dir","path":"."},{"id":"a2","type":"create_file","path":"relative/path.ext","content":"file contents","overwrite":false},{"id":"a3","type":"append_file","path":"relative/path.ext","content":"more text"},{"id":"a4","type":"read_file","path":"relative/path.ext"},{"id":"a5","type":"exists","path":"relative/path.ext"},{"id":"a6","type":"rename","path":"old.ext","newPath":"new.ext"},{"id":"a7","type":"delete","path":"obsolete.ext"}]}',
-        '```',
-        'If filenames are unknown, first emit a list_dir action and do not ask follow-up questions.',
-        'Never respond with natural language explanations for file-operation requests.',
-      ].join('\n');
+  const relayFileInstruction = [
+    'If the user request involves local files/folders in any way, your response MUST be ONE JSON code block with relay_actions and no prose.',
+    'Primary code-edit operation: use replace_in_file for targeted edits when a file already exists (Hermes TUI style patching).',
+    'Use append_file only for true appends; use create_file for new files.',
+    'replace_in_file expects exact oldString text and supports replaceAll for multiple matches.',
+    'If exact text is unknown, emit read_file first to fetch the file, then emit replace_in_file.',
+    '```json',
+    '{"relay_actions":[{"id":"a1","type":"list_dir","path":"."},{"id":"a2","type":"read_file","path":"relative/path.ext"},{"id":"a3","type":"replace_in_file","path":"relative/path.ext","oldString":"find this","newString":"replace with this","replaceAll":false},{"id":"a4","type":"create_file","path":"relative/path.ext","content":"file contents","overwrite":false},{"id":"a5","type":"append_file","path":"relative/path.ext","content":"more text"},{"id":"a6","type":"exists","path":"relative/path.ext"},{"id":"a7","type":"rename","path":"old.ext","newPath":"new.ext"},{"id":"a8","type":"delete","path":"obsolete.ext"}]}',
+    '```',
+    'If filenames are unknown, first emit a list_dir action and do not ask follow-up questions.',
+    'Never respond with natural language explanations for file-operation requests.',
+  ].join('\n');
       const projectKnowledgeContext = activeCoworkProject
         ? projectKnowledgeItems
             .filter((item) => item.projectId === activeCoworkProject.id)
@@ -5088,6 +5307,55 @@ export default function App() {
 
   const handleSendChat = async (event: FormEvent) => {
     event.preventDefault();
+    const rawInput = chatDraftPrompt.trim();
+    if (rawInput.startsWith('/')) {
+      const [rawCommand, ...rest] = rawInput.slice(1).split(/\s+/);
+      const command = rawCommand.toLowerCase();
+      const arg = rest.join(' ').trim();
+
+      if (command === 'new' || command === 'reset') {
+        handleChatPromptChange('');
+        await handleStartNewChat();
+        return;
+      }
+
+      if (command === 'stop') {
+        handleChatPromptChange('');
+        handleStopChat();
+        return;
+      }
+
+      if (command === 'status') {
+        handleChatPromptChange('');
+        const sessionKey = normalizeSessionKey(activeSessionKeyRef.current) || 'none';
+        const modelLabel = selectedModel || 'server-managed';
+        setStatus(`Status: ${gatewayConnected ? 'connected' : 'disconnected'} | session=${sessionKey} | model=${modelLabel}`);
+        return;
+      }
+
+      if (command === 'provider') {
+        handleChatPromptChange('');
+        setStatus('Provider/model routing is managed by Hermes server configuration.');
+        return;
+      }
+
+      if (command === 'model') {
+        handleChatPromptChange('');
+        if (arg) {
+          setStatus('Use the model dropdown in chat to switch models. `/model <value>` is disabled in Relay UI mode.');
+        } else {
+          setStatus('Use the model dropdown in chat to view/switch available models.');
+        }
+        return;
+      }
+
+      if (command === 'help') {
+        handleChatPromptChange('');
+        setStatus('Commands: /new, /reset, /status, /stop, /provider, /model, /help');
+        return;
+      }
+    }
+
     if (!gatewayConnected) {
       setStatus('Gateway disconnected. Connect in Settings > Gateway to send chat messages.');
       setAwaitingChatStream(false);
@@ -5095,7 +5363,7 @@ export default function App() {
       return;
     }
 
-    const text = chatDraftPrompt.trim();
+    const text = rawInput;
     if (!text) {
       setStatus('Type a message before sending.');
       return;
@@ -5138,6 +5406,7 @@ export default function App() {
       upsertChatThread(sessionKey, {
         title: text,
         touchedAt: Date.now(),
+        createIfMissing: false,
       });
 
       const rawOutbound = buildOutboundChatPrompt(text, chatMessages);
@@ -5165,7 +5434,7 @@ export default function App() {
       }
 
       commitActiveSessionKey(sessionKey);
-      setStatus(`Message sent to OpenClaw Gateway (session: ${sessionKey}). Waiting for streaming events...`);
+      setStatus(`Message sent to Hermes Gateway (session: ${sessionKey}). Waiting for streaming events...`);
     } catch (error) {
       setAwaitingChatStream(false);
       const message = error instanceof Error ? error.message : 'Failed to send chat message.';
@@ -5174,6 +5443,21 @@ export default function App() {
       setSendingChat(false);
     }
   };
+
+  const handleStopChat = useCallback(() => {
+    const client = gatewayClientRef.current;
+    if (!client) {
+      return;
+    }
+    const sessionKey = normalizeSessionKey(activeSessionKeyRef.current);
+    if (!sessionKey) {
+      return;
+    }
+    client.cancelChat?.(sessionKey);
+    setAwaitingChatStream(false);
+    setSendingChat(false);
+    setStatus('Response stopped.');
+  }, []);
 
   const handleModelChange = async (nextModelValue: string) => {
     const previousModel = selectedModel;
@@ -5190,11 +5474,20 @@ export default function App() {
     try {
       const sessionKey = await ensureActiveChatSession(client, { createIfMissing: true });
       await client.setSessionModel(sessionKey, nextModelValue || null);
-      setStatus(
-        nextModelValue
-          ? `Model updated for session ${sessionKey}: ${nextModelValue}`
-          : `Model reset to default for session ${sessionKey}.`,
-      );
+      if (nextModelValue) {
+        setStatus(`Model updated in Hermes: ${nextModelValue}. Starting a new chat session so the change takes effect.`);
+      } else {
+        setStatus('Model reset to server default. Starting a new chat session so the change takes effect.');
+      }
+      setActiveSessionKey('');
+      setChatMessages([]);
+      setChatDraftPrompt('');
+      const freshSessionKey = normalizeSessionKey(await client.createChatSession());
+      if (freshSessionKey) {
+        commitActiveSessionKey(freshSessionKey);
+        await loadRecentChatsFromBackend(client);
+        void loadModelsForSession(client, freshSessionKey);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update model.';
       setStatus(message);
@@ -5231,9 +5524,11 @@ export default function App() {
       await client.setSessionModel(sessionKey, nextModelValue || null);
       setStatus(
         nextModelValue
-          ? `Cowork model updated for session ${sessionKey}: ${nextModelValue}`
-          : `Cowork model reset to default for session ${sessionKey}.`,
+          ? `Cowork model updated in Hermes: ${nextModelValue}. Next run will start a fresh session to apply it.`
+          : 'Cowork model reset to default. Next run will start a fresh session to apply it.',
       );
+      commitCoworkSessionKey('');
+      setCoworkMessages([]);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update cowork model.';
       setStatus(message);
@@ -5461,6 +5756,7 @@ export default function App() {
     setActiveMenuItem('');
   }, [activePage]);
 
+
   const handleMinimize = async () => {
     if (!bridge?.minimizeWindow) {
       setStatus('Window controls are available only in the Electron desktop app.');
@@ -5555,7 +5851,8 @@ export default function App() {
     ...chatThreads.map((t) => ({ ...t, label: t.title, kind: 'chat' as const })),
     ...coworkThreads.map((t) => ({ ...t, label: t.title, kind: 'cowork' as const })),
   ];
-  const searchCandidates = (normalizedSearchQuery ? allThreadsForSearch : recentItems).map((item) => ({
+  const recentItemsForSearch = [...recentChatItems, ...recentCoworkItems].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  const searchCandidates = (normalizedSearchQuery ? allThreadsForSearch : recentItemsForSearch).map((item) => ({
     id: item.id,
     sessionKey: item.sessionKey,
     label: ('title' in item ? item.title : item.label) as string,
@@ -5593,7 +5890,7 @@ export default function App() {
   }, [chatMessages, activeSessionKey]);
 
   return (
-    <div className="grid h-full grid-rows-[44px_minmax(0,1fr)] overflow-hidden">
+    <div className="grid h-full grid-rows-[36px_minmax(0,1fr)] overflow-hidden bg-background">
       <AppTitlebar
         sidebarOpen={sidebarOpen}
         activePage={activePage}
@@ -5601,6 +5898,7 @@ export default function App() {
         isMaximized={isMaximized}
         usageModeLabel={usageModeLabel}
         gatewayConnected={gatewayConnected}
+        showGatewayError={showGatewayErrorBadge}
         coworkRunPhase={coworkRunPhase}
         coworkRunStatus={coworkRunStatus}
         coworkProgressSteps={coworkProgressSteps}
@@ -5628,15 +5926,15 @@ export default function App() {
           draftGatewayToken={draftGatewayToken}
           health={health}
           saving={saving}
-          pairingRequestId={pairingRequestId}
           onDraftGatewayUrlChange={setDraftGatewayUrl}
           onDraftGatewayTokenChange={setDraftGatewayToken}
           onSave={handleSave}
+          onQuickConnectHermes={handleQuickConnectHermes}
           onComplete={handleCompleteOnboarding}
         />
       ) : (
         <SidebarProvider
-          className={`grid h-full overflow-hidden transition-[grid-template-columns] duration-200 ${
+          className={`app-workspace-shell grid h-full overflow-hidden transition-[grid-template-columns] duration-200 ${
             sidebarOpen ? 'grid-cols-[280px_minmax(0,1fr)]' : 'grid-cols-[64px_minmax(0,1fr)]'
           }`}
         >
@@ -5650,7 +5948,8 @@ export default function App() {
             guestMode={guestMode}
             language={preferences.language}
             settingsSection={settingsSection}
-            recentItems={recentItems}
+            chatRecentItems={recentChatItems}
+            projectRecentItemsByProjectId={projectRecentItemsByProjectId}
             coworkProjects={coworkProjects}
             activeCoworkProjectId={activeCoworkProjectId}
             workingFolder={workingFolder}
@@ -5683,7 +5982,7 @@ export default function App() {
             onLogout={handleLogout}
           />
 
-          <main className="relative min-h-0 overflow-hidden p-0">
+          <SidebarInset>
             <Dialog
               open={Boolean(recentRenameTarget)}
               onOpenChange={(nextOpen) => {
@@ -5795,50 +6094,62 @@ export default function App() {
                 </CommandList>
               </Command>
             </CommandDialog>
-            <Suspense fallback={pageLoadingFallback}>
-              {activePage === 'cowork' ? (
+            <div className="h-full w-full overflow-hidden bg-background">
+              <Suspense fallback={pageLoadingFallback}>
+                {(activePage === 'chat' || activePage === 'cowork') ? (
                 <CoworkPage
-                  key={`cowork-${coworkResetKey}`}
-                  projectTitle={activeCoworkProject?.name || 'No project selected'}
-                  projectSelected={Boolean(activeCoworkProject)}
-                  projectInstructions={activeCoworkProject?.instructions || ''}
-                  scheduledCount={scheduledJobs.length}
-                  canRerunLastTask={Boolean(latestVisibleCoworkTaskPrompt)}
-                  taskPrompt={coworkDraftPrompt}
-                  messages={coworkMessages}
-                  rightPanelOpen={coworkRightPanelOpen}
-                  awaitingStream={coworkAwaitingStream}
-                  artifacts={coworkArtifacts}
-                  onOpenArtifact={handleOpenCoworkArtifact}
-                  onScheduleRun={handleScheduleCoworkRun}
-                  onRerunLastTask={handleRerunLastCoworkTask}
-                  selectedModel={coworkModel}
-                  models={coworkModels}
+                  key={`${activePage}-${coworkResetKey}`}
+                  projectTitle={activePage === 'cowork' ? (activeCoworkProject?.name || 'No project selected') : 'Chats'}
+                  projectSelected={activePage === 'cowork' ? Boolean(activeCoworkProject) : false}
+                  projectInstructions={activePage === 'cowork' ? (activeCoworkProject?.instructions || '') : ''}
+                  scheduledCount={activePage === 'cowork' ? scheduledJobs.length : 0}
+                  canRerunLastTask={activePage === 'cowork' ? Boolean(latestVisibleCoworkTaskPrompt) : false}
+                  taskPrompt={activePage === 'cowork' ? coworkDraftPrompt : chatDraftPrompt}
+                  messages={activePage === 'cowork' ? coworkMessages : chatMessages}
+                  rightPanelOpen={activePage === 'cowork' ? coworkRightPanelOpen : false}
+                  awaitingStream={activePage === 'cowork' ? coworkAwaitingStream : awaitingChatStream}
+                  artifacts={activePage === 'cowork' ? coworkArtifacts : []}
+                  onOpenArtifact={activePage === 'cowork' ? handleOpenCoworkArtifact : () => {}}
+                  onScheduleRun={activePage === 'cowork' ? handleScheduleCoworkRun : () => {}}
+                  onRerunLastTask={activePage === 'cowork' ? handleRerunLastCoworkTask : handleStartNewChat}
+                  selectedModel={activePage === 'cowork' ? coworkModel : selectedModel}
+                  models={activePage === 'cowork' ? coworkModels : chatModels}
                   modelsLoading={modelsLoading}
-                  changingModel={changingCoworkModel}
-                  pendingApprovals={visiblePendingApprovals}
-                  projectTasks={visibleCoworkTasks}
-                  sending={coworkSending}
+                  changingModel={activePage === 'cowork' ? changingCoworkModel : changingModel}
+                  pendingApprovals={[]}
+                  projectTasks={activePage === 'cowork' ? visibleCoworkTasks : []}
+                  sending={activePage === 'cowork' ? coworkSending : sendingChat}
                   gatewayConnected={gatewayConnected}
-                  webSearchEnabled={coworkWebSearchEnabled}
-                  runPhase={coworkRunPhase}
-                  runStatus={coworkRunStatus}
-                  progressSteps={coworkProgressSteps}
-                  approvalMode="standard"
-                  projectPathReferences={coworkProjectPathReferences}
+                  webSearchEnabled={activePage === 'cowork' ? coworkWebSearchEnabled : false}
+                  runPhase={
+                    activePage === 'cowork'
+                      ? coworkRunPhase
+                      : sendingChat
+                        ? 'sending'
+                        : awaitingChatStream
+                          ? 'streaming'
+                          : 'idle'
+                  }
+                  progressSteps={activePage === 'cowork' ? coworkProgressSteps : []}
+                  approvalMode="none"
+                  projectPathReferences={activePage === 'cowork' ? coworkProjectPathReferences : []}
                   contextWindowUsedTokens={0}
                   contextWindowTotalTokens={1}
                   onOpenGatewaySettings={() => {
                     setActivePage('settings');
                     setSettingsSection('Gateway');
                   }}
-                  onTaskPromptChange={handleCoworkPromptChange}
-                  onModelChange={handleCoworkModelChange}
+                  onTaskPromptChange={activePage === 'cowork' ? handleCoworkPromptChange : handleChatPromptChange}
+                  onModelChange={activePage === 'cowork' ? handleCoworkModelChange : handleModelChange}
                   onWebSearchEnabledChange={setCoworkWebSearchEnabled}
                   onApprovalModeChange={() => {}}
-                  onSubmit={handlePlanTask}
-                  onApprovePendingAction={handleApprovePendingAction}
-                  onRejectPendingAction={handleRejectPendingAction}
+                  onSubmit={activePage === 'cowork' ? handlePlanTask : handleSendChat}
+                  onApprovePendingAction={() => {}}
+                  onRejectPendingAction={() => {}}
+                  fileChangeSummary={fileChangeSummary}
+                  undoingFileChanges={undoingFileChanges}
+                  onUndoFileChanges={handleUndoFileChanges}
+                  onReviewFileChanges={handleReviewFileChanges}
                 />
               ) : activePage === 'project' ? (
                 <ProjectPage
@@ -5917,35 +6228,7 @@ export default function App() {
                 )
               ) : (
                 <>
-                {activePage === 'chat' && (
-                  <ChatPage
-                    taskPrompt={chatDraftPrompt}
-                    messages={chatMessages}
-                    sending={sendingChat}
-                    awaitingStream={awaitingChatStream}
-                    sessionKey={activeSessionKey}
-                    userDisplayName={preferences.displayName || preferences.fullName}
-                    models={chatModels}
-                    selectedModel={selectedModel}
-                    modelsLoading={modelsLoading}
-                    changingModel={changingModel}
-                    gatewayConnected={gatewayConnected}
-                    status={status}
-                    onTaskPromptChange={handleChatPromptChange}
-                    onModelChange={handleModelChange}
-                    onSubmit={handleSendChat}
-                    onExport={handleExportChat}
-                    onNewChat={handleStartNewChat}
-                    onClearChat={() => setChatMessages([])}
-                    onOpenSettings={() => setActivePage('settings')}
-                    onOpenGatewaySettings={() => {
-                      setActivePage('settings');
-                      setSettingsSection('Gateway');
-                    }}
-                  />
-                )}
-
-                {activePage !== 'chat' && (
+                {(
                   <ScrollArea className="h-full">
                     {activePage === 'activity' && (
                       <ActivityPage
@@ -6005,7 +6288,6 @@ export default function App() {
                         health={health}
                         status={status}
                         saving={saving}
-                        pairingRequestId={pairingRequestId}
                         preferences={preferences}
                         gatewayConnections={gatewayConnections}
                         selectedGatewayConnectionId={selectedGatewayConnectionId}
@@ -6016,16 +6298,17 @@ export default function App() {
                         onSaveGatewayConnection={handleSaveGatewayConnection}
                         onOverwriteGatewayConnection={handleOverwriteGatewayConnection}
                         onDeleteGatewayConnection={handleDeleteGatewayConnection}
-                        onResetPairing={handleResetPairing}
+                        onQuickConnectHermes={handleQuickConnectHermes}
                         onUpdatePreferences={updatePreferences}
                       />
                     )}
                   </ScrollArea>
                 )}
                 </>
-              )}
-            </Suspense>
-          </main>
+                )}
+              </Suspense>
+            </div>
+          </SidebarInset>
         </SidebarProvider>
       )}
     </div>

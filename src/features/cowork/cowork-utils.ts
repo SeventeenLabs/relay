@@ -22,12 +22,12 @@ export function approvalRiskClasses(riskLevel: PendingApprovalAction['riskLevel'
   if (riskLevel === 'medium') {
     return 'border-amber-500/40 bg-amber-500/12 text-amber-800 dark:text-amber-300';
   }
-  return 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+  return 'border-blue-500/35 bg-blue-500/10 text-blue-700 dark:text-blue-300';
 }
 
 export function taskStatusClasses(status: CoworkProjectTaskStatus): string {
   if (status === 'completed') {
-    return 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+    return 'border-blue-500/35 bg-blue-500/10 text-blue-700 dark:text-blue-300';
   }
   if (status === 'failed' || status === 'rejected') {
     return 'border-destructive/35 bg-destructive/10 text-destructive';

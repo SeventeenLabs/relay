@@ -25,7 +25,6 @@ type SettingsPageProps = {
   health: HealthCheckResult | null;
   status: string;
   saving: boolean;
-  pairingRequestId: string | null;
   preferences: UserPreferences;
   gatewayConnections: GatewayConnectionProfile[];
   selectedGatewayConnectionId: string | null;
@@ -36,7 +35,7 @@ type SettingsPageProps = {
   onSaveGatewayConnection: (name: string) => void;
   onOverwriteGatewayConnection: (connectionId: string) => void;
   onDeleteGatewayConnection: (connectionId: string) => void;
-  onResetPairing: () => void | Promise<void>;
+  onQuickConnectHermes: () => void | Promise<void>;
   onUpdatePreferences: (patch: Partial<UserPreferences>) => void;
 };
 
@@ -54,8 +53,8 @@ const sectionDescriptions: Record<SettingsSection, { en: string; de: string }> =
     de: 'Standardanweisungen fuer jede Konversation.',
   },
   Gateway: {
-    en: 'OpenClaw gateway connection and device authorization.',
-    de: 'OpenClaw-Gateway-Verbindung und Geraeteautorisierung.',
+    en: 'Hermes connection and device authorization.',
+    de: 'Hermes-Verbindung und Geraeteautorisierung.',
   },
   Connectors: {
     en: 'Connect external services to Relay.',
@@ -80,26 +79,26 @@ function StylePreview({ style, dark }: { style: StyleOption; dark: boolean }) {
   const colors = isRelay
     ? dark
       ? {
-          bg: '#0b0d0c',
-          surface: '#121514',
-          border: '#2b312e',
-          lineStrong: '#f1f5f3',
-          lineSoft: '#98a8a2',
-          lineMuted: '#6d7b75',
-          panel: '#1a1f1d',
-          accentStrong: '#bbf451',
-          accentSoft: '#3c4d1b',
+          bg: '#0a0f16',
+          surface: '#121923',
+          border: '#28384c',
+          lineStrong: '#eef4fb',
+          lineSoft: '#9eb0c6',
+          lineMuted: '#6f8299',
+          panel: '#182231',
+          accentStrong: '#4a9fd8',
+          accentSoft: '#16345c',
         }
       : {
-          bg: '#f6f8f7',
+          bg: '#f5f9fd',
           surface: '#ffffff',
-          border: '#d8dfdb',
-          lineStrong: '#101513',
-          lineSoft: '#5f6f68',
-          lineMuted: '#8ea099',
-          panel: '#f2f6f4',
-          accentStrong: '#7b9f2f',
-          accentSoft: '#dcf0b3',
+          border: '#d7e3f0',
+          lineStrong: '#0f2741',
+          lineSoft: '#4f6e90',
+          lineMuted: '#7f9dbd',
+          panel: '#eef5fc',
+          accentStrong: '#1e5ba8',
+          accentSoft: '#d6e6f8',
         }
     : dark
       ? {
@@ -149,13 +148,13 @@ function ThemePreview({ mode, style }: { mode: ThemeOption; style: StyleOption }
   const isRelay = style === 'relay';
   const light = isRelay
     ? {
-        bg: '#f6f8f7',
+        bg: '#f5f9fd',
         surface: '#ffffff',
-        border: '#d8dfdb',
-        lineStrong: '#101513',
-        lineSoft: '#5f6f68',
-        lineMuted: '#8ea099',
-        panel: '#f2f6f4',
+        border: '#d7e3f0',
+        lineStrong: '#0f2741',
+        lineSoft: '#4f6e90',
+        lineMuted: '#7f9dbd',
+        panel: '#eef5fc',
       }
     : {
         bg: '#f4f3ee',
@@ -168,13 +167,13 @@ function ThemePreview({ mode, style }: { mode: ThemeOption; style: StyleOption }
       };
   const dark = isRelay
     ? {
-        bg: '#0b0d0c',
-        surface: '#121514',
-        border: '#2b312e',
-        lineStrong: '#f1f5f3',
-        lineSoft: '#98a8a2',
-        lineMuted: '#6d7b75',
-        panel: '#1a1f1d',
+        bg: '#0a0f16',
+        surface: '#121923',
+        border: '#28384c',
+        lineStrong: '#eef4fb',
+        lineSoft: '#9eb0c6',
+        lineMuted: '#6f8299',
+        panel: '#182231',
       }
     : {
         bg: '#1f1d1a',
@@ -235,7 +234,6 @@ export function SettingsPage({
   health,
   status,
   saving,
-  pairingRequestId,
   preferences,
   gatewayConnections,
   selectedGatewayConnectionId,
@@ -246,11 +244,10 @@ export function SettingsPage({
   onSaveGatewayConnection,
   onOverwriteGatewayConnection,
   onDeleteGatewayConnection,
-  onResetPairing,
+  onQuickConnectHermes,
   onUpdatePreferences,
 }: SettingsPageProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [prefersDarkSystem, setPrefersDarkSystem] = useState(false);
   const [connectionNameDraft, setConnectionNameDraft] = useState('');
   const t = useCallback((en: string, de: string) => (preferences.language === 'de' ? de : en), [preferences.language]);
@@ -272,26 +269,6 @@ export function SettingsPage({
   const useDarkPreview =
     preferences.theme === 'dark' || (preferences.theme === 'auto' && prefersDarkSystem);
 
-  const effectivePairingId = useMemo(() => {
-    if (pairingRequestId) return pairingRequestId;
-    if (health && !health.ok) {
-      const match = health.message.match(
-        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
-      );
-      return match?.[0] ?? null;
-    }
-    return null;
-  }, [pairingRequestId, health]);
-
-  const copyCommand = useCallback(() => {
-    if (!effectivePairingId) return;
-    const cmd = `openclaw devices approve ${effectivePairingId}`;
-    void navigator.clipboard.writeText(cmd).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [effectivePairingId]);
-
   const handleSaveCurrentConnection = useCallback(() => {
     const fallbackName = draftGatewayUrl.trim() || 'Gateway connection';
     const nextName = connectionNameDraft.trim() || fallbackName;
@@ -312,7 +289,7 @@ export function SettingsPage({
   );
 
   return (
-    <section className="h-full w-full overflow-y-auto p-4 pb-8">
+    <section className="h-full w-full overflow-y-auto bg-background p-4 pb-8">
       <div className="mb-4">
         <h1 className="mb-1 text-[clamp(1.55rem,2.4vw,2rem)] tracking-tight">
           {preferences.language === 'de'
@@ -528,7 +505,7 @@ export function SettingsPage({
         <div className="flex flex-col gap-4">
           <section className={settingsCardClass}>
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-base font-medium">{t('Connection', 'Verbindung')}</h2>
+              <h2 className="text-base font-medium">{t('Hermes Instance', 'Hermes-Instanz')}</h2>
               <Badge
                 variant="outline"
                 className={
@@ -540,60 +517,58 @@ export function SettingsPage({
                 {health?.ok ? t('Connected', 'Verbunden') : t('Not connected', 'Nicht verbunden')}
               </Badge>
             </div>
-            <form className="grid gap-3" onSubmit={onSave}>
-              <label className="grid gap-1">
-                <span className="font-sans text-xs text-muted-foreground">Gateway URL (WebSocket)</span>
-                <Input
-                  value={draftGatewayUrl}
-                  onChange={(event) => onDraftGatewayUrlChange(event.target.value)}
-                  placeholder="ws://127.0.0.1:18789"
-                  className="font-sans"
-                />
-              </label>
-
-              <label className="grid gap-1">
-                <span className="font-sans text-xs text-muted-foreground">Gateway token</span>
-                <Input
-                  type="password"
-                  value={draftGatewayToken}
-                  onChange={(event) => onDraftGatewayTokenChange(event.target.value)}
-                  placeholder={t('Paste token from OpenClaw setup', 'Token aus dem OpenClaw-Setup einfuegen')}
-                  className="font-sans"
-                />
-              </label>
-
-              <Button
-                className="w-full border-0 bg-primary text-primary-foreground hover:bg-primary/90"
-                type="submit"
-                disabled={saving}
-              >
-                {saving ? t('Connecting...', 'Verbinde...') : t('Save and connect', 'Speichern und verbinden')}
-              </Button>
-            </form>
-
-            {effectivePairingId ? (
-              <div className="mt-3 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3">
-                <p className="font-sans text-xs font-medium text-amber-800 dark:text-amber-200">{t('Device pairing required', 'Geraete-Pairing erforderlich')}</p>
-                <p className="mt-1 font-sans text-xs text-amber-800 dark:text-amber-200">
-                  {t('Run this command on your gateway host:', 'Fuehre diesen Befehl auf deinem Gateway-Host aus:')}
-                </p>
-                <div className="mt-1 flex items-center gap-1">
-                  <code className="flex-1 rounded bg-background/70 px-2 py-1 font-mono text-xs text-amber-900 dark:text-amber-100 select-all">
-                    openclaw devices approve {effectivePairingId}
-                  </code>
-                  <button
-                    type="button"
-                    className="shrink-0 rounded bg-background/70 px-2 py-1 font-sans text-[10px] text-amber-900 dark:text-amber-100 hover:bg-background"
-                    onClick={copyCommand}
-                  >
-                    {copied ? t('Copied', 'Kopiert') : t('Copy', 'Kopieren')}
-                  </button>
+            <div className="grid gap-3">
+              <div className="rounded-lg border border-border/70 bg-card p-3">
+                <p className="mb-2 font-sans text-xs font-medium text-foreground">{t('Step 1: Quick start', 'Schritt 1: Schnellstart')}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => onDraftGatewayUrlChange('http://127.0.0.1:8642/v1')}>
+                    Local preset
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => onDraftGatewayUrlChange('http://YOUR_VPS_IP:8642/v1')}>
+                    VPS preset
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void onQuickConnectHermes()}>
+                    {t('Connect local Hermes', 'Lokales Hermes verbinden')}
+                  </Button>
                 </div>
-                <p className="mt-2 font-sans text-xs text-amber-900/80 dark:text-amber-100/80">
-                  {t('Click Save and connect again afterwards.', 'Klicke danach erneut auf Speichern und verbinden.')}
-                </p>
               </div>
-            ) : health && !health.ok ? (
+
+              <form className="grid gap-3 rounded-lg border border-border/70 bg-card p-3" onSubmit={onSave}>
+                <p className="font-sans text-xs font-medium text-foreground">{t('Step 2: Manual endpoint', 'Schritt 2: Manueller Endpunkt')}</p>
+                <label className="grid gap-1">
+                  <span className="font-sans text-xs text-muted-foreground">
+                    Hermes endpoint
+                  </span>
+                  <Input
+                    value={draftGatewayUrl}
+                    onChange={(event) => onDraftGatewayUrlChange(event.target.value)}
+                    placeholder="http://127.0.0.1:8642/v1"
+                    className="font-sans"
+                  />
+                </label>
+
+                <label className="grid gap-1">
+                  <span className="font-sans text-xs text-muted-foreground">Hermes token</span>
+                  <Input
+                    type="password"
+                    value={draftGatewayToken}
+                    onChange={(event) => onDraftGatewayTokenChange(event.target.value)}
+                    placeholder={t('Optional auth token for Hermes endpoint', 'Optionaler Auth-Token fuer Hermes-Endpunkt')}
+                    className="font-sans"
+                  />
+                </label>
+
+                <Button
+                  className="w-full border-0 bg-primary text-primary-foreground hover:bg-primary/90"
+                  type="submit"
+                  disabled={saving}
+                >
+                  {saving ? t('Connecting...', 'Verbinde...') : t('Connect this instance', 'Diese Instanz verbinden')}
+                </Button>
+              </form>
+            </div>
+
+            {health && !health.ok ? (
               <div className="mt-3 rounded-lg border border-destructive/25 bg-destructive/10 p-3">
                 <p className="font-sans text-xs font-medium text-destructive">{t('Connection failed', 'Verbindung fehlgeschlagen')}</p>
                 <p className="mt-1 font-sans text-xs text-destructive/85">{health.message}</p>
@@ -607,9 +582,9 @@ export function SettingsPage({
 
           <section className={settingsCardClass}>
             <div className="mb-3">
-              <h2 className="text-base font-medium">{t('Saved connections', 'Gespeicherte Verbindungen')}</h2>
+              <h2 className="text-base font-medium">{t('Instance Profiles', 'Instanz-Profile')}</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                {t('Store multiple gateways and switch between them quickly.', 'Speichere mehrere Gateways und wechsle schnell zwischen ihnen.')}
+                {t('Save local and VPS Hermes endpoints and switch with one click.', 'Speichere lokale und VPS-Hermes-Endpunkte und wechsle mit einem Klick.')}
               </p>
             </div>
             <div className="grid gap-3">
@@ -692,27 +667,10 @@ export function SettingsPage({
 
           <section className={settingsCardClass}>
             <div className="mb-3">
-              <h2 className="text-base font-medium">{t('Device management', 'Geraeteverwaltung')}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{t('Device identity and pairing status.', 'Geraeteidentitaet und Pairing-Status.')}</p>
-            </div>
-            <div className="grid gap-3">
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
-                <div>
-                  <p className="text-sm font-medium">{t('Reset device identity', 'Geraeteidentitaet zuruecksetzen')}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {t('Resets Ed25519 keys. Pairing must be approved again afterwards.', 'Setzt die Ed25519-Schluessel zurueck. Danach muss Pairing erneut bestaetigt werden.')}
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  className="shrink-0 font-sans text-xs"
-                  onClick={() => void onResetPairing()}
-                >
-                  {t('Reset', 'Zuruecksetzen')}
-                </Button>
-              </div>
+              <h2 className="text-base font-medium">{t('Hermes model', 'Hermes-Modell')}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t('Model/provider selection is managed in Hermes itself (dashboard, hermes model, or /model). Relay uses whatever Hermes is configured to run.', 'Modell/Provider-Auswahl wird in Hermes selbst verwaltet (Dashboard, hermes model oder /model). Relay nutzt die aktuelle Hermes-Konfiguration.')}
+              </p>
             </div>
           </section>
 
@@ -736,7 +694,7 @@ export function SettingsPage({
                   <Input type="number" className="font-sans w-32" placeholder="1000" defaultValue="1000" />
                 </label>
                 <label className="grid gap-1">
-                  <span className="font-sans text-xs text-muted-foreground">WebSocket timeout (ms)</span>
+                  <span className="font-sans text-xs text-muted-foreground">Connection timeout (ms)</span>
                   <Input type="number" className="font-sans w-32" placeholder="30000" defaultValue="30000" />
                 </label>
               </div>

@@ -1,15 +1,15 @@
-# OpenClaw Gateway — `workspace.*` RPC Specification
+# Hermes Gateway — `workspace.*` RPC Specification
 
 > Required server-side implementation for Relay's remote file explorer.
 
-## Architecture Context (from OpenClaw docs research)
+## Architecture Context (from Hermes docs research)
 
-**Current state (as of OpenClaw docs, 2026):** The OpenClaw gateway protocol does
+**Current state (as of Hermes docs, 2026):** The Hermes gateway protocol does
 NOT expose any direct file access RPCs for operator clients. The documented RPC
 surface includes: `chat.send`, `sessions.*`, `models.list`, `tools.catalog`,
 `cron.list`, `exec.approval.resolve`, and device/presence management.
 
-### How OpenClaw handles files today
+### How Hermes handles files today
 
 1. **Agent file tools** (`group:fs`): `read`, `write`, `edit`, `apply_patch` —
    these are tools the AI model uses *during chat responses*. They operate on the
@@ -20,7 +20,7 @@ surface includes: `chat.send`, `sessions.*`, `models.list`, `tools.catalog`,
    provenance metadata. Does not invoke tools.
 
 3. **Workspace location**: Configured per-agent at `agents.defaults.workspace`
-   (default: `~/.openclaw/workspace`). With sandboxing enabled, `workspaceAccess`
+   (default: `~/.hermes/workspace`). With sandboxing enabled, `workspaceAccess`
    controls visibility: `"none"` (sandbox only), `"ro"` (read-only mount at
    `/agent`), `"rw"` (read/write mount at `/workspace`).
 
@@ -30,12 +30,12 @@ surface includes: `chat.send`, `sessions.*`, `models.list`, `tools.catalog`,
 
 ### Solution: `relay-workspace` plugin
 
-The OpenClaw Plugin SDK provides `api.registerGatewayMethod(name, handler)` which
+The Hermes Plugin SDK provides `api.registerGatewayMethod(name, handler)` which
 lets plugins add custom Gateway RPC methods. The **`relay-workspace`** plugin
-(located at `plugins/openclaw-relay-workspace/`) uses this API to register all 6
+(located at `plugins/hermes-relay-workspace/`) uses this API to register all 6
 `workspace.*` methods on the gateway, making Relay's remote file explorer work.
 
-Plugin entry point: `plugins/openclaw-relay-workspace/index.ts`
+Plugin entry point: `plugins/hermes-relay-workspace/index.ts`
 
 **How it works:**
 
@@ -51,7 +51,7 @@ Plugin entry point: `plugins/openclaw-relay-workspace/index.ts`
 
 | Layer | Strategy |
 |-------|----------|
-| `relay-workspace` plugin | Registers `workspace.*` Gateway RPC methods on OpenClaw server |
+| `relay-workspace` plugin | Registers `workspace.*` Gateway RPC methods on Hermes server |
 | Gateway client | Calls `workspace.*` RPCs over WebSocket JSON-RPC |
 | `tools.catalog` | Discover agent capabilities (group:fs tools) for fallback |
 | `FileService` | Abstraction layer — auto-selects local IPC or remote RPC |
@@ -62,13 +62,13 @@ Plugin entry point: `plugins/openclaw-relay-workspace/index.ts`
 
 ## Overview
 
-When Relay connects to a **remote** OpenClaw gateway (non-localhost), the file explorer
+When Relay connects to a **remote** Hermes gateway (non-localhost), the file explorer
 routes all file operations through `workspace.*` RPC methods instead of local Electron IPC.
 The server must implement these 6 methods to enable remote workspace browsing.
 
 ## Multi-Agent Requirement
 
-In multi-agent OpenClaw deployments, `workspace.*` methods should resolve against the
+In multi-agent Hermes deployments, `workspace.*` methods should resolve against the
 workspace of the agent assigned to the active run/session, not against a global path.
 
 Recommended behavior:
@@ -416,4 +416,5 @@ handlers['workspace.delete'] = async ({ path: relPath }) => {
 | `FileService` abstraction (local/remote routing) | ✅ Implemented |
 | `files-page.tsx` dual-path rendering | ✅ Implemented |
 | Graceful fallback with tool catalog display | ✅ Implemented |
-| **OpenClaw `relay-workspace` plugin** | ✅ **Implemented** (`plugins/openclaw-relay-workspace/`) |
+| **Hermes `relay-workspace` plugin** | ✅ **Implemented** (`plugins/hermes-relay-workspace/`) |
+

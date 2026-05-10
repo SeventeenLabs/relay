@@ -41,6 +41,19 @@ export function createFilesystemConnector(): ConnectorDefinition {
         ],
       },
       {
+        id: 'filesystem.replace_in_file',
+        name: 'Replace in file',
+        description: 'Replace text in an existing file',
+        scopeId: 'file-modify',
+        riskLevel: 'medium',
+        params: [
+          { name: 'path', description: 'Relative file path', required: true, type: 'string' },
+          { name: 'oldString', description: 'Text to find', required: true, type: 'string' },
+          { name: 'newString', description: 'Replacement text', required: true, type: 'string' },
+          { name: 'replaceAll', description: 'Replace all matches', required: false, type: 'boolean' },
+        ],
+      },
+      {
         id: 'filesystem.list_dir',
         name: 'List directory',
         description: 'List files and directories',
@@ -106,6 +119,14 @@ export function createFilesystemConnector(): ConnectorDefinition {
           if (!bridge.appendFileInFolder) return { ok: false, errorCode: 'UNAVAILABLE', message: 'append_file bridge unavailable' };
           const content = typeof params.content === 'string' ? params.content : '';
           const result = await bridge.appendFileInFolder(rootPath, path, content);
+          return { ok: true, data: result };
+        }
+        case 'filesystem.replace_in_file': {
+          if (!bridge.replaceInFile) return { ok: false, errorCode: 'UNAVAILABLE', message: 'replace_in_file bridge unavailable' };
+          const oldString = typeof params.oldString === 'string' ? params.oldString : '';
+          const newString = typeof params.newString === 'string' ? params.newString : '';
+          const replaceAll = typeof params.replaceAll === 'boolean' ? params.replaceAll : false;
+          const result = await bridge.replaceInFile(rootPath, path, oldString, newString, replaceAll);
           return { ok: true, data: result };
         }
         case 'filesystem.list_dir': {

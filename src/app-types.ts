@@ -1,4 +1,7 @@
+export type BackendType = 'hermes';
+
 export type AppConfig = {
+  backendType: BackendType;
   gatewayUrl: string;
   gatewayToken: string;
 };
@@ -6,6 +9,7 @@ export type AppConfig = {
 export type GatewayConnectionProfile = {
   id: string;
   name: string;
+  backendType: BackendType;
   gatewayUrl: string;
   gatewayToken: string;
   createdAt: number;
@@ -52,6 +56,24 @@ export type ChatMessageMeta =
 export type ChatModelOption = {
   value: string;
   label: string;
+};
+
+export type ChangedFileStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'unknown';
+
+export type ChangedFileEntry = {
+  path: string;
+  added: number;
+  deleted: number;
+  status: ChangedFileStatus;
+};
+
+export type FileChangeSummary = {
+  rootPath: string;
+  files: ChangedFileEntry[];
+  changedCount: number;
+  totalAdded: number;
+  totalDeleted: number;
+  generatedAt: number;
 };
 
 export type ScheduledJob = {
@@ -247,6 +269,12 @@ export type LocalFileAppendResult = {
   bytesAppended: number;
 };
 
+export type LocalFileReplaceResult = {
+  filePath: string;
+  replaced: boolean;
+  replacedCount: number;
+};
+
 export type LocalFileListItem = {
   path: string;
   kind: 'file' | 'directory';
@@ -285,20 +313,30 @@ export type LocalFileStatResult = {
   modifiedMs: number;
 };
 
-export type GatewayDiscoveryResult = {
-  /** A running gateway was found and responded to a health check. */
-  found: boolean;
-  /** The WebSocket URL of the discovered gateway (e.g. ws://127.0.0.1:18789). */
-  gatewayUrl: string | null;
-  /** An OpenClaw binary was found on disk but no gateway is running. */
-  binaryFound: boolean;
-  /** Filesystem path to the discovered binary, if any. */
-  binaryPath: string | null;
-  /** Human-readable summary of what was detected. */
-  message: string;
-};
+export type GatewayDiscoveryResult =
+  | {
+      found: true;
+      gatewayUrl: string;
+      binaryFound: true;
+      binaryPath: string | null;
+      message: string;
+    }
+  | {
+      found: false;
+      gatewayUrl: null;
+      binaryFound: true;
+      binaryPath: string;
+      message: string;
+    }
+  | {
+      found: false;
+      gatewayUrl: null;
+      binaryFound: false;
+      binaryPath: null;
+      message: string;
+    };
 
-export type LocalActionType = 'create_file' | 'append_file' | 'read_file' | 'list_dir' | 'exists' | 'rename' | 'delete' | 'shell_exec' | 'web_fetch';
+export type LocalActionType = 'create_file' | 'append_file' | 'replace_in_file' | 'read_file' | 'list_dir' | 'exists' | 'rename' | 'delete' | 'shell_exec' | 'web_fetch';
 
 export type LocalActionReceipt = {
   id: string;
@@ -359,7 +397,7 @@ export type CoworkArtifact = {
   path: string;
   kind: 'file' | 'summary';
   status: 'ok' | 'error';
-  source?: 'create_file' | 'append_file' | 'read_file';
+  source?: 'create_file' | 'append_file' | 'replace_in_file' | 'read_file';
   updatedAt: number;
 };
 

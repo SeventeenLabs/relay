@@ -10,7 +10,17 @@ function Sidebar({ className, ...props }: React.ComponentProps<'aside'>) {
   return (
     <aside
       data-slot="sidebar"
-      className={cn('flex h-full w-full min-w-0 flex-col rounded-none bg-background text-foreground', className)}
+      className={cn('flex h-full w-full min-w-0 flex-col bg-background text-foreground', className)}
+      {...props}
+    />
+  );
+}
+
+function SidebarInset({ className, ...props }: React.ComponentProps<'main'>) {
+  return (
+    <main
+      data-slot="sidebar-inset"
+      className={cn('relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-tl-xl border-l border-t border-border/60 bg-background', className)}
       {...props}
     />
   );
@@ -84,6 +94,7 @@ export {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
+  SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,

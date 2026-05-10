@@ -83,7 +83,7 @@ function statusLabel(value: CoworkProjectTask['status']): string {
 }
 
 function statusClass(status: CoworkProjectTask['status']): string {
-  if (status === 'completed') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+  if (status === 'completed') return 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300';
   if (status === 'running' || status === 'queued') return 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300';
   if (status === 'needs_approval' || status === 'approved') return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300';
   if (status === 'failed' || status === 'rejected') return 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300';
@@ -339,7 +339,7 @@ export function ProjectPage(props: ProjectPageProps) {
 
         <aside className="grid gap-3">
           <div className="rounded-2xl border border-border/60 bg-card p-3">
-            <div className="mb-2 flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-600" /><h2 className="text-sm font-semibold">Quick Navigation</h2></div>
+            <div className="mb-2 flex items-center gap-2"><CheckCircle2 className="size-4 text-blue-600" /><h2 className="text-sm font-semibold">Quick Navigation</h2></div>
             <div className="grid gap-1.5">
               {navItems.map((item) => (
                 <button key={item.label} type="button" onClick={() => props.onSelectPage(item.page)} className="flex items-center gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-2 text-left text-xs transition-colors hover:bg-accent/30">

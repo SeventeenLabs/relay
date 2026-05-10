@@ -1,13 +1,13 @@
-# Relay + OpenClaw Runtime Model (Agent, Skill, Node)
+# Relay + Hermes Runtime Model (Agent, Skill, Node)
 
 Date: 2026-03-26
 Status: Canonical runtime model for product and implementation
 
 ## Purpose
 
-This document defines how Relay should represent OpenClaw runtime concepts.
+This document defines how Relay should represent Hermes runtime concepts.
 
-OpenClaw supports:
+Hermes supports:
 
 1. Multiple agents
 2. Different skill sets per agent
@@ -55,7 +55,7 @@ Interpretation:
 
 A skill is a reusable capability bundle attached to an agent.
 
-OpenClaw skills are AgentSkills-compatible folders with a `SKILL.md` file and
+Hermes skills are AgentSkills-compatible folders with a `SKILL.md` file and
 YAML frontmatter.
 
 A skill can include:
@@ -68,7 +68,7 @@ A skill can include:
 Load locations and precedence:
 
 - Workspace skills: `<workspace>/skills` (highest)
-- Managed/local skills: `~/.openclaw/skills`
+- Managed/local skills: `~/.hermes/skills`
 - Bundled skills (lowest)
 - Extra dirs configured by `skills.load.extraDirs` (lowest precedence)
 
@@ -104,7 +104,7 @@ An agent is the runtime identity that receives tasks and executes work using ski
 Workspace semantics are core to agent identity:
 
 - The workspace is the agent home and default cwd for workspace tools.
-- Workspace is separate from `~/.openclaw/` (config, credentials, sessions, managed skills).
+- Workspace is separate from `~/.hermes/` (config, credentials, sessions, managed skills).
 - The workspace is not a hard sandbox by itself; sandboxing is required for strict isolation.
 
 Agent contract:
@@ -137,15 +137,15 @@ Canonical relation:
 - The run executes on one node (or a selected fallback node)
 - The agent may invoke sub-agents, each with its own skill and node assignment
 
-OpenClaw-aligned nuance:
+Hermes-aligned nuance:
 
 - Skill eligibility is snapshot-based per session and can refresh on watcher-triggered updates.
 - Multi-agent routing can use different workspaces per agent.
 - Exec node binding can be global or per-agent.
 
-## OpenClaw Operating Modes
+## Hermes Operating Modes
 
-OpenClaw can be operated in different patterns. Relay should support all three
+Hermes can be operated in different patterns. Relay should support all three
 without forcing one architecture.
 
 ### Mode A: Single primary agent
@@ -298,11 +298,11 @@ Practical guidance:
 - If people think in products, use product workspaces.
 - If teams are split by role with different tools and policies, use role workspaces.
 
-## Relay-Compatible OpenClaw Contract (Non-Prescriptive)
+## Relay-Compatible Hermes Contract (Non-Prescriptive)
 
 Relay should define a compatibility contract, not a forced topology.
 
-That means users can model their OpenClaw system differently, as long as these
+That means users can model their Hermes system differently, as long as these
 minimum contracts are satisfied.
 
 ### Minimum required contracts
@@ -357,7 +357,7 @@ Short form:
 
 ## Relay Mapping
 
-Relay should map OpenClaw runtime concepts into UI-level controls.
+Relay should map Hermes runtime concepts into UI-level controls.
 
 ### Current Relay baseline
 
@@ -417,7 +417,7 @@ Scheduled job payload should include:
 
 ## Governance Implications
 
-OpenClaw multi-agent power increases governance surface. Relay should enforce:
+Hermes multi-agent power increases governance surface. Relay should enforce:
 
 1. Policy by agent role
 - Different approval rules per role (for example: reviewer vs executor)
@@ -473,9 +473,9 @@ RunContext:
 
 ## Source Anchors
 
-- Nodes: https://docs.openclaw.ai/nodes/index#nodes
-- Skills: https://docs.openclaw.ai/tools/skills#skills
-- Agent Workspace: https://docs.openclaw.ai/concepts/agent-workspace#agent-workspace
+- Nodes: https://docs.hermes.ai/nodes/index#nodes
+- Skills: https://docs.hermes.ai/tools/skills#skills
+- Agent Workspace: https://docs.hermes.ai/concepts/agent-workspace#agent-workspace
 
 ## UX Principles
 
@@ -500,14 +500,15 @@ For Relay MVP, support this minimum:
 3. Single default node + optional override per dispatch
 4. Agent and node metadata in activity timeline and approvals
 
-That keeps the UX simple while still honoring OpenClaw's multi-agent, multi-skill, multi-node architecture.
+That keeps the UX simple while still honoring Hermes's multi-agent, multi-skill, multi-node architecture.
 
 ## Positioning Guardrail
 
 Keep wording consistent:
 
-- OpenClaw is the execution runtime (agents, skills, nodes)
+- Hermes is the execution runtime (agents, skills, nodes)
 - Relay is the governed operator desk (selection, oversight, approvals, audit)
 
-Relay should never be framed as replacing OpenClaw runtime internals.
+Relay should never be framed as replacing Hermes runtime internals.
 Relay should be framed as making those internals operable and governable for humans.
+

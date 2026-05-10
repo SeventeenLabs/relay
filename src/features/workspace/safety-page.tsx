@@ -17,8 +17,8 @@ type SafetyPageProps = {
 const RISK_META: Record<SafetyRiskLevel, { label: string; badge: string; section: string }> = {
   low: {
     label: 'Low',
-    badge: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-    section: 'text-emerald-700 dark:text-emerald-300',
+    badge: 'border-blue-500/35 bg-blue-500/10 text-blue-700 dark:text-blue-300',
+    section: 'text-blue-700 dark:text-blue-300',
   },
   medium: {
     label: 'Medium',
@@ -117,7 +117,7 @@ export function SafetyPage({ gatewayConnected, projectId, projectTitle }: Safety
             variant="outline"
             className={`rounded-full text-[10px] ${
               gatewayConnected
-                ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                ? 'border-blue-500/35 bg-blue-500/10 text-blue-700 dark:text-blue-300'
                 : 'border-amber-500/40 bg-amber-500/12 text-amber-800 dark:text-amber-300'
             }`}
           >
@@ -138,7 +138,7 @@ export function SafetyPage({ gatewayConnected, projectId, projectTitle }: Safety
       <div className="grid grid-cols-1 gap-2 rounded-xl border border-border/60 bg-card p-3 sm:grid-cols-3">
         <div className="rounded-lg border border-border/50 bg-background px-2.5 py-2">
           <div className="flex items-center gap-1.5">
-            <ShieldCheck className="size-3.5 text-emerald-600" />
+            <ShieldCheck className="size-3.5 text-blue-600" />
             <span className="font-sans text-[11px] text-muted-foreground">Enabled rules</span>
           </div>
           <p className="mt-1 text-sm font-semibold text-foreground">{stats.enabled}</p>
@@ -231,7 +231,7 @@ export function SafetyPage({ gatewayConnected, projectId, projectTitle }: Safety
                                   variant="outline"
                                   className={`font-sans text-[9px] ${
                                     scope.enabled
-                                      ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                      ? 'border-blue-500/35 bg-blue-500/10 text-blue-700 dark:text-blue-300'
                                       : 'border-border bg-muted text-muted-foreground'
                                   }`}
                                 >
@@ -259,7 +259,7 @@ export function SafetyPage({ gatewayConnected, projectId, projectTitle }: Safety
                                   className="h-6 px-2 text-[10px]"
                                   onClick={() => toggleScopeEnabled(scope.id)}
                                 >
-                                  {scope.enabled ? <ToggleRight className="mr-1 size-3.5 text-emerald-600" /> : <ToggleLeft className="mr-1 size-3.5" />}
+                                  {scope.enabled ? <ToggleRight className="mr-1 size-3.5 text-blue-600" /> : <ToggleLeft className="mr-1 size-3.5" />}
                                   {scope.enabled ? 'Disable' : 'Enable'}
                                 </Button>
                                 <Button

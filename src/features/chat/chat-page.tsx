@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, FormEvent, KeyboardEvent } from 'react';
 
-import { ArrowUp, ChevronDown, Code2, Download, FolderPlus, Loader2, Paperclip, PanelRightClose, PanelRightOpen, Pencil, Star, Trash2, WifiOff, X } from 'lucide-react';
+import { ArrowUp, ChevronDown, ChevronRight, Code2, Download, Ellipsis, FolderPlus, Loader2, Mic, Paperclip, PanelRightClose, PanelRightOpen, Pencil, Plus, Star, Trash2, WifiOff, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import type { ChatMessage, ChatModelOption } from '@/app-types';
+import type { ChatMessage, ChatModelOption, FileChangeSummary } from '@/app-types';
+import { FileChangeSummaryCard } from '@/components/chat/file-change-summary';
 import { Button } from '@/components/ui/button';
 import { TokenBadge } from '@/components/ui/token-badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -25,14 +26,19 @@ type ChatPageProps = {
   changingModel: boolean;
   gatewayConnected: boolean;
   status: string;
+  fileChangeSummary?: FileChangeSummary | null;
+  undoingFileChanges?: boolean;
   onTaskPromptChange: (value: string) => void;
   onModelChange: (value: string) => void;
   onSubmit: (event: FormEvent) => void;
+  onStop?: () => void;
   onExport?: () => void;
   onNewChat?: () => void;
   onClearChat?: () => void;
   onOpenSettings?: () => void;
   onOpenGatewaySettings?: () => void;
+  onUndoFileChanges?: () => void;
+  onReviewFileChanges?: () => void;
 };
 
 const MAX_ATTACHMENTS = 5;
@@ -42,8 +48,12 @@ const COMPOSER_EXTRA_BOTTOM_SPACE = 16;
 const HEADER_OVERLAY_HEIGHT = 44;
 const CHAT_COLUMN_MAX_WIDTH = 760;
 const COMPOSER_COLUMN_MAX_WIDTH = 920;
-const DEFAULT_MODEL_FALLBACK_LABEL = 'Default model';
-const QUICK_PROMPTS = ['Writing', 'Learning', 'Code', 'Personal', "Claude's picks"] as const;
+const DEFAULT_MODEL_FALLBACK_LABEL = 'Server default';
+const CODEX_SUGGESTIONS = [
+  'Review my latest commits for correctness and maintainability issues',
+  'Help me unblock my latest open PR',
+  'Connect my favorite apps with Codex',
+] as const;
 
 export function ChatPage({
   taskPrompt,
@@ -58,14 +68,19 @@ export function ChatPage({
   changingModel,
   gatewayConnected,
   status,
+  fileChangeSummary,
+  undoingFileChanges = false,
   onTaskPromptChange,
   onModelChange,
   onSubmit,
+  onStop,
   onExport,
   onNewChat,
   onClearChat,
   onOpenSettings,
   onOpenGatewaySettings,
+  onUndoFileChanges,
+  onReviewFileChanges,
 }: ChatPageProps) {
   const trimmedStatus = status.trim();
   const isInitial = messages.length === 0;
@@ -86,8 +101,28 @@ export function ChatPage({
   const [greetingNow, setGreetingNow] = useState(() => new Date());
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [composerDockHeight, setComposerDockHeight] = useState(170);
+  const [activeWorkStartedAt, setActiveWorkStartedAt] = useState<number | null>(null);
+  const [elapsedWorkSeconds, setElapsedWorkSeconds] = useState(0);
   const canSend = (taskPrompt.trim().length > 0 || attachedFiles.length > 0) && !sending && gatewayConnected;
+  const hasModelChoices = models.length > 0;
+  const modelSelectDisabled = modelsLoading || changingModel || !hasModelChoices;
+  const selectedModelLabel = useMemo(
+    () => models.find((model) => model.value === selectedModel)?.label ?? '',
+    [models, selectedModel],
+  );
+  const modelStatusLabel = modelsLoading
+    ? 'Loading models'
+    : changingModel
+      ? 'Switching model'
+      : selectedModelLabel || DEFAULT_MODEL_FALLBACK_LABEL;
+  const assistantActivityLabel = sending
+    ? 'Thinking...'
+    : awaitingStream
+      ? 'Working...'
+      : '';
   const composerBottomInset = composerDockHeight + COMPOSER_EXTRA_BOTTOM_SPACE;
+  const isWorking = sending || awaitingStream;
+  const workStatusLabel = isWorking ? `${Math.floor(elapsedWorkSeconds / 60)}m ${elapsedWorkSeconds % 60}s lang bearbeitet` : '';
 
   const scrollMessagesToBottom = (behavior: ScrollBehavior = 'auto') => {
     const viewport = messageViewportRef.current;
@@ -113,6 +148,12 @@ export function ChatPage({
   const slashCommands = useMemo(() => {
     const all = [
       { cmd: '/new', label: 'New chat', action: () => onNewChat?.() },
+      { cmd: '/reset', label: 'Reset chat', action: () => onNewChat?.() },
+      { cmd: '/status', label: 'Show status', action: () => onTaskPromptChange('/status') },
+      { cmd: '/stop', label: 'Stop response', action: () => onTaskPromptChange('/stop') },
+      { cmd: '/provider', label: 'Provider info', action: () => onTaskPromptChange('/provider') },
+      { cmd: '/model', label: 'Use model dropdown', action: () => onTaskPromptChange('/model') },
+      { cmd: '/help', label: 'Show commands', action: () => onTaskPromptChange('/help') },
       { cmd: '/clear', label: 'Clear chat', action: () => onClearChat?.() },
       { cmd: '/export', label: 'Export chat', action: () => onExport?.() },
       { cmd: '/settings', label: 'Settings', action: () => onOpenSettings?.() },
@@ -136,6 +177,25 @@ export function ChatPage({
       window.clearInterval(intervalId);
     };
   }, []);
+
+  useEffect(() => {
+    if (isWorking) {
+      setActiveWorkStartedAt((current) => current ?? Date.now());
+      return;
+    }
+    setActiveWorkStartedAt(null);
+    setElapsedWorkSeconds(0);
+  }, [isWorking]);
+
+  useEffect(() => {
+    if (!activeWorkStartedAt) {
+      return;
+    }
+    const update = () => setElapsedWorkSeconds(Math.max(0, Math.floor((Date.now() - activeWorkStartedAt) / 1000)));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [activeWorkStartedAt]);
 
   useEffect(() => {
     const dock = composerDockRef.current;
@@ -378,7 +438,7 @@ export function ChatPage({
   if (isInitial) {
     return (
       <section
-        className="grid h-full w-full min-h-0 content-center px-3 pb-2 pt-4"
+        className="relative grid h-full w-full min-h-0 content-center px-3 pb-2 pt-4"
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => void handleDrop(e)}
@@ -391,11 +451,32 @@ export function ChatPage({
               </div>
             </div>
           )}
-          <div className="mx-auto min-h-0 w-full" style={{ maxWidth: `${COMPOSER_COLUMN_MAX_WIDTH}px` }}>
+          <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between border-b border-border/70 bg-background/95 px-3 py-1 backdrop-blur">
+            <div className="relative" ref={headerMenuRef}>
+              <button
+                type="button"
+                className="inline-flex h-8 max-w-[460px] items-center gap-2 rounded-md border border-border bg-background px-2.5 font-sans text-sm font-medium text-foreground shadow-sm transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-haspopup="menu"
+                aria-expanded={headerMenuOpen}
+                onClick={() => setHeaderMenuOpen((open) => !open)}
+                title={threadTitle}
+              >
+                <span className="truncate">{threadTitle}</span>
+                <Ellipsis className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              {workStatusLabel ? (
+                <span className="font-sans text-sm text-muted-foreground">{workStatusLabel}</span>
+              ) : null}
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </header>
+          <div className="mx-auto min-h-0 w-full pt-10" style={{ maxWidth: `${COMPOSER_COLUMN_MAX_WIDTH}px` }}>
               <h1 className="mb-6 text-center text-[clamp(2rem,4vw,3rem)] tracking-tight text-foreground">{greetingTitle}</h1>
 
               <form
-                className="relative mx-auto w-full rounded-[26px] border border-border/90 bg-card/98 p-4 shadow-[0_14px_34px_rgba(24,23,20,0.10)]"
+                className="relative mx-auto w-full rounded-[24px] border border-border/80 bg-card/98 p-3 shadow-[0_14px_34px_rgba(24,23,20,0.10)]"
                 onSubmit={handleSubmitWithFiles}
                 ref={formRef}
               >
@@ -403,61 +484,79 @@ export function ChatPage({
                 <Textarea
                   value={taskPrompt}
                   onChange={(event) => onTaskPromptChange(event.target.value)}
-                  placeholder="How can I help you today?"
+                  placeholder="Ask Relay anything. Use @ to mention files or tools."
                   rows={2}
                   onKeyDown={handleComposerKeyDown}
                   aria-label="Message"
-                  className="min-h-[86px] max-h-[40vh] resize-none border-0 bg-transparent px-0 py-1.5 font-sans text-[17px] leading-7 text-foreground shadow-none focus-visible:ring-0"
+                  className="min-h-[82px] max-h-[40vh] resize-none border-0 bg-transparent px-1 py-1.5 font-sans text-[16px] leading-7 text-foreground shadow-none focus-visible:ring-0"
                 />
 
                 {renderAttachedFiles()}
 
-                <div className="mt-3 flex items-center justify-end gap-2 border-t border-border pt-3">
-                  <div className="flex items-center gap-2">
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-2">
+                  <div className="flex items-center gap-1.5">
+                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8 rounded-full" title="Attach files">
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" className="h-8 rounded-full px-2.5 font-sans text-xs text-orange-500" title="Full access mode">
+                      Vollzugriff
+                      <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <div className="ml-auto flex items-center gap-1.5">
                     <select
-                      value={selectedModel}
+                      value={hasModelChoices ? selectedModel : ''}
                       onChange={(event) => onModelChange(event.target.value)}
-                      disabled={modelsLoading || changingModel || models.length === 0}
-                      className="h-9 max-w-[240px] rounded-xl border border-border bg-background px-3 font-sans text-xs text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
+                      disabled={modelSelectDisabled}
+                      aria-label="Model selection"
+                      className="h-8 max-w-[240px] rounded-full border border-border/70 bg-background px-3 font-sans text-xs text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <option value="">{DEFAULT_MODEL_FALLBACK_LABEL}</option>
-                      {models.map((model) => (
-                        <option key={model.value} value={model.value}>
-                          {model.label}
-                        </option>
-                      ))}
+                      {modelsLoading ? <option value="">Loading models...</option> : null}
+                      {!modelsLoading && !hasModelChoices ? <option value="">No models available</option> : null}
+                      {!modelsLoading && hasModelChoices ? <option value="">{DEFAULT_MODEL_FALLBACK_LABEL}</option> : null}
+                      {!modelsLoading && hasModelChoices
+                        ? models.map((model) => (
+                          <option key={model.value} value={model.value}>
+                            {model.label}
+                          </option>
+                        ))
+                        : null}
                     </select>
+                    <span className="font-sans text-xs text-muted-foreground">{modelStatusLabel}</span>
+                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8 rounded-full text-muted-foreground" title="Voice input">
+                      <Mic className="h-4 w-4" />
+                    </Button>
                     <Button
-                      type="submit"
+                      type={sending ? 'button' : 'submit'}
                       size="icon"
-                      aria-label={sending ? 'Sending' : 'Send message'}
-                      disabled={!canSend}
-                      className="h-9 w-9 rounded-xl border-0 bg-primary text-primary-foreground hover:bg-primary/90"
+                      aria-label={sending ? 'Stop response' : 'Send message'}
+                      disabled={sending ? false : !canSend}
+                      className="h-8 w-8 rounded-full border-0 bg-primary text-primary-foreground hover:bg-primary/90"
+                      onClick={sending ? () => onStop?.() : undefined}
                     >
-                      {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+                      {sending ? <X className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
                     </Button>
                   </div>
                 </div>
-                <p className="mt-2 text-right font-sans text-[11px] text-muted-foreground">
-                  Press Enter to send, Shift+Enter for a new line
-                </p>
               </form>
 
-              <div className="mt-3 flex flex-wrap justify-center gap-2">
-              {QUICK_PROMPTS.map((item) => (
-                <Button
-                  key={item}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 rounded-md border-border bg-card px-3 font-sans text-xs text-muted-foreground"
-                >
-                  {item}
-                </Button>
-              ))}
+              <div className="mt-4 w-full rounded-2xl border border-border/60 bg-card/30 px-3 py-2">
+                {CODEX_SUGGESTIONS.map((item, index) => (
+                  <button
+                    key={item}
+                    type="button"
+                    className={`flex w-full items-center gap-2 py-2 text-left font-sans text-sm text-muted-foreground transition hover:text-foreground ${index < CODEX_SUGGESTIONS.length - 1 ? 'border-b border-border/50' : ''}`}
+                    onClick={() => onTaskPromptChange(item)}
+                  >
+                    <Code2 className="h-3.5 w-3.5" />
+                    <span>{item}</span>
+                  </button>
+                ))}
               </div>
 
-              <p className="mt-3 text-center font-sans text-[11px] text-muted-foreground">{trimmedStatus || 'Connected. Ready.'}</p>
+              <p className="mt-3 text-center font-sans text-[11px] text-muted-foreground">
+                {assistantActivityLabel ? `${assistantActivityLabel} ${trimmedStatus}`.trim() : (trimmedStatus || 'Connected. Ready.')}
+              </p>
           </div>
       </section>
     );
@@ -478,7 +577,7 @@ export function ChatPage({
           </div>
         </div>
       )}
-      <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-3 py-1">
+      <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between border-b border-border/70 bg-background/95 px-3 py-1 backdrop-blur">
         <div className="relative" ref={headerMenuRef}>
           <button
             type="button"
@@ -489,7 +588,7 @@ export function ChatPage({
             title={threadTitle}
           >
             <span className="truncate">{threadTitle}</span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <Ellipsis className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </button>
 
           {headerMenuOpen && (
@@ -538,18 +637,12 @@ export function ChatPage({
             </div>
           )}
         </div>
-        {codeArtifacts.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setArtifactPanelOpen((v) => !v)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 font-sans text-xs text-muted-foreground shadow-sm transition hover:bg-muted"
-            title={artifactPanelOpen ? 'Close artifacts' : 'Show code artifacts'}
-          >
-            {artifactPanelOpen ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
-            <Code2 className="h-3.5 w-3.5" />
-            <span>{codeArtifacts.length}</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {workStatusLabel ? (
+            <span className="font-sans text-sm text-muted-foreground">{workStatusLabel}</span>
+          ) : null}
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </div>
       </header>
 
       <div className={`grid h-full min-h-0 ${artifactPanelOpen && codeArtifacts.length > 0 ? 'grid-cols-[minmax(0,1fr)_340px]' : 'grid-cols-[minmax(0,1fr)]'} gap-0 transition-[grid-template-columns] duration-200`}>
@@ -591,17 +684,29 @@ export function ChatPage({
             </article>
           ))}
 
-          {awaitingStream && (
+          {(sending || awaitingStream) && (
             <article className="w-full">
               <div className="inline-flex items-center gap-2 rounded-xl bg-muted px-3 py-2 font-sans text-sm text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Thinking...
+                {assistantActivityLabel || 'Thinking...'}
               </div>
             </article>
           )}
           <div ref={messageEndRef} className="h-px w-full" />
         </div>
         </div>
+        {fileChangeSummary && onUndoFileChanges && onReviewFileChanges ? (
+          <div className="absolute right-3 bottom-0 left-3 z-20">
+            <div className="mx-auto w-full pb-2" style={{ maxWidth: `${CHAT_COLUMN_MAX_WIDTH}px` }}>
+              <FileChangeSummaryCard
+                summary={fileChangeSummary}
+                undoing={undoingFileChanges}
+                onUndo={onUndoFileChanges}
+                onReview={onReviewFileChanges}
+              />
+            </div>
+          </div>
+        ) : null}
         {showJumpToLatest && (
           <Button
             type="button"
@@ -659,7 +764,7 @@ export function ChatPage({
       >
         <div className="pointer-events-auto mx-auto w-full" style={{ maxWidth: `${COMPOSER_COLUMN_MAX_WIDTH}px` }}>
         <form
-          className="relative mx-auto w-full rounded-[26px] border border-border bg-card p-4 shadow-[0_14px_34px_rgba(24,23,20,0.10)]"
+          className="relative mx-auto w-full rounded-[24px] border border-border/80 bg-card p-3 shadow-[0_14px_34px_rgba(24,23,20,0.10)]"
           onSubmit={handleSubmitWithFiles}
           ref={formRef}
         >
@@ -667,48 +772,64 @@ export function ChatPage({
           <Textarea
             value={taskPrompt}
             onChange={(event) => onTaskPromptChange(event.target.value)}
-            placeholder="Type your message..."
+            placeholder="Ask Relay anything. Use @ to mention files or tools."
             rows={2}
             onKeyDown={handleComposerKeyDown}
             aria-label="Message"
-            className="min-h-[84px] max-h-[40vh] resize-none border-0 bg-transparent px-0 py-1 font-sans text-[16px] leading-7 shadow-none focus-visible:ring-0"
+            className="min-h-[82px] max-h-[40vh] resize-none border-0 bg-transparent px-1 py-1 font-sans text-[16px] leading-7 shadow-none focus-visible:ring-0"
           />
 
           {renderAttachedFiles()}
 
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-            <p className="font-sans text-[11px] text-muted-foreground">
-              {gatewayConnected ? 'Press Enter to send, Shift+Enter for a new line' : 'Connect the gateway to enable chat'}
-            </p>
-            <div className="ml-auto flex items-center gap-2">
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-2">
+            <div className="flex items-center gap-1.5">
+              <Button type="button" size="icon" variant="ghost" className="h-8 w-8 rounded-full" title="Attach files">
+                <Plus className="h-4 w-4" />
+              </Button>
+              <Button type="button" size="sm" variant="ghost" className="h-8 rounded-full px-2.5 font-sans text-xs text-orange-500" title="Full access mode">
+                Vollzugriff
+                <ChevronDown className="ml-1 h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <div className="ml-auto flex items-center gap-1.5">
               <select
-                value={selectedModel}
+                value={hasModelChoices ? selectedModel : ''}
                 onChange={(event) => onModelChange(event.target.value)}
-                disabled={modelsLoading || changingModel || models.length === 0}
-                className="h-9 max-w-[240px] rounded-xl border border-border bg-background px-3 font-sans text-xs text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
+                disabled={modelSelectDisabled}
+                aria-label="Model selection"
+                className="h-8 max-w-[240px] rounded-full border border-border/70 bg-background px-3 font-sans text-xs text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <option value="">{DEFAULT_MODEL_FALLBACK_LABEL}</option>
-                {models.map((model) => (
-                  <option key={model.value} value={model.value}>
-                    {model.label}
-                  </option>
-                ))}
+                {modelsLoading ? <option value="">Loading models...</option> : null}
+                {!modelsLoading && !hasModelChoices ? <option value="">No models available</option> : null}
+                {!modelsLoading && hasModelChoices ? <option value="">{DEFAULT_MODEL_FALLBACK_LABEL}</option> : null}
+                {!modelsLoading && hasModelChoices
+                  ? models.map((model) => (
+                    <option key={model.value} value={model.value}>
+                      {model.label}
+                    </option>
+                  ))
+                  : null}
               </select>
+              <span className="font-sans text-xs text-muted-foreground">{modelStatusLabel}</span>
+              <Button type="button" size="icon" variant="ghost" className="h-8 w-8 rounded-full text-muted-foreground" title="Voice input">
+                <Mic className="h-4 w-4" />
+              </Button>
               <Button
-                type="submit"
+                type={sending ? 'button' : 'submit'}
                 size="icon"
-                aria-label={sending ? 'Sending' : 'Send message'}
-                disabled={!canSend}
-                className="h-9 w-9 rounded-xl border-0 bg-primary text-primary-foreground hover:bg-primary/90"
+                aria-label={sending ? 'Stop response' : 'Send message'}
+                disabled={sending ? false : !canSend}
+                className="h-8 w-8 rounded-full border-0 bg-primary text-primary-foreground hover:bg-primary/90"
+                onClick={sending ? () => onStop?.() : undefined}
               >
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+                {sending ? <X className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
               </Button>
             </div>
           </div>
         </form>
 
         <p className="mt-2 text-center font-sans text-[11px] text-muted-foreground" aria-live="polite">
-          {trimmedStatus || (gatewayConnected ? 'Claude is an AI and can make mistakes. Please verify cited sources.' : 'Gateway disconnected. Chat is paused.')}
+          {trimmedStatus || (gatewayConnected ? 'Connected. Ready.' : 'Gateway disconnected. Chat is paused.')}
         </p>
         </div>
       </div>

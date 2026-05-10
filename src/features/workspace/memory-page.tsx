@@ -35,7 +35,7 @@ const CATEGORY_CONFIG = {
   'about-me': { icon: User, label: 'About me', color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-950/30' },
   rules: { icon: BookOpen, label: 'Rules', color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/30' },
   knowledge: { icon: Brain, label: 'Knowledge', color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-950/30' },
-  reflection: { icon: Sparkles, label: 'Reflection', color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/30' },
+  reflection: { icon: Sparkles, label: 'Reflection', color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-950/30' },
 } as const;
 
 function loadEntriesFromStorage(): MemoryEntry[] {

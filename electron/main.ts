@@ -1,8 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, session, shell } from 'electron';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { exec, execFile } from 'node:child_process';
+import { exec, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
 
@@ -20,14 +21,16 @@ import type {
   LocalFilePlanResult,
   LocalFileReadResult,
   LocalFileRenameResult,
+  LocalFileReplaceResult,
   LocalFileStatResult,
-  GatewayDiscoveryResult,
 } from '../src/app-types.js';
 
-const execFileAsync = promisify(execFile);
+
+const DEFAULT_HERMES_GATEWAY_URL = 'http://127.0.0.1:8642/v1';
 
 const defaultConfig: AppConfig = {
-  gatewayUrl: 'ws://127.0.0.1:18789',
+  backendType: 'hermes',
+  gatewayUrl: DEFAULT_HERMES_GATEWAY_URL,
   gatewayToken: '',
 };
 
@@ -78,9 +81,15 @@ const extensionCategories: Record<string, string> = {
   '.c': 'Code',
 };
 
-const configPath = () => path.join(app.getPath('userData'), 'openclaw-config.json');
+const configPath = () => path.join(app.getPath('userData'), 'relay-config.json');
 
 const isDev = !app.isPackaged;
+const WINDOWS_APP_ID = 'com.relay.app';
+const WINDOW_ICON_CANDIDATES = [
+  path.join(app.getAppPath(), 'assets', 'icons', 'icon.ico'),
+  path.join(app.getAppPath(), 'assets', 'icons', 'icon.png'),
+];
+const windowIconPath = WINDOW_ICON_CANDIDATES.find((candidate) => existsSync(candidate));
 const MAX_READ_FILE_BYTES = 256 * 1024;
 const MAX_LIST_DIR_ITEMS = 200;
 const BLOCKED_BASENAMES = new Set(['desktop.ini', 'thumbs.db']);
@@ -88,31 +97,6 @@ const BLOCKED_BASENAMES = new Set(['desktop.ini', 'thumbs.db']);
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const isLoopbackHost = (host: string) => host === 'localhost' || host === '127.0.0.1' || host === '::1';
-
-function registerWebSocketOriginRewrite() {
-  const filter = {
-    urls: ['ws://*/*', 'wss://*/*'],
-  };
-
-  // Electron packaged builds run from file:// and may send an origin rejected by gateway allowlists.
-  // Rewrite remote WS handshakes to the target host origin so gateway allowlist checks can pass.
-  session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
-    try {
-      const target = new URL(details.url);
-      if (isLoopbackHost(target.hostname)) {
-        callback({ requestHeaders: details.requestHeaders });
-        return;
-      }
-
-      const rewrittenOrigin = `${target.protocol === 'wss:' ? 'https:' : 'http:'}//${target.host}`;
-      details.requestHeaders.Origin = rewrittenOrigin;
-      details.requestHeaders.origin = rewrittenOrigin;
-      callback({ requestHeaders: details.requestHeaders });
-    } catch {
-      callback({ requestHeaders: details.requestHeaders });
-    }
-  });
-}
 
 function registerDevContentSecurityPolicy() {
   if (!isDev) {
@@ -486,6 +470,62 @@ async function appendFileInFolder(rootPath: string, relativePath: string, conten
   };
 }
 
+async function replaceInFile(
+  rootPath: string,
+  relativePath: string,
+  oldString: string,
+  newString: string,
+  options?: { replaceAll?: boolean },
+): Promise<LocalFileReplaceResult> {
+  const root = await ensurePathAllowed(rootPath);
+
+  const normalizedRelative = normalizeRelativePath(relativePath);
+  if (!normalizedRelative) {
+    throw new Error('A file path is required.');
+  }
+  if (path.isAbsolute(normalizedRelative)) {
+    throw new Error('Use a path relative to the working folder.');
+  }
+  if (isHiddenOrBlockedPath(normalizedRelative)) {
+    throw new Error('Target path is blocked by local safety rules.');
+  }
+
+  const resolvedTargetPath = path.resolve(root, normalizedRelative);
+  if (!isPathInside(root, resolvedTargetPath)) {
+    throw new Error('Target file must remain inside the working folder.');
+  }
+
+  await assertTargetPathAllowed(root, resolvedTargetPath, 'Target file must remain inside the working folder.');
+
+  if (!oldString) {
+    throw new Error('oldString is required for replace_in_file.');
+  }
+
+  const fileContent = await fs.readFile(resolvedTargetPath, 'utf8');
+  const replaceAll = Boolean(options?.replaceAll);
+  const occurrences = fileContent.split(oldString).length - 1;
+
+  if (occurrences === 0) {
+    throw new Error('oldString was not found in file.');
+  }
+
+  if (!replaceAll && occurrences > 1) {
+    throw new Error('oldString is not unique. Pass replaceAll=true to replace all occurrences.');
+  }
+
+  const nextContent = replaceAll
+    ? fileContent.split(oldString).join(newString)
+    : fileContent.replace(oldString, newString);
+
+  await fs.writeFile(resolvedTargetPath, nextContent, 'utf8');
+
+  return {
+    filePath: resolvedTargetPath,
+    replaced: true,
+    replacedCount: replaceAll ? occurrences : 1,
+  };
+}
+
 async function resolveExistingPathWithOptionalExtension(requestedPath: string): Promise<string | null> {
   try {
     await fs.access(requestedPath);
@@ -729,12 +769,15 @@ async function readConfig(): Promise<AppConfig> {
     const parsed = JSON.parse(raw) as Partial<AppConfig> & { baseUrl?: string; mode?: string };
     const inferredGatewayUrl =
       parsed.gatewayUrl ??
-      (parsed.baseUrl
-        ? parsed.baseUrl.replace(/^https?:\/\//, (value) => (value === 'https://' ? 'wss://' : 'ws://'))
-        : defaultConfig.gatewayUrl);
+      (parsed.baseUrl ? parsed.baseUrl : defaultConfig.gatewayUrl);
 
+    const backendType: AppConfig['backendType'] = 'hermes';
+    const normalizedStoredGatewayUrl = inferredGatewayUrl.trim();
+    const fallbackGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
+    const gatewayUrl = normalizedStoredGatewayUrl || fallbackGatewayUrl;
     return {
-      gatewayUrl: inferredGatewayUrl,
+      backendType,
+      gatewayUrl,
       gatewayToken: parsed.gatewayToken ?? defaultConfig.gatewayToken,
     };
   } catch {
@@ -743,9 +786,13 @@ async function readConfig(): Promise<AppConfig> {
 }
 
 async function writeConfig(config: AppConfig): Promise<AppConfig> {
-  const normalizedGatewayUrl = config.gatewayUrl.trim();
+  const normalizedBackendType: AppConfig['backendType'] = 'hermes';
+  const normalizedGatewayUrlInput = config.gatewayUrl.trim();
+  const fallbackGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
+  const normalizedGatewayUrl = normalizedGatewayUrlInput || fallbackGatewayUrl;
 
-  const normalized = {
+  const normalized: AppConfig = {
+    backendType: normalizedBackendType,
     gatewayUrl: normalizedGatewayUrl,
     gatewayToken: config.gatewayToken.trim(),
   };
@@ -769,7 +816,7 @@ async function runHealthCheck(gatewayUrl: string): Promise<HealthCheckResult> {
         return {
           ok: true,
           status: response.status,
-          message: `OpenClaw backend reachable at ${candidate}`,
+          message: `Hermes backend reachable at ${candidate}`,
         };
       }
 
@@ -785,116 +832,7 @@ async function runHealthCheck(gatewayUrl: string): Promise<HealthCheckResult> {
 
   return {
     ok: false,
-    message: 'Unable to reach the OpenClaw backend. Check the URL, port, and network path.',
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Gateway auto-discovery
-// ---------------------------------------------------------------------------
-
-const DEFAULT_PORTS = [18789, 18790];
-
-async function probeGatewayHealth(port: number): Promise<boolean> {
-  const candidates = [`http://127.0.0.1:${port}/health`, `http://127.0.0.1:${port}/`];
-  for (const url of candidates) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
-      const response = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (response.ok) return true;
-    } catch {
-      continue;
-    }
-  }
-  return false;
-}
-
-function getOpenClawBinaryCandidates(): string[] {
-  const home = os.homedir();
-  const isWindows = process.platform === 'win32';
-  const bin = isWindows ? 'openclaw.exe' : 'openclaw';
-
-  const paths: string[] = [
-    // Standard install location
-    path.join(home, '.openclaw', 'bin', bin),
-    // Relay-managed location
-    path.join(home, '.relay', 'openclaw', bin),
-  ];
-
-  if (!isWindows) {
-    paths.push(
-      path.join('/usr', 'local', 'bin', 'openclaw'),
-      path.join(home, '.local', 'bin', 'openclaw'),
-    );
-  }
-
-  return paths;
-}
-
-async function findBinaryOnPath(): Promise<string | null> {
-  const command = process.platform === 'win32' ? 'where' : 'which';
-  // On Windows, npm global binaries are .cmd wrappers — try that first
-  const names = process.platform === 'win32' ? ['openclaw.cmd', 'openclaw'] : ['openclaw'];
-  for (const name of names) {
-    try {
-      const { stdout } = await execFileAsync(command, [name], { timeout: 3000 });
-      const firstLine = stdout.trim().split(/\r?\n/)[0];
-      if (firstLine) return firstLine;
-    } catch {
-      // not found, try next variant
-    }
-  }
-  return null;
-}
-
-async function findBinaryOnDisk(): Promise<string | null> {
-  for (const candidate of getOpenClawBinaryCandidates()) {
-    try {
-      await fs.access(candidate);
-      return candidate;
-    } catch {
-      continue;
-    }
-  }
-  return findBinaryOnPath();
-}
-
-async function discoverGateway(): Promise<GatewayDiscoveryResult> {
-  // Step 1: Probe default ports for a running gateway
-  for (const port of DEFAULT_PORTS) {
-    const alive = await probeGatewayHealth(port);
-    if (alive) {
-      return {
-        found: true,
-        gatewayUrl: `ws://127.0.0.1:${port}`,
-        binaryFound: true,
-        binaryPath: null,
-        message: `OpenClaw gateway detected on port ${port}.`,
-      };
-    }
-  }
-
-  // Step 2: No running gateway — check if binary is installed
-  const binaryPath = await findBinaryOnDisk();
-  if (binaryPath) {
-    return {
-      found: false,
-      gatewayUrl: null,
-      binaryFound: true,
-      binaryPath,
-      message: `OpenClaw binary found at ${binaryPath} but no gateway is running.`,
-    };
-  }
-
-  // Step 3: Nothing found
-  return {
-    found: false,
-    gatewayUrl: null,
-    binaryFound: false,
-    binaryPath: null,
-    message: 'No local OpenClaw installation detected.',
+    message: 'Unable to reach the Hermes backend. Check the URL, port, and network path.',
   };
 }
 
@@ -908,7 +846,10 @@ async function createWindow() {
     minHeight: 760,
     backgroundColor: '#f4f3ee',
     title: 'Relay',
+    icon: windowIconPath,
     frame: false,
+    roundedCorners: true,
+    thickFrame: true,
     autoHideMenuBar: true,
     webPreferences: {
       preload: preloadPath,
@@ -943,44 +884,306 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  app.setAppUserModelId(WINDOWS_APP_ID);
   Menu.setApplicationMenu(null);
-  registerWebSocketOriginRewrite();
   registerDevContentSecurityPolicy();
   registerProdContentSecurityPolicy();
 
   ipcMain.handle('config:get', async () => readConfig());
   ipcMain.handle('config:save', async (_event, config: AppConfig) => writeConfig(config));
   ipcMain.handle('backend:health-check', async (_event, baseUrl: string) => runHealthCheck(baseUrl));
-  ipcMain.handle('gateway:discover', async () => discoverGateway());
-  ipcMain.handle('plugin:check-workspace', async () => {
-    const binaryPath = await findBinaryOnDisk();
-    if (!binaryPath) return { installed: false, error: 'OpenClaw binary not found.' };
-    try {
-      const { stdout } = await execFileAsync(binaryPath, ['plugins', 'list'], {
-        timeout: 10_000,
-        shell: process.platform === 'win32',
+  ipcMain.handle(
+    'backend:http-request',
+    async (
+      _event,
+      payload: {
+        baseUrl: string;
+        path: string;
+        method?: string;
+        token?: string;
+        body?: string;
+      },
+    ) => {
+      const method = (payload?.method ?? 'GET').toUpperCase();
+      const baseUrl = typeof payload?.baseUrl === 'string' ? payload.baseUrl.trim() : '';
+      const path = typeof payload?.path === 'string' ? payload.path : '';
+      if (!baseUrl) {
+        throw new Error('Base URL is required.');
+      }
+      if (!path.startsWith('/')) {
+        throw new Error('Path must start with "/".');
+      }
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (typeof payload?.token === 'string' && payload.token.trim()) {
+        headers.Authorization = `Bearer ${payload.token.trim()}`;
+      }
+
+      const response = await fetch(`${baseUrl}${path}`, {
+        method,
+        headers,
+        body: typeof payload?.body === 'string' ? payload.body : undefined,
       });
-      return { installed: stdout.includes('openclaw-relay-workspace') };
-    } catch {
-      return { installed: false };
-    }
+
+      const text = await response.text();
+      return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        body: text,
+      };
+    },
+  );
+  ipcMain.handle(
+    'hermes:model-options',
+    async (
+      _event,
+      payload?: {
+        gatewayUrl?: string;
+      },
+    ) => {
+      const rawGatewayUrl = typeof payload?.gatewayUrl === 'string' ? payload.gatewayUrl.trim() : '';
+      const parsedGatewayUrl = rawGatewayUrl || defaultConfig.gatewayUrl;
+      const normalized = /^https?:\/\//i.test(parsedGatewayUrl) ? parsedGatewayUrl : `http://${parsedGatewayUrl}`;
+      const gateway = new URL(normalized);
+      const dashboardBaseUrl = `${gateway.protocol}//${gateway.hostname}:9119`;
+
+      const normalizeModelOptionsResponse = (data: {
+        providers?: Array<{ slug?: string; name?: string; is_current?: boolean; models?: string[] }>;
+        model?: string;
+        provider?: string;
+      }) => ({
+        providers: Array.isArray(data.providers)
+          ? data.providers
+              .map((provider) => ({
+                slug: provider.slug?.trim() || 'unknown',
+                name: provider.name?.trim() || provider.slug?.trim() || 'Unknown',
+                is_current: Boolean(provider.is_current),
+                models: Array.isArray(provider.models)
+                  ? provider.models.filter((model): model is string => typeof model === 'string' && model.trim().length > 0).map((model) => model.trim())
+                  : [],
+              }))
+              .filter((provider) => provider.models.length > 0)
+          : [],
+        model: typeof data.model === 'string' ? data.model : undefined,
+        provider: typeof data.provider === 'string' ? data.provider : undefined,
+      });
+
+      const fetchModelOptions = async () => {
+        const dashboardHtml = await fetch(`${dashboardBaseUrl}/`).then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Hermes dashboard unavailable (${response.status}).`);
+          }
+          return response.text();
+        });
+
+        const tokenMatch = dashboardHtml.match(/__HERMES_SESSION_TOKEN__="([^"]+)"/);
+        const sessionToken = tokenMatch?.[1]?.trim();
+        if (!sessionToken) {
+          throw new Error('Hermes dashboard token missing.');
+        }
+
+        const response = await fetch(`${dashboardBaseUrl}/api/model/options`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Hermes-Session-Token': sessionToken,
+          },
+        });
+        if (!response.ok) {
+          throw new Error(`Hermes model options request failed (${response.status}).`);
+        }
+
+        const data = await response.json() as {
+          providers?: Array<{ slug?: string; name?: string; is_current?: boolean; models?: string[] }>;
+          model?: string;
+          provider?: string;
+        };
+        return normalizeModelOptionsResponse(data);
+      };
+
+      try {
+        return await fetchModelOptions();
+      } catch {
+        spawn('wsl', ['bash', '-lc', 'nohup hermes dashboard --no-open --host 127.0.0.1 --port 9119 >/tmp/hermes-dashboard.log 2>&1 &'], {
+          detached: true,
+          stdio: 'ignore',
+        }).unref();
+
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          await delay(500);
+          try {
+            return await fetchModelOptions();
+          } catch {
+            // Retry until timeout.
+          }
+        }
+
+        throw new Error('Unable to read Hermes model options. Make sure `hermes dashboard` can run locally.');
+      }
+    },
+  );
+  ipcMain.handle(
+    'hermes:model-set-main',
+    async (
+      _event,
+      payload: {
+        gatewayUrl?: string;
+        provider: string;
+        model: string;
+      },
+    ) => {
+      const provider = typeof payload?.provider === 'string' ? payload.provider.trim() : '';
+      const model = typeof payload?.model === 'string' ? payload.model.trim() : '';
+      if (!provider || !model) {
+        throw new Error('Provider and model are required.');
+      }
+
+      const rawGatewayUrl = typeof payload?.gatewayUrl === 'string' ? payload.gatewayUrl.trim() : '';
+      const parsedGatewayUrl = rawGatewayUrl || defaultConfig.gatewayUrl;
+      const normalized = /^https?:\/\//i.test(parsedGatewayUrl) ? parsedGatewayUrl : `http://${parsedGatewayUrl}`;
+      const gateway = new URL(normalized);
+      const dashboardBaseUrl = `${gateway.protocol}//${gateway.hostname}:9119`;
+
+      const ensureToken = async () => {
+        const dashboardHtml = await fetch(`${dashboardBaseUrl}/`).then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Hermes dashboard unavailable (${response.status}).`);
+          }
+          return response.text();
+        });
+        const tokenMatch = dashboardHtml.match(/__HERMES_SESSION_TOKEN__="([^"]+)"/);
+        const sessionToken = tokenMatch?.[1]?.trim();
+        if (!sessionToken) {
+          throw new Error('Hermes dashboard token missing.');
+        }
+        return sessionToken;
+      };
+
+      const postSetMain = async () => {
+        const sessionToken = await ensureToken();
+        const response = await fetch(`${dashboardBaseUrl}/api/model/set`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Hermes-Session-Token': sessionToken,
+          },
+          body: JSON.stringify({
+            scope: 'main',
+            provider,
+            model,
+          }),
+        });
+        if (!response.ok) {
+          const body = await response.text();
+          throw new Error(`Hermes model set failed (${response.status}): ${body || response.statusText}`);
+        }
+        const verify = await fetch(`${dashboardBaseUrl}/api/model/auxiliary`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Hermes-Session-Token': sessionToken,
+          },
+        });
+        if (!verify.ok) {
+          return { confirmedProvider: undefined, confirmedModel: undefined };
+        }
+        const verifyData = await verify.json() as { main?: { provider?: string; model?: string } };
+        return {
+          confirmedProvider: typeof verifyData.main?.provider === 'string' ? verifyData.main.provider : undefined,
+          confirmedModel: typeof verifyData.main?.model === 'string' ? verifyData.main.model : undefined,
+        };
+      };
+
+      try {
+        const confirmed = await postSetMain();
+        return { ok: true, provider, model, ...confirmed };
+      } catch {
+        spawn('wsl', ['bash', '-lc', 'nohup hermes dashboard --no-open --host 127.0.0.1 --port 9119 >/tmp/hermes-dashboard.log 2>&1 &'], {
+          detached: true,
+          stdio: 'ignore',
+        }).unref();
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          await delay(500);
+          try {
+            const confirmed = await postSetMain();
+            return { ok: true, provider, model, ...confirmed };
+          } catch {
+            // Retry until timeout.
+          }
+        }
+        throw new Error('Unable to set Hermes main model. Make sure `hermes dashboard` can run locally.');
+      }
+    },
+  );
+  ipcMain.handle('hermes:service-status', async () => {
+    const checkApi = async () => {
+      try {
+        const response = await fetch('http://127.0.0.1:8642/v1/models');
+        return response.ok;
+      } catch {
+        return false;
+      }
+    };
+    const checkDashboard = async () => {
+      try {
+        const response = await fetch('http://127.0.0.1:9119/');
+        return response.ok;
+      } catch {
+        return false;
+      }
+    };
+    const [apiServer, dashboard] = await Promise.all([checkApi(), checkDashboard()]);
+    return {
+      gateway: apiServer,
+      apiServer,
+      dashboard,
+    };
   });
-  ipcMain.handle('plugin:install-workspace', async () => {
-    const binaryPath = await findBinaryOnDisk();
-    if (!binaryPath) {
-      return { ok: false as const, error: 'OpenClaw binary not found on this system.' };
+  ipcMain.handle('hermes:start-all-services', async () => {
+    const startCmd = 'nohup hermes gateway > /tmp/hermes-gateway.log 2>&1 & nohup hermes dashboard --no-open --host 127.0.0.1 --port 9119 > /tmp/hermes-dashboard.log 2>&1 &';
+    spawn('wsl', ['bash', '-lc', startCmd], { detached: true, stdio: 'ignore' }).unref();
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await delay(500);
+      try {
+        const [apiResp, dashResp] = await Promise.all([
+          fetch('http://127.0.0.1:8642/v1/models'),
+          fetch('http://127.0.0.1:9119/'),
+        ]);
+        if (apiResp.ok && dashResp.ok) {
+          return { ok: true, gateway: true, apiServer: true, dashboard: true };
+        }
+      } catch {
+        // keep polling
+      }
     }
-    try {
-      const { stdout, stderr } = await execFileAsync(
-        binaryPath,
-        ['plugins', 'install', '@seventeenlabs/openclaw-relay-workspace'],
-        { timeout: 60_000, shell: process.platform === 'win32' },
-      );
-      return { ok: true as const, output: stdout || stderr };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false as const, error: msg };
-    }
+    const [apiServer, dashboard] = await Promise.all([
+      (async () => {
+        try {
+          const response = await fetch('http://127.0.0.1:8642/v1/models');
+          return response.ok;
+        } catch {
+          return false;
+        }
+      })(),
+      (async () => {
+        try {
+          const response = await fetch('http://127.0.0.1:9119/');
+          return response.ok;
+        } catch {
+          return false;
+        }
+      })(),
+    ]);
+    return {
+      ok: apiServer || dashboard,
+      gateway: apiServer,
+      apiServer,
+      dashboard,
+      message: 'Started available Hermes services. Check local logs in /tmp/hermes-gateway.log and /tmp/hermes-dashboard.log.',
+    };
   });
   ipcMain.handle('window:minimize', (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
@@ -1112,6 +1315,29 @@ app.whenReady().then(async () => {
 
     return appendFileInFolder(rootPath, relativePath, content);
   });
+  ipcMain.handle(
+    'local:replace-in-file',
+    async (
+      _event,
+      payload: { rootPath: string; relativePath: string; oldString: string; newString: string; replaceAll?: boolean },
+    ) => {
+      if (!payload || typeof payload !== 'object') {
+        throw new Error('Invalid replace-in-file payload.');
+      }
+
+      const rootPath = typeof payload.rootPath === 'string' ? payload.rootPath : '';
+      const relativePath = typeof payload.relativePath === 'string' ? payload.relativePath : '';
+      const oldString = typeof payload.oldString === 'string' ? payload.oldString : '';
+      const newString = typeof payload.newString === 'string' ? payload.newString : '';
+      const replaceAll = typeof payload.replaceAll === 'boolean' ? payload.replaceAll : false;
+
+      if (!rootPath.trim()) {
+        throw new Error('A folder path is required.');
+      }
+
+      return replaceInFile(rootPath, relativePath, oldString, newString, { replaceAll });
+    },
+  );
   ipcMain.handle('local:read-file-in-folder', async (_event, payload: { rootPath: string; relativePath: string }) => {
     if (!payload || typeof payload !== 'object') {
       throw new Error('Invalid read-file payload.');
@@ -1274,6 +1500,7 @@ app.whenReady().then(async () => {
       await createWindow();
     }
   });
+
 });
 
 app.on('window-all-closed', () => {

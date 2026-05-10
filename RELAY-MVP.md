@@ -1,4 +1,4 @@
-﻿# Relay MVP Definition
+# Relay MVP Definition
 
 > Last updated: March 24, 2026
 
@@ -20,13 +20,13 @@ Relay is the self-hosted, model-agnostic, human-in-the-loop control plane for op
 | **For** | Knowledge workers | Autonomous businesses | Operators / founders |
 | **Agents** | 1 (Claude) | 20+ (any) | 1-3 (any) |
 | **Hosting** | Anthropic cloud | Self-hosted | **Self-hosted / local-first** |
-| **Model** | Claude only | Any | **Any (OpenClaw native)** |
+| **Model** | Claude only | Any | **Any (Hermes native)** |
 | **Governance** | Lightweight | Full company | **Operator-grade** |
 | **Core UX** | Chat + deliverables | Dashboard + tickets | **Operator desk** |
 | **Price** | $20-200/mo | Free (OSS) | **Free (OSS)** |
 | **Identity** | AI coworker | AI company | **AI operator desk** |
 
-**One-line:** If OpenClaw is the engine, Relay is the cockpit.
+**One-line:** If Hermes is the engine, Relay is the cockpit.
 
 ---
 
@@ -340,7 +340,7 @@ Everything below serves that loop. Nothing outside it ships in MVP.
 
 The MVP is done when a user can:
 
-1. **Open Relay** and connect to an OpenClaw gateway
+1. **Open Relay** and connect to an Hermes gateway
 2. **Set up memory** with their name, role, rules, and domain knowledge
 3. **Dispatch a task** ("Organize my downloads folder by file type") and close the window
 4. **Get notified** when the task is done
@@ -387,7 +387,7 @@ That's the loop. That's the MVP. Everything else is iteration.
                          â”‚
                          â–¼
               â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-              â”‚  OpenClaw Gateway â”‚
+              â”‚  Hermes Gateway â”‚
               â”‚  (RPC Server)     â”‚
               â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
@@ -511,7 +511,7 @@ SeventeenLabs already positions as "Partnership Over Consulting" with proven res
 | **Relay Deployment** | â‚¬5,000-15,000 | Install, configure, connect to existing stack, train team, first 3 workflows live |
 | **Custom Connector Build** | â‚¬2,000-10,000 per connector | Build custom connectors for proprietary or niche systems (ERP, CRM, internal tools) |
 | **Governance Design** | â‚¬5,000-20,000 | Design approval workflows, permission scopes, compliance templates, audit requirements |
-| **AI Agent Setup** | â‚¬3,000-15,000 | Configure OpenClaw or other agents with business-specific context, memory, skills, and safety rules |
+| **AI Agent Setup** | â‚¬3,000-15,000 | Configure Hermes or other agents with business-specific context, memory, skills, and safety rules |
 | **Ongoing Operations** | â‚¬2,000-5,000/mo retainer | Monitor, optimize, expand â€” fractional AI operations team |
 
 **Why this works:** The website already claims 12+ opportunities found per audit. This is the fastest path to revenue while the product matures. Services fund product development.
@@ -613,4 +613,5 @@ This is the central strategic question: **Why would a business pay SeventeenLabs
 - **Marketplace** = the ecosystem where governance templates, connectors, and skills compound
 
 The revenue ladder: **Services â†’ Relay Pro â†’ Core Platform â†’ Marketplace**. Each rung funds the next and builds on the last.
+
 

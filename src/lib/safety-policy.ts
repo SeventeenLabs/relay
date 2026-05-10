@@ -97,6 +97,7 @@ export function saveSafetyScopes(scopes: SafetyPermissionScope[], projectId?: st
 const localActionScopeMap: Record<LocalActionType, string> = {
   create_file: 'file-create',
   append_file: 'file-modify',
+  replace_in_file: 'file-modify',
   read_file: 'file-read',
   list_dir: 'file-list',
   exists: 'file-read',
@@ -121,7 +122,7 @@ function defaultPolicyForAction(actionType: LocalActionType): ResolvedLocalActio
   if (actionType === 'web_fetch') {
     return { scopeId: 'network-request', scopeName: 'Network requests', riskLevel: 'high', enabled: false, requiresApproval: true };
   }
-  const mutating = actionType === 'create_file' || actionType === 'append_file' || actionType === 'rename' || actionType === 'delete';
+  const mutating = actionType === 'create_file' || actionType === 'append_file' || actionType === 'replace_in_file' || actionType === 'rename' || actionType === 'delete';
   return {
     scopeId: localActionScopeMap[actionType] ?? 'unknown',
     scopeName: mutating ? 'Mutating local action' : 'Read local action',

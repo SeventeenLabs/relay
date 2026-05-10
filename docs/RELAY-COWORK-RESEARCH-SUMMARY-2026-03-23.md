@@ -1,4 +1,4 @@
-﻿# Relay Cowork Research Summary
+# Relay Cowork Research Summary
 
 Date: 2026-03-23
 Purpose: Preserve market and product evidence used to define Relay MVP.
@@ -59,7 +59,7 @@ Common use cases:
 Positioning:
 
 - Relay should be framed as a governed AI cowork interface for operations.
-- OpenClaw should be framed as the backend orchestration and execution runtime.
+- Hermes should be framed as the backend orchestration and execution runtime.
 
 MVP priority:
 
@@ -94,8 +94,8 @@ Product principles:
 ## 9. Architecture Reminder
 
 - Relay: interaction layer.
-- OpenClaw: orchestration and execution.
-- Claude: reasoning component inside OpenClaw.
+- Hermes: orchestration and execution.
+- Claude: reasoning component inside Hermes.
 
 This separation is mandatory for product messaging and implementation decisions.
 
@@ -108,7 +108,7 @@ Key strategic conclusions to carry forward:
 3. Trust is earned through plan visibility, rationale, policy checks, and receipts.
 4. Multi-user operations require a backend control plane, not just frontend UX.
 5. Recipe depth in high-stakes workflows creates clearer ROI than broad shallow utility.
-6. Relay should differentiate as the operator interface; OpenClaw should differentiate as the orchestration runtime.
+6. Relay should differentiate as the operator interface; Hermes should differentiate as the orchestration runtime.
 
 ## 11. Saved Deliverables Index
 
@@ -129,4 +129,5 @@ Additional execution strategy stack:
 - RELAY-EXECUTION-HANDBOOK.md
 - RELAY-NOTION-TEMPLATES.md
 - RELAY-MVP-V1-FEATURES.md
+
 

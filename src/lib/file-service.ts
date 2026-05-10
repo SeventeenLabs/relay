@@ -2,10 +2,10 @@
  * Unified file service abstraction.
  *
  * Routes file operations to either the local Electron bridge (`window.relay`)
- * or the remote OpenClaw gateway via `workspace.*` RPC methods, depending on
+ * or the remote Hermes gateway via `workspace.*` RPC methods, depending on
  * the mode selected at construction time.
  *
- * The OpenClaw gateway currently does NOT expose `workspace.*` RPCs.
+ * Some Hermes deployments may not expose `workspace.*` RPCs.
  * The agent's file tools (read, write, edit, apply_patch) are agent-side tools
  * invoked by the AI model during chat — they cannot be called directly by operator
  * clients. `tools.catalog` (operator.read scope) returns the available tool list
@@ -13,8 +13,7 @@
  * UI can show what the agent *can* do and guide the user.
  */
 
-import type { OpenClawGatewayClient } from './openclaw-gateway-client';
-import type { GatewayToolEntry } from './openclaw-gateway-client';
+import type { AgentBackendClient, GatewayToolEntry } from './agent-backend-client';
 import type { LocalFileListItem } from '@/app-types';
 
 /* ═══════════════════════════════════════════ Types ═══════════════════════════════════════════ */
@@ -111,12 +110,12 @@ export class LocalFileService implements FileService {
 /* ═══════════════════════════════════════ Remote ═══════════════════════════════════════ */
 
 /**
- * Uses the OpenClaw gateway `workspace.*` RPC methods for remote file operations.
+ * Uses Hermes `workspace.*` RPC methods for remote file operations.
  * The `rootPath` parameter is ignored — the remote agent's workspace root is implicit.
  */
 export class WorkspaceRpcUnsupportedError extends Error {
   constructor(method: string) {
-    super(`The OpenClaw server does not support "${method}" yet. Server update required.`);
+    super(`The Hermes server does not support "${method}" yet. Server update required.`);
     this.name = 'WorkspaceRpcUnsupportedError';
   }
 }
@@ -148,7 +147,7 @@ async function guardedCall<T>(method: string, fn: () => Promise<T>): Promise<T> 
 export class RemoteFileService implements FileService {
   readonly mode: FileServiceMode = 'remote';
 
-  constructor(private gateway: OpenClawGatewayClient) {}
+  constructor(private gateway: AgentBackendClient) {}
 
   async listDir(_rootPath: string, relativePath?: string): Promise<FileListResult> {
     return guardedCall('workspace.list', () => this.gateway.listWorkspaceFiles(relativePath));
@@ -206,7 +205,7 @@ export class RemoteFileService implements FileService {
  * remote host, we route through the gateway's `workspace.*` RPCs.
  */
 export function createFileService(
-  gateway: OpenClawGatewayClient | null,
+  gateway: AgentBackendClient | null,
   gatewayUrl: string,
   desktopBridgeAvailable: boolean,
 ): FileService {

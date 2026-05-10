@@ -1,4 +1,4 @@
-﻿<p align="center">
+<p align="center">
   <img src="assets/screenshots/cowork.png" alt="Relay cowork view" width="1100" style="border-radius: 5px;" />
 </p>
 
@@ -22,9 +22,9 @@
 
 ## What Is Relay?
 
-# The open-source Claude Cowork for OpenClaw.
+# The open-source Claude Cowork for Hermes.
 
-**If OpenClaw is the runtime, Relay is your local command center.**
+**If Hermes is the runtime, Relay is your local command center.**
 
 Relay is an Electron desktop app that gives you the same workflow as Claude Cowork (autonomous task execution, scheduling, sub-agents, connectors) but running on **your infrastructure**, with **your choice of model**, and with **real governance built in**.
 
@@ -63,7 +63,7 @@ Relay solves all three. Same workflow pattern, different trust model.
               │                                │
               │  Configure                     │
               │  • Schedule recurring tasks    │─ ─ ┐ Relay defines.
-              │  • Browse & edit agent memory  │    │ OpenClaw executes.
+              │  • Browse & edit agent memory  │    │ Hermes executes.
               │  • Manage connectors (Slack,   │    │
               │    Notion, GitHub, Jira, etc.) │    │
               │  • Set project working folder  │    │
@@ -72,7 +72,7 @@ Relay solves all three. Same workflow pattern, different trust model.
                        WebSocket / API              │
                               │                     │
               ┌───────────────▼────────────────┐    │
-              │  OpenClaw Gateway (Runtime)    │◄ ─ ┘
+              │  Hermes Gateway (Runtime)    │◄ ─ ┘
               │  local · VPS · custom URL      │
               │  ── Execution Plane ──         │
               │                                │
@@ -103,12 +103,12 @@ Relay solves all three. Same workflow pattern, different trust model.
 ```
 
 **Relay is the control plane — you see, configure, and approve.
-OpenClaw is the execution plane — agents run, remember, and act on your infrastructure.**
+Hermes is the execution plane — agents run, remember, and act on your infrastructure.**
 
 ```
 Example: Scheduled daily briefing
 
-  Relay (you define)                                    OpenClaw (it executes)
+  Relay (you define)                                    Hermes (it executes)
   ──────────────────                                    ──────────────────────
   Create schedule: "Daily 8am"          ──────►         Stores schedule
   Set connectors: Slack + Notion                        Cron fires at 8am
@@ -121,9 +121,9 @@ Example: Scheduled daily briefing
   Full audit trail exported
 ```
 
-## OpenClaw Runtime Model (Agents, Skills, Nodes)
+## Hermes Runtime Model (Agents, Skills, Nodes)
 
-OpenClaw is multi-agent by design. Relay treats this as an operator-visible runtime model:
+Hermes is multi-agent by design. Relay treats this as an operator-visible runtime model:
 
 - **Agent** = the runtime identity that owns a task (role, memory scope, policy profile, model routing).
 - **Skill** = the capability bundle an agent can use (tools, instructions, schema expectations, policy requirements).
@@ -152,10 +152,10 @@ Canonical definition: [docs/RELAY-OPENCLAW-AGENT-SKILL-NODE-MODEL.md](docs/RELAY
 | Problem | How Relay handles it |
 |---------|---|
 | **Data sovereignty** | Your files stay on your machine. Agents run on your server. Your keys. |
-| **Model lock-in** | Use any LLM through OpenClaw: Claude, GPT-4, Llama, custom endpoints. |
+| **Model lock-in** | Use any LLM through Hermes: Claude, GPT-4, Llama, custom endpoints. |
 | **No compliance-ready audit** | Full audit trail with exportable execution history, approval records, and action rationale. |
 | **Always-on execution** | Agents run 24/7 on a VPS while you control them from the desktop. |
-| **Token cost at scale** | Cowork burns through plan limits fast. With Relay + OpenClaw you manage costs on your own infrastructure. |
+| **Token cost at scale** | Cowork burns through plan limits fast. With Relay + Hermes you manage costs on your own infrastructure. |
 | **Syncing friction** | Your workspace files are in agent context in real-time. No FTP, no SSH, no copy-paste. |
 
 <br/>
@@ -168,7 +168,7 @@ You give the goal → Agent plans the steps → You approve what matters → Age
 
 |        | Step               | What Happens                                              |
 | ------ | ------------------ | -------------------------------------------------------- |
-| **01** | Connect            | Point Relay to your OpenClaw gateway (local, VPS, or custom). Verify health. |
+| **01** | Connect            | Point Relay to your Hermes gateway (local, VPS, or custom). Verify health. |
 | **02** | Dispatch           | Give the agent a task in a project context. Agent plans and starts working. |
 | **03** | Approve            | High-risk actions pause for your review. You approve, reject, or redirect. |
 | **04** | Track              | Full timeline of every action, approval, cost, and result. Exportable. |
@@ -179,7 +179,7 @@ You give the goal → Agent plans the steps → You approve what matters → Age
 
 Relay makes sense if:
 
-- You run OpenClaw on a VPS and want a proper desktop control plane for it
+- You run Hermes on a VPS and want a proper desktop control plane for it
 - You need data sovereignty (GDPR, HIPAA, or internal policy)
 - You work in regulated industries like finance, legal, healthcare, or government
 - You want to pick your own model instead of being locked into Claude
@@ -195,14 +195,14 @@ Relay is probably **not** for you if:
 
 ## Why Not Just Use a Chat App?
 
-You could wire OpenClaw to Telegram, Discord, or Slack and talk to your agent there. Plenty of people do. But it breaks down quickly once you need more than a text box:
+You could wire Hermes to Telegram, Discord, or Slack and talk to your agent there. Plenty of people do. But it breaks down quickly once you need more than a text box:
 
 | Capability | Chat app (Telegram, etc.) | Relay |
 |---|---|---|
 | **Send a message to an agent** | Works fine | Works fine |
 | **Approve risky actions before they run** | No approval gates, agent just does it | File deletes, shell commands, data sends pause for review |
 | **See what the agent actually did** | You get a text reply, not an execution log | Full timeline: every action, tool call, file change, cost |
-| **Schedule recurring tasks** | You'd need a separate cron + glue code | Define schedules in the UI, OpenClaw runs them |
+| **Schedule recurring tasks** | You'd need a separate cron + glue code | Define schedules in the UI, Hermes runs them |
 | **Project context** | Every message starts from zero | Tasks scoped to a working folder with persistent context |
 | **Agent memory** | Chat history is all you get | Structured memory that persists across sessions |
 | **Manage connectors** | You wire each integration yourself | Configure Slack, Notion, GitHub, Jira from the UI |
@@ -242,7 +242,7 @@ Every action logged with execution timeline, rationale, and approval records. Al
 </td>
 <td align="center">
 <h3>Flexible Routing</h3>
-Connect to local, VPS, or custom OpenClaw-compatible endpoints. Use any model.
+Connect to local, VPS, or custom Hermes-compatible endpoints. Use any model.
 </td>
 </tr>
 <tr>
@@ -302,7 +302,7 @@ Files, activity, memory, schedule, safety, and approvals all visible in one plac
 | **Desktop app** | Yes | Yes |
 | **Local file access** | Truly local, on your machine | Processed on Anthropic's infrastructure |
 | **Self-hosted runtime** | Yes | No |
-| **Model choice** | Any model via OpenClaw | Claude only |
+| **Model choice** | Any model via Hermes | Claude only |
 | **Compliance-ready audit trail** | Exportable | Not in audit logs or compliance APIs yet |
 | **Approval gates** | Per-action risk scopes | Limited |
 | **Data on your infrastructure** | Yes | No |
@@ -343,7 +343,7 @@ You tell the agent: "Every Friday, summarize trending topics in our space and dr
 | Personal AI productivity | Great fit | Overkill |
 | Data sovereignty (GDPR, HIPAA) | Data goes to Anthropic | Your infrastructure |
 | Compliance-ready audit logs | Not available yet | Built in, exportable |
-| Model flexibility | Claude only | Any model via OpenClaw |
+| Model flexibility | Claude only | Any model via Hermes |
 | Token cost control | Plan limits | Your infra, your budget |
 | Team approval workflows | Limited | Per-action risk scopes |
 | Always-on agents on your VPS | Anthropic's cloud | Your server, 24/7 |
@@ -383,7 +383,7 @@ Set these when needed:
 
 In **Settings > Gateway**:
 
-1. Enter your OpenClaw gateway URL and token
+1. Enter your Hermes gateway URL and token
 2. Save
 3. Run the health check
 
@@ -391,7 +391,7 @@ In **Settings > Gateway**:
 
 - **Local:** `ws://127.0.0.1:18789`
 - **VPS:** `wss://your-domain.com`
-- **Custom:** Any OpenClaw-compatible endpoint
+- **Custom:** Any Hermes-compatible endpoint
 
 <p align="center">
   <img src="assets/screenshots/gateway.png" alt="Relay gateway settings" width="1100" style="border-radius: 10px;" />
@@ -436,3 +436,4 @@ npm run test:e2e            # Electron E2E tests (mock gateway)
 **Get started:** [Download](https://github.com/SeventeenLabs/relay/releases) the latest build or clone and run locally.
 
 **Questions?** Open an issue or email hello@seventeenlabs.io.
+

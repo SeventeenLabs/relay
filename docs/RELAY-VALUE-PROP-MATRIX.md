@@ -88,7 +88,7 @@ Primary pains:
 
 What Relay delivers:
 
-- Centralized orchestration on OpenClaw.
+- Centralized orchestration on Hermes.
 - Explicit controls for approval and execution.
 - Traceable event history by run.
 
@@ -118,3 +118,4 @@ Expansion stage:
 Enterprise stage:
 
 - Multi-team rollout with standardized controls, audit, and policy operations.
+

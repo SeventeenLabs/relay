@@ -50,7 +50,7 @@
 
   <text x="254" y="364" fill="#6F8698" font-size="14" font-family="Manrope, Segoe UI, Arial, sans-serif">Desktop operator desk for AI work</text>
   <text x="254" y="464" fill="#6F8698" font-size="14" font-family="Manrope, Segoe UI, Arial, sans-serif">Self-hosted and local-first friendly</text>
-  <text x="254" y="564" fill="#6F8698" font-size="14" font-family="Manrope, Segoe UI, Arial, sans-serif">Model-agnostic through OpenClaw</text>
+  <text x="254" y="564" fill="#6F8698" font-size="14" font-family="Manrope, Segoe UI, Arial, sans-serif">Model-agnostic through Hermes</text>
   <text x="254" y="664" fill="#6F8698" font-size="14" font-family="Manrope, Segoe UI, Arial, sans-serif">Approval-first controls for sensitive actions</text>
 
   <text x="906" y="364" fill="#7A8FA0" font-size="14" font-family="Manrope, Segoe UI, Arial, sans-serif">Fully autonomous unattended operations</text>
@@ -58,3 +58,4 @@
   <text x="906" y="564" fill="#7A8FA0" font-size="14" font-family="Manrope, Segoe UI, Arial, sans-serif">Guaranteed zero-risk outcomes</text>
   <text x="906" y="664" fill="#7A8FA0" font-size="14" font-family="Manrope, Segoe UI, Arial, sans-serif">Provider lock-in assumptions</text>
 </svg>
+

@@ -15,8 +15,8 @@ html {
   --preview-panel: #f0e5d7;
   --preview-claude-accent-strong: #c47a5c;
   --preview-claude-accent-soft: #edd4c7;
-  --preview-relay-accent-strong: #7b9f2f;
-  --preview-relay-accent-soft: #dcf0b3;
+  --preview-relay-accent-strong: #1e5ba8;
+  --preview-relay-accent-soft: #d6e6f8;
 }
 
 html,
@@ -46,6 +46,23 @@ body {
     radial-gradient(circle at 20% -10%, #f7f5ef 0%, transparent 35%),
     radial-gradient(circle at 90% 0%, #f0ece3 0%, transparent 24%),
     #f4f3ee;
+}
+
+.app-workspace-shell {
+  background-color: #f4f3ee;
+}
+
+html.dark:not(.relay-style) .app-workspace-shell {
+  background-color: #1f1d1a;
+}
+
+html.relay-style .app-workspace-shell {
+  background-color: #f8f8f8;
+}
+
+html.relay-style.dark .app-workspace-shell,
+html.dark.relay-style .app-workspace-shell {
+  background-color: #080808;
 }
 
 html .bg-primary { background-color: var(--app-primary); }
@@ -79,6 +96,8 @@ html.dark {
   --app-primary-foreground: #1c1b18;
   --app-primary-muted: #2a2924;
   --app-accent: #d8c3a7;
+  --app-chrome-bg: #182233;
+  --app-chrome-border: #27354a;
   --preview-bg: #1f1d1a;
   --preview-bg-alt: #171614;
   --preview-surface: #2a2723;
@@ -89,8 +108,8 @@ html.dark {
   --preview-panel: #302d29;
   --preview-claude-accent-strong: #df9a79;
   --preview-claude-accent-soft: #553f35;
-  --preview-relay-accent-strong: #bbf451;
-  --preview-relay-accent-soft: #3c4d1b;
+  --preview-relay-accent-strong: #4a9fd8;
+  --preview-relay-accent-soft: #16345c;
 }
 
 html.dark .bg-background { background-color: #1c1b18; }
@@ -159,7 +178,16 @@ html.dark:not(.relay-style) [data-slot="cowork-surface"] .text-muted-foreground 
 /* Claude chrome in dark mode */
 html.dark:not(.relay-style) [data-slot="sidebar"],
 html.dark:not(.relay-style) .app-titlebar {
-  background-color: #1f1d1a;
+  background-color: var(--app-chrome-bg);
+  border-color: var(--app-chrome-border);
+}
+
+html.dark:not(.relay-style) .app-workspace-shell {
+  background-color: var(--app-chrome-bg);
+}
+
+html.dark:not(.relay-style) [data-slot="sidebar-inset"] {
+  border-color: var(--app-chrome-border);
 }
 
 /* Relay style variant */
@@ -167,24 +195,24 @@ html.relay-style body {
   color: #070707;
   font-family: "Manrope", "Segoe UI", sans-serif;
   background:
-    radial-gradient(circle at 12% -10%, rgba(200, 214, 248, 0.2) 0%, transparent 30%),
-    radial-gradient(circle at 92% 2%, rgba(208, 242, 224, 0.15) 0%, transparent 28%),
+    radial-gradient(circle at 12% -10%, rgba(74, 159, 216, 0.2) 0%, transparent 32%),
+    radial-gradient(circle at 92% 2%, rgba(30, 91, 168, 0.16) 0%, transparent 30%),
     #ffffff;
 }
 
 html.relay-style {
-  --app-primary: #bbf451;
-  --app-primary-foreground: #1f2b09;
-  --app-primary-muted: #f4f8f1;
-  --app-accent: #7b9f2f;
-  --preview-bg: #f6f8f7;
-  --preview-bg-alt: #eef2f0;
+  --app-primary: #4a9fd8;
+  --app-primary-foreground: #ffffff;
+  --app-primary-muted: #edf5fd;
+  --app-accent: #1e5ba8;
+  --preview-bg: #f5f9fd;
+  --preview-bg-alt: #edf4fb;
   --preview-surface: #ffffff;
-  --preview-border: #d8dfdb;
-  --preview-line-strong: #101513;
-  --preview-line-soft: #5f6f68;
-  --preview-line-muted: #8ea099;
-  --preview-panel: #f2f6f4;
+  --preview-border: #d7e3f0;
+  --preview-line-strong: #0f2741;
+  --preview-line-soft: #4f6e90;
+  --preview-line-muted: #7f9dbd;
+  --preview-panel: #eef5fc;
 }
 
 html.relay-style * {
@@ -221,41 +249,41 @@ html.relay-style .bg-popover {
 }
 
 html.relay-style .bg-primary {
-  background-color: #bbf451;
+  background-color: #4a9fd8;
 }
 
 html.relay-style .text-primary-foreground {
-  color: #1f2b09;
+  color: #ffffff;
 }
 
 html.relay-style .text-primary {
-  color: #7b9f2f;
+  color: #1e5ba8;
 }
 
 html.relay-style .border-primary {
-  border-color: #bbf451;
+  border-color: #4a9fd8;
 }
 
 html.relay-style .ring-ring {
-  --tw-ring-color: rgb(187 244 81 / 0.4);
+  --tw-ring-color: rgb(74 159 216 / 0.4);
 }
 
 html.relay-style :is(button.bg-primary, a.bg-primary) {
-  border-color: #a8df44;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(187, 244, 81, 0.2) inset;
+  border-color: #3f8fc4;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(74, 159, 216, 0.2) inset;
 }
 
 html.relay-style :is(button.bg-primary:hover, a.bg-primary:hover) {
-  background-color: #a8df44;
+  background-color: #3f8fc4;
 }
 
 html.relay-style .titlebar-mode-trigger[data-active] {
-  background: #bbf451 !important;
-  color: #1f2b09 !important;
+  background: #4a9fd8 !important;
+  color: #ffffff !important;
 }
 
 html.relay-style .titlebar-mode-trigger[data-active]:hover {
-  background: #a8df44 !important;
+  background: #3f8fc4 !important;
 }
 
 html.relay-style .text-foreground {
@@ -326,17 +354,19 @@ html.relay-style.dark body,
 html.dark.relay-style body {
   color: #fafafa;
   background:
-    radial-gradient(circle at 14% -10%, rgba(141, 255, 194, 0.08) 0%, transparent 28%),
-    radial-gradient(circle at 90% 3%, rgba(140, 169, 255, 0.09) 0%, transparent 24%),
+    radial-gradient(circle at 14% -10%, rgba(74, 159, 216, 0.12) 0%, transparent 30%),
+    radial-gradient(circle at 90% 3%, rgba(30, 91, 168, 0.14) 0%, transparent 26%),
     #090909;
 }
 
 html.relay-style.dark,
 html.dark.relay-style {
-  --app-primary: #bbf451;
-  --app-primary-foreground: #1f2b09;
+  --app-primary: #4a9fd8;
+  --app-primary-foreground: #ffffff;
   --app-primary-muted: #1a1a1a;
-  --app-accent: #bbf451;
+  --app-accent: #4a9fd8;
+  --app-chrome-bg: #161f2d;
+  --app-chrome-border: #253349;
   --preview-bg: #0b0d0c;
   --preview-bg-alt: #060707;
   --preview-surface: #121514;
@@ -359,12 +389,24 @@ html.dark.relay-style .bg-background {
 
 html.relay-style.dark [data-slot="sidebar"],
 html.dark.relay-style [data-slot="sidebar"] {
-  background-color: #080808;
+  background-color: var(--app-chrome-bg);
+  border-color: var(--app-chrome-border);
 }
 
 html.relay-style.dark .app-titlebar,
 html.dark.relay-style .app-titlebar {
-  background-color: #080808;
+  background-color: var(--app-chrome-bg);
+  border-color: var(--app-chrome-border);
+}
+
+html.relay-style.dark .app-workspace-shell,
+html.dark.relay-style .app-workspace-shell {
+  background-color: var(--app-chrome-bg);
+}
+
+html.relay-style.dark [data-slot="sidebar-inset"],
+html.dark.relay-style [data-slot="sidebar-inset"] {
+  border-color: var(--app-chrome-border);
 }
 
 
@@ -385,49 +427,49 @@ html.dark.relay-style .bg-popover {
 
 html.relay-style.dark .bg-primary,
 html.dark.relay-style .bg-primary {
-  background-color: #bbf451;
+  background-color: #4a9fd8;
 }
 
 html.relay-style.dark .text-primary-foreground,
 html.dark.relay-style .text-primary-foreground {
-  color: #1f2b09;
+  color: #ffffff;
 }
 
 html.relay-style.dark .text-primary,
 html.dark.relay-style .text-primary {
-  color: #bbf451;
+  color: #4a9fd8;
 }
 
 html.relay-style.dark .border-primary,
 html.dark.relay-style .border-primary {
-  border-color: #bbf451;
+  border-color: #4a9fd8;
 }
 
 html.relay-style.dark .ring-ring,
 html.dark.relay-style .ring-ring {
-  --tw-ring-color: rgb(187 244 81 / 0.42);
+  --tw-ring-color: rgb(74 159 216 / 0.42);
 }
 
 html.relay-style.dark :is(button.bg-primary, a.bg-primary),
 html.dark.relay-style :is(button.bg-primary, a.bg-primary) {
-  border-color: #a8df44;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(187, 244, 81, 0.24) inset;
+  border-color: #3f8fc4;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(74, 159, 216, 0.24) inset;
 }
 
 html.relay-style.dark :is(button.bg-primary:hover, a.bg-primary:hover),
 html.dark.relay-style :is(button.bg-primary:hover, a.bg-primary:hover) {
-  background-color: #a8df44;
+  background-color: #3f8fc4;
 }
 
 html.relay-style.dark .titlebar-mode-trigger[data-active],
 html.dark.relay-style .titlebar-mode-trigger[data-active] {
-  background: #bbf451 !important;
-  color: #1f2b09 !important;
+  background: #4a9fd8 !important;
+  color: #ffffff !important;
 }
 
 html.relay-style.dark .titlebar-mode-trigger[data-active]:hover,
 html.dark.relay-style .titlebar-mode-trigger[data-active]:hover {
-  background: #a8df44 !important;
+  background: #3f8fc4 !important;
 }
 
 html.relay-style.dark .text-foreground,

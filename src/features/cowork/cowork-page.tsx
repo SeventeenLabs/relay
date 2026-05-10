@@ -1,12 +1,13 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-import { ArrowUp, ChevronDown, ChevronRight, FileText, FolderOpen, Loader2, Plus, Shield, WifiOff } from 'lucide-react';
+import { ArrowUp, ChevronDown, ChevronRight, Ellipsis, FileText, FolderOpen, Globe, Loader2, MessageSquare, Play, Plus, Shield, Square, WifiOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type {
   ChatMessage,
   ChatModelOption,
+  FileChangeSummary,
   CoworkArtifact,
   CoworkProgressStep,
   CoworkProjectTask,
@@ -16,6 +17,7 @@ import type {
 } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { FileChangeSummaryCard } from '@/components/chat/file-change-summary';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Menu, MenuGroup, MenuItem } from '@/components/ui/menu';
@@ -51,7 +53,6 @@ type CoworkPageProps = {
   pendingApprovals: PendingApprovalAction[];
   projectTasks: CoworkProjectTask[];
   runPhase: CoworkRunPhase;
-  runStatus: string;
   progressSteps: CoworkProgressStep[];
   sending: boolean;
   gatewayConnected: boolean;
@@ -68,9 +69,14 @@ type CoworkPageProps = {
   onSubmit: (event: FormEvent) => void | Promise<void>;
   onApprovePendingAction: (approvalId: string) => void;
   onRejectPendingAction: (approvalId: string, reason: string) => void;
+  fileChangeSummary?: FileChangeSummary | null;
+  undoingFileChanges?: boolean;
+  onUndoFileChanges?: () => void;
+  onReviewFileChanges?: () => void;
 };
 
-const COWORK_DEFAULT_MODEL_LABEL = 'Default model';
+const COWORK_DEFAULT_MODEL_LABEL = 'Server default';
+const MODEL_VALUE_SEPARATOR = '::';
 const MENTION_TOKEN_PATTERN = /@project:"[^"]+"/g;
 const COWORK_IDEA_CARDS = [
   {
@@ -111,7 +117,6 @@ export function CoworkPage({
   pendingApprovals,
   projectTasks,
   runPhase,
-  runStatus,
   progressSteps,
   sending,
   gatewayConnected,
@@ -128,6 +133,10 @@ export function CoworkPage({
   onSubmit,
   onApprovePendingAction,
   onRejectPendingAction,
+  fileChangeSummary,
+  undoingFileChanges = false,
+  onUndoFileChanges,
+  onReviewFileChanges,
 }: CoworkPageProps) {
   const formRef = useRef<HTMLFormElement | null>(null);
   const composerEditorRef = useRef<HTMLTextAreaElement | null>(null);
@@ -142,15 +151,102 @@ export function CoworkPage({
   const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
   const [mentionMenuIndex, setMentionMenuIndex] = useState(0);
   const [composerText, setComposerText] = useState(taskPrompt);
-  const [liveRunLines, setLiveRunLines] = useState<string[]>([]);
   const [openDropdown, setOpenDropdown] = useState<'model' | 'effort' | 'approvals' | null>(null);
+  const [modelProviderFilter, setModelProviderFilter] = useState<string>('all');
+  const [modelSearchQuery, setModelSearchQuery] = useState('');
   const [effortLevel, setEffortLevel] = useState<'low' | 'medium' | 'high'>('medium');
-  const liveRunLineSetRef = useRef<Set<string>>(new Set());
+  const [activeWorkStartedAt, setActiveWorkStartedAt] = useState<number | null>(null);
+  const [elapsedWorkSeconds, setElapsedWorkSeconds] = useState(0);
   const shouldAutoScrollRef = useRef(true);
   const canSend = composerText.trim().length > 0 && !sending && gatewayConnected;
+  const hasModelChoices = models.length > 0;
+  const modelDropdownDisabled = modelsLoading || changingModel || !hasModelChoices;
+  const parsedModels = useMemo(() => {
+    return models.map((option) => {
+      const rawValue = option.value.trim();
+      const separatorIndex = rawValue.indexOf(MODEL_VALUE_SEPARATOR);
+      let provider = 'unknown';
+      let modelId = rawValue;
+
+      if (separatorIndex > 0 && separatorIndex < rawValue.length - MODEL_VALUE_SEPARATOR.length) {
+        provider = rawValue.slice(0, separatorIndex).trim() || 'unknown';
+        modelId = rawValue.slice(separatorIndex + MODEL_VALUE_SEPARATOR.length).trim() || rawValue;
+      } else {
+        const labelMatch = option.label.match(/\(([^)]+)\)\s*$/);
+        if (labelMatch?.[1]) {
+          provider = labelMatch[1].trim().toLowerCase();
+        }
+      }
+
+      return {
+        ...option,
+        provider,
+        modelId,
+      };
+    });
+  }, [models]);
+  const selectedModelOption = parsedModels.find((model) => model.value === selectedModel) ?? null;
+  const selectedModelLabel = selectedModelOption ? `${selectedModelOption.modelId} (${selectedModelOption.provider})` : '';
+  const modelProviderBuckets = useMemo(() => {
+    const buckets = new Map<string, typeof parsedModels>();
+    for (const item of parsedModels) {
+      const key = item.provider || 'unknown';
+      const current = buckets.get(key) ?? [];
+      current.push(item);
+      buckets.set(key, current);
+    }
+
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+    const providers = Array.from(buckets.entries())
+      .map(([provider, entries]) => ({
+        provider,
+        entries: entries.slice().sort((a, b) => collator.compare(a.modelId, b.modelId)),
+      }))
+      .sort((a, b) => {
+        if (selectedModelOption?.provider === a.provider) return -1;
+        if (selectedModelOption?.provider === b.provider) return 1;
+        return collator.compare(a.provider, b.provider);
+      });
+
+    return providers;
+  }, [parsedModels, selectedModelOption?.provider]);
+  const visibleProviderBuckets = useMemo(() => {
+    const query = modelSearchQuery.trim().toLowerCase();
+    const providerScopedBuckets =
+      modelProviderFilter === 'all'
+        ? modelProviderBuckets
+        : modelProviderBuckets.filter((bucket) => bucket.provider === modelProviderFilter);
+
+    if (!query) {
+      return providerScopedBuckets;
+    }
+
+    return providerScopedBuckets
+      .map((bucket) => ({
+        ...bucket,
+        entries: bucket.entries.filter((model) => {
+          const normalizedProvider = model.provider.toLowerCase();
+          const normalizedModelId = model.modelId.toLowerCase();
+          const normalizedLabel = model.label.toLowerCase();
+          return (
+            normalizedModelId.includes(query) ||
+            normalizedProvider.includes(query) ||
+            normalizedLabel.includes(query)
+          );
+        }),
+      }))
+      .filter((bucket) => bucket.entries.length > 0);
+  }, [modelProviderBuckets, modelProviderFilter, modelSearchQuery]);
+  const totalModelCount = useMemo(
+    () => modelProviderBuckets.reduce((sum, bucket) => sum + bucket.entries.length, 0),
+    [modelProviderBuckets],
+  );
+  const visibleModelCount = useMemo(
+    () => visibleProviderBuckets.reduce((sum, bucket) => sum + bucket.entries.length, 0),
+    [visibleProviderBuckets],
+  );
   const visibleMessages = useMemo(() => messages.filter((message) => !isSystemLikeMessage(message)), [messages]);
   const isInitialWorkspace = visibleMessages.length === 0;
-  const showRightPanel = rightPanelOpen && projectSelected;
   const isRunActive = runPhase === 'sending' || runPhase === 'streaming' || sending || awaitingStream;
   const safeContextWindowTotalTokens = Math.max(1, contextWindowTotalTokens);
   const contextWindowUsagePercent = Math.max(0, Math.min(100, Math.round((contextWindowUsedTokens / safeContextWindowTotalTokens) * 100)));
@@ -160,8 +256,19 @@ export function CoworkPage({
   const contextWindowTotalTokensLabel = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(
     safeContextWindowTotalTokens,
   );
+  const assistantActivityLabel =
+    runPhase === 'sending'
+      ? 'Thinking...'
+      : runPhase === 'streaming'
+        ? 'Working...'
+        : runPhase === 'error'
+          ? 'Error'
+          : '';
+  const firstUserMessage = visibleMessages.find((message) => message.role === 'user')?.text.trim() ?? '';
+  const headerTitle = firstUserMessage ? firstUserMessage.slice(0, 64) : (projectTitle || 'Project chat');
+  const workStatusLabel = isRunActive ? `${Math.floor(elapsedWorkSeconds / 60)}m ${elapsedWorkSeconds % 60}s lang bearbeitet` : '';
   const composerDropdownItemClass =
-    'h-7 rounded-md px-2 text-[11px] text-foreground/80 hover:bg-muted hover:text-foreground data-[active=true]:bg-primary/12 data-[active=true]:text-foreground data-[active=true]:ring-1 data-[active=true]:ring-primary/30';
+    'h-8 rounded-lg px-2.5 text-[11px] leading-none text-foreground/85 hover:bg-muted/80 hover:text-foreground data-[active=true]:bg-primary/12 data-[active=true]:text-foreground data-[active=true]:ring-1 data-[active=true]:ring-primary/30';
   const dateTimeFormatter = useMemo(
     () =>
       new Intl.DateTimeFormat(undefined, {
@@ -191,44 +298,6 @@ export function CoworkPage({
   useEffect(() => {
     setComposerText(taskPrompt);
   }, [taskPrompt]);
-
-  useEffect(() => {
-    if (!isRunActive) {
-      liveRunLineSetRef.current.clear();
-      setLiveRunLines([]);
-      return;
-    }
-
-    const candidateLines: string[] = [];
-    const statusLine = runStatus.trim();
-    if (statusLine) {
-      candidateLines.push(statusLine);
-    }
-    for (const step of progressSteps) {
-      if (!step.details?.trim()) {
-        continue;
-      }
-      if (step.status === 'active' || step.status === 'completed' || step.status === 'blocked') {
-        candidateLines.push(`${step.label}: ${step.details.trim()}`);
-      }
-    }
-
-    if (candidateLines.length === 0) {
-      candidateLines.push('Starting cowork run...');
-    }
-
-    const nextUnique: string[] = [];
-    for (const line of candidateLines) {
-      if (!liveRunLineSetRef.current.has(line)) {
-        liveRunLineSetRef.current.add(line);
-        nextUnique.push(line);
-      }
-    }
-
-    if (nextUnique.length > 0) {
-      setLiveRunLines((current) => [...current, ...nextUnique].slice(-14));
-    }
-  }, [isRunActive, progressSteps, runStatus]);
 
   useEffect(() => {
     const editor = composerEditorRef.current;
@@ -275,13 +344,32 @@ export function CoworkPage({
     requestAnimationFrame(() => {
       node.scrollIntoView({ block: 'end' });
     });
-  }, [awaitingStream, isInitialWorkspace, liveRunLines, progressSteps, runStatus, visibleMessages.length]);
+  }, [awaitingStream, isInitialWorkspace, progressSteps, visibleMessages.length]);
 
   useEffect(() => {
     if (sending || awaitingStream) {
       shouldAutoScrollRef.current = true;
     }
   }, [awaitingStream, sending]);
+
+  useEffect(() => {
+    if (isRunActive) {
+      setActiveWorkStartedAt((current) => current ?? Date.now());
+      return;
+    }
+    setActiveWorkStartedAt(null);
+    setElapsedWorkSeconds(0);
+  }, [isRunActive]);
+
+  useEffect(() => {
+    if (!activeWorkStartedAt) {
+      return;
+    }
+    const update = () => setElapsedWorkSeconds(Math.max(0, Math.floor((Date.now() - activeWorkStartedAt) / 1000)));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [activeWorkStartedAt]);
 
   const mentionQuery = useMemo(() => {
     const match = composerText.match(/(^|\s)@([^\s]*)$/);
@@ -354,6 +442,19 @@ export function CoworkPage({
       window.removeEventListener('keydown', handleEscape);
     };
   }, [openDropdown]);
+
+  useEffect(() => {
+    if (openDropdown !== 'model') {
+      return;
+    }
+    setModelSearchQuery('');
+    if (selectedModelOption?.provider) {
+      setModelProviderFilter(selectedModelOption.provider);
+      return;
+    }
+    const firstProvider = modelProviderBuckets[0]?.provider ?? 'all';
+    setModelProviderFilter(firstProvider);
+  }, [modelProviderBuckets, openDropdown, selectedModelOption?.provider]);
 
   const executeMentionCommand = (index: number) => {
     const command = mentionCommands[index];
@@ -446,7 +547,7 @@ export function CoworkPage({
                   {command.kind === 'directory' ? (
                     <FolderOpen className="h-3.5 w-3.5 text-sky-600 dark:text-sky-300" />
                   ) : (
-                    <FileText className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-300" />
+                    <FileText className="h-3.5 w-3.5 text-blue-600 dark:text-blue-300" />
                   )}
                 </span>
                 <span className="min-w-0 flex-1">
@@ -507,8 +608,8 @@ export function CoworkPage({
           />
         </div>
 
-        <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
-          <div className="flex min-w-0 items-center gap-1">
+        <div className="flex items-center justify-between gap-2 px-2.5 py-2">
+          <div className="flex min-w-0 items-center gap-1.5">
             <Button type="button" variant="ghost" size="icon" className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted/70">
               <Plus className="h-4 w-4" />
             </Button>
@@ -516,47 +617,109 @@ export function CoworkPage({
             <div className="composer-dropdown relative">
               <button
                 type="button"
-                className={`inline-flex h-6 max-w-[210px] items-center gap-1 rounded-md px-1.5 font-sans text-[11px] transition ${
+                disabled={modelDropdownDisabled}
+                className={`inline-flex h-7 max-w-[230px] items-center gap-1.5 rounded-md px-2 font-sans text-[11px] transition ${
                   openDropdown === 'model'
                     ? 'bg-muted text-foreground'
                     : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
-                }`}
+                } disabled:cursor-not-allowed disabled:opacity-60`}
                 onClick={() => setOpenDropdown((current) => (current === 'model' ? null : 'model'))}
               >
-                <span className="truncate">
-                  {selectedModel ? models.find((m) => m.value === selectedModel)?.label ?? selectedModel : COWORK_DEFAULT_MODEL_LABEL}
-                </span>
+                <span className="truncate">{`Model: ${selectedModelLabel || COWORK_DEFAULT_MODEL_LABEL}`}</span>
                 <ChevronDown className="h-3 w-3 opacity-80" />
               </button>
-              {openDropdown === 'model' ? (
-                <div className="absolute bottom-[calc(100%+0.3rem)] left-0 z-30 w-[230px] rounded-lg border border-border bg-popover p-1 shadow-xl">
-                  <Menu>
-                    <MenuGroup>
-                      <MenuItem
-                        className={composerDropdownItemClass}
-                        active={selectedModel === ''}
-                        onClick={() => {
-                          onModelChange('');
-                          setOpenDropdown(null);
-                        }}
+              {openDropdown === 'model' && !modelDropdownDisabled ? (
+                <div className="absolute bottom-[calc(100%+0.4rem)] left-0 z-30 w-[560px] overflow-hidden rounded-xl border border-border/80 bg-popover shadow-[0_12px_28px_rgba(0,0,0,0.25)]">
+                  <div className="border-b border-border/80 px-2.5 py-2.5">
+                    <div className="mb-2 flex items-center justify-between gap-2 px-0.5">
+                      <p className="font-sans text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Model selector</p>
+                      <p className="font-sans text-[10px] text-muted-foreground">
+                        {visibleModelCount === totalModelCount
+                          ? `${totalModelCount} models`
+                          : `${visibleModelCount} of ${totalModelCount}`}
+                      </p>
+                    </div>
+                    <Input
+                      value={modelSearchQuery}
+                      onChange={(event) => setModelSearchQuery(event.target.value)}
+                      placeholder="Search model or provider"
+                      aria-label="Search models"
+                      className="h-8 rounded-md border-border/80 bg-background px-2.5 py-1 text-[11px]"
+                    />
+                    <div className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                      <button
+                        type="button"
+                        className={`h-7 shrink-0 rounded-md border px-2.5 font-sans text-[11px] transition ${
+                          modelProviderFilter === 'all'
+                            ? 'border-border bg-muted text-foreground shadow-sm'
+                            : 'border-transparent text-muted-foreground hover:border-border/60 hover:bg-muted/60 hover:text-foreground'
+                        }`}
+                        onClick={() => setModelProviderFilter('all')}
                       >
-                        {COWORK_DEFAULT_MODEL_LABEL}
-                      </MenuItem>
-                      {models.map((model) => (
+                        All ({totalModelCount})
+                      </button>
+                      {modelProviderBuckets.map((bucket) => (
+                        <button
+                          key={bucket.provider}
+                          type="button"
+                          className={`h-7 shrink-0 rounded-md border px-2.5 font-sans text-[11px] transition ${
+                            modelProviderFilter === bucket.provider
+                              ? 'border-border bg-muted text-foreground shadow-sm'
+                              : 'border-transparent text-muted-foreground hover:border-border/60 hover:bg-muted/60 hover:text-foreground'
+                          }`}
+                          onClick={() => setModelProviderFilter(bucket.provider)}
+                        >
+                          {bucket.provider} ({bucket.entries.length})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="max-h-[340px] overflow-y-auto p-2">
+                    <Menu>
+                      <MenuGroup>
                         <MenuItem
-                          key={model.value}
                           className={composerDropdownItemClass}
-                          active={selectedModel === model.value}
+                          active={selectedModel === ''}
                           onClick={() => {
-                            onModelChange(model.value);
+                            onModelChange('');
                             setOpenDropdown(null);
                           }}
                         >
-                          {model.label}
+                          {COWORK_DEFAULT_MODEL_LABEL}
                         </MenuItem>
-                      ))}
-                    </MenuGroup>
-                  </Menu>
+                      </MenuGroup>
+                    </Menu>
+                    {visibleProviderBuckets.length === 0 ? (
+                      <div className="px-2 py-5 text-center font-sans text-[11px] text-muted-foreground">
+                        No models match "{modelSearchQuery.trim()}".
+                      </div>
+                    ) : (
+                      visibleProviderBuckets.map((bucket) => (
+                        <div key={bucket.provider} className="mt-2 first:mt-1">
+                          <p className="px-2.5 pb-1 font-sans text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            {bucket.provider}
+                          </p>
+                          <Menu>
+                            <MenuGroup>
+                              {bucket.entries.map((model) => (
+                                <MenuItem
+                                  key={model.value}
+                                  className={composerDropdownItemClass}
+                                  active={selectedModel === model.value}
+                                  onClick={() => {
+                                    onModelChange(model.value);
+                                    setOpenDropdown(null);
+                                  }}
+                                >
+                                  {model.modelId}
+                                </MenuItem>
+                              ))}
+                            </MenuGroup>
+                          </Menu>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -564,13 +727,14 @@ export function CoworkPage({
             <div className="composer-dropdown relative">
               <button
                 type="button"
-                className={`inline-flex h-6 items-center gap-1 rounded-md px-1.5 font-sans text-[11px] transition ${
+                className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 font-sans text-[11px] transition ${
                   openDropdown === 'effort'
                     ? 'bg-muted text-foreground'
                     : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
                 }`}
                 onClick={() => setOpenDropdown((current) => (current === 'effort' ? null : 'effort'))}
               >
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground/80">Reasoning</span>
                 <span>{effortLevel === 'low' ? 'Low' : effortLevel === 'medium' ? 'Mittel' : 'High'}</span>
                 <ChevronDown className="h-3 w-3 opacity-80" />
               </button>
@@ -708,9 +872,9 @@ export function CoworkPage({
         </div>
       </div>
 
-      {(modelsLoading || changingModel) && (
+      {(modelsLoading || changingModel || !hasModelChoices) && (
         <p className="px-1 font-sans text-[11px] text-muted-foreground">
-          {modelsLoading ? 'Loading models...' : 'Switching model...'}
+          {modelsLoading ? 'Loading models...' : changingModel ? 'Switching model...' : 'No models available from Hermes'}
         </p>
       )}
     </div>
@@ -801,29 +965,6 @@ export function CoworkPage({
     );
   };
 
-  const renderLiveRunPanel = () => {
-    if (!isRunActive) {
-      return null;
-    }
-    const lines = liveRunLines.length > 0 ? liveRunLines : ['Starting cowork run...'];
-
-    return (
-      <article className="mx-auto w-full max-w-[720px] px-2 py-0 font-sans text-sm text-foreground">
-        <p className="mb-2 font-sans text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cowork</p>
-        <div className="space-y-1.5">
-          {lines.map((line, index) => (
-            <p key={`${line}-${index}`} className="font-mono text-[12px] leading-5 text-foreground/90">
-              {line}
-            </p>
-          ))}
-          <p className="font-mono text-[12px] leading-5 text-muted-foreground">
-            <Loader2 className="mr-1 inline h-3 w-3 animate-spin align-middle" />
-            Running...
-          </p>
-        </div>
-      </article>
-    );
-  };
 
   return (
     !gatewayConnected ? (
@@ -844,12 +985,37 @@ export function CoworkPage({
     ) : (
       <section
       data-slot="cowork-surface"
-      className={`grid h-full w-full min-h-0 overflow-hidden transition-[grid-template-columns,gap] duration-200 ${
-        showRightPanel
-          ? 'gap-4 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_420px]'
-          : 'gap-0 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_0px]'
-      } p-0`}
+      className="grid h-full w-full min-h-0 overflow-hidden p-0"
     >
+      <header className="absolute inset-x-0 top-0 z-20 flex h-9 items-center justify-between bg-background px-3">
+        <button
+          type="button"
+          className="inline-flex h-8 max-w-[560px] items-center gap-1.5 rounded px-0.5 font-sans text-[13px] font-semibold leading-none text-foreground transition hover:bg-transparent"
+          title={headerTitle}
+        >
+          <span className="truncate">{headerTitle}</span>
+          <Ellipsis className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </button>
+        <div className="flex items-center gap-1.5 pr-1">
+          {workStatusLabel ? <span className="font-sans text-sm text-muted-foreground">{workStatusLabel}</span> : null}
+          <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60" aria-label="Run">
+            <Play className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" className="inline-flex h-7 items-center gap-1 rounded-full bg-blue-500 px-2 text-white hover:bg-blue-500/90" aria-label="Agent">
+            <Square className="h-3.5 w-3.5" />
+            <ChevronDown className="h-3 w-3" />
+          </button>
+          <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60" aria-label="Threads">
+            <MessageSquare className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60" aria-label="Web">
+            <Globe className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60" aria-label="Layout">
+            <Square className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </header>
       <div
         className={`grid h-full min-h-0 overflow-hidden bg-transparent ${
           isInitialWorkspace ? 'grid-rows-[minmax(0,1fr)]' : 'grid-rows-[minmax(0,1fr)_auto]'
@@ -858,7 +1024,7 @@ export function CoworkPage({
         <div ref={scrollHostRef} className="h-full">
         <ScrollArea className="h-full px-2">
           {isInitialWorkspace ? (
-            <div className="mx-auto grid h-full w-full max-w-[920px] place-items-center px-4">
+            <div className="mx-auto grid h-full w-full max-w-[920px] place-items-center px-4 pt-10">
               <div className="w-full">
                 <p className="mb-1 text-[clamp(1.6rem,2.4vw,2.2rem)] tracking-tight text-foreground">What should we get done?</p>
                 <p className="font-sans text-sm text-muted-foreground">Start with your own task, or pick a quick idea below.</p>
@@ -884,7 +1050,7 @@ export function CoworkPage({
               </div>
             </div>
           ) : (
-            <div className="mx-auto grid w-full max-w-[860px] gap-3 px-4 py-6" role="log" aria-live="polite" aria-relevant="additions">
+            <div className="mx-auto grid w-full max-w-[860px] gap-3 px-4 pb-6 pt-12" role="log" aria-live="polite" aria-relevant="additions">
               {visibleMessages.map((message) => {
                 const inline = extractInlineActivityCards(message);
                 const isUser = message.role === 'user';
@@ -927,7 +1093,7 @@ export function CoworkPage({
                             card.tone === 'danger'
                               ? 'bg-destructive/5'
                               : card.tone === 'success'
-                                ? 'bg-emerald-500/5'
+                                ? 'bg-blue-500/5'
                                 : 'bg-card';
 
                           return (
@@ -970,7 +1136,24 @@ export function CoworkPage({
                   </article>
                 );
               })}
-              {renderLiveRunPanel()}
+              {(sending || awaitingStream) ? (
+                <article className="mx-auto w-full max-w-[720px] px-2 py-0 font-sans text-sm text-foreground">
+                  <div className="inline-flex items-center gap-2 rounded-xl bg-muted px-3 py-2 font-sans text-sm text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    {assistantActivityLabel || 'Thinking...'}
+                  </div>
+                </article>
+              ) : null}
+              {fileChangeSummary && onUndoFileChanges && onReviewFileChanges ? (
+                <article className="mx-auto w-full max-w-[720px] px-2 py-0">
+                  <FileChangeSummaryCard
+                    summary={fileChangeSummary}
+                    undoing={undoingFileChanges}
+                    onUndo={onUndoFileChanges}
+                    onReview={onReviewFileChanges}
+                  />
+                </article>
+              ) : null}
               <div ref={chatBottomRef} aria-hidden className="h-0.5 w-full" />
             </div>
           )}
@@ -987,175 +1170,7 @@ export function CoworkPage({
         ) : null}
       </div>
 
-      <aside
-        className={`min-h-0 w-full transition-opacity duration-200 ${
-          showRightPanel ? 'opacity-100' : 'pointer-events-none opacity-0'
-        }`}
-      >
-        <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto py-2 pr-1">
-          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card shadow-sm" data-testid="cowork-instructions-card">
-            <CardHeader className="space-y-3 pb-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="font-sans text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Project</p>
-                  <CardTitle className="mt-1 truncate text-sm">{projectTitle || 'Cowork'}</CardTitle>
-                </div>
-                <div className="flex items-start gap-1.5">
-                  <Badge
-                    variant="outline"
-                    className={`rounded-full font-sans text-[10px] ${
-                      projectSelected
-                        ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                        : 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                    }`}
-                  >
-                    {projectSelected ? 'Project Selected' : 'Select Project'}
-                  </Badge>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-6 w-6 rounded-md"
-                    onClick={() => setWorkspaceCardCollapsed((current) => !current)}
-                    aria-expanded={!workspaceCardCollapsed}
-                    aria-controls={workspaceCardBodyId}
-                    aria-label={workspaceCardCollapsed ? 'Expand project card' : 'Minimize project card'}
-                  >
-                    <ChevronRight className={`h-3.5 w-3.5 transition-transform ${workspaceCardCollapsed ? '' : 'rotate-90'}`} />
-                  </Button>
-                </div>
-              </div>
 
-              {!workspaceCardCollapsed ? (
-                <div id={workspaceCardBodyId} className="grid grid-cols-2 gap-1.5">
-                  <div className="rounded-lg border border-border/70 bg-background px-2 py-1.5">
-                    <p className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground">Recents</p>
-                    <p className="font-sans text-sm font-semibold text-foreground">{projectTasks.length}</p>
-                  </div>
-                  <div className="rounded-lg border border-border/70 bg-background px-2 py-1.5">
-                    <p className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground">Artifacts</p>
-                    <p className="font-sans text-sm font-semibold text-foreground">{artifacts.length}</p>
-                  </div>
-                  <div className="rounded-lg border border-border/70 bg-background px-2 py-1.5">
-                    <p className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground">Approvals</p>
-                    <p className="font-sans text-sm font-semibold text-foreground">{pendingApprovals.length}</p>
-                  </div>
-                  <div className="rounded-lg border border-border/70 bg-background px-2 py-1.5">
-                    <p className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground">Scheduled</p>
-                    <p className="font-sans text-sm font-semibold text-foreground">{scheduledCount}</p>
-                  </div>
-                </div>
-              ) : null}
-            </CardHeader>
-            {!workspaceCardCollapsed ? (
-              <CardContent className="space-y-2 border-t border-border/70 pt-3">
-                <p className="font-sans text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Project instructions</p>
-                <div className="rounded-xl border border-border/70 bg-background px-2.5 py-2">
-                  <p className="font-sans text-xs leading-5 text-foreground/90">
-                    {projectInstructions.trim() || 'Add project instructions in Project Settings to define role, tone, constraints, and output format.'}
-                  </p>
-                </div>
-              </CardContent>
-            ) : null}
-          </Card>
-
-          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card shadow-sm" data-testid="cowork-scheduled-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center justify-between gap-2 text-sm">
-                Scheduled
-                <Badge variant="outline" className="rounded-full font-sans text-[10px]">{scheduledCount}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-2 pt-0">
-              <p className="font-sans text-xs text-muted-foreground">Plan recurring cowork runs for this project workflow.</p>
-              <div className="grid grid-cols-2 gap-1.5">
-                <Button type="button" size="sm" variant="outline" onClick={onScheduleRun} className="w-full">
-                  Open schedule
-                </Button>
-                <Button type="button" size="sm" variant="outline" onClick={onRerunLastTask} className="w-full" disabled={!canRerunLastTask}>
-                  Rerun last
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card shadow-sm" data-testid="cowork-artifacts-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center justify-between gap-2 text-sm">
-                Artifacts
-                <Badge variant="outline" className="rounded-full font-sans text-[10px]">{artifacts.length}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="max-h-60 space-y-1.5 overflow-y-auto pt-0 pr-1">
-              {artifacts.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border px-2.5 py-2">
-                  <p className="font-sans text-xs text-muted-foreground">No artifacts yet for this run.</p>
-                </div>
-              ) : (
-                artifacts.map((artifact) => (
-                  <button
-                    key={artifact.id}
-                    type="button"
-                    onClick={() => onOpenArtifact(artifact)}
-                    className="w-full rounded-lg border border-border bg-background p-2 text-left transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    data-testid={`cowork-artifact-${artifact.id}`}
-                  >
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <p className="truncate font-sans text-xs font-medium text-foreground">{artifactDisplayName(artifact)}</p>
-                      <div className="flex items-center gap-1">
-                        {artifact.source ? (
-                          <Badge variant="outline" className="rounded-full font-sans text-[10px] capitalize">
-                            {artifact.source.replace('_', ' ')}
-                          </Badge>
-                        ) : null}
-                        <Badge
-                          variant="outline"
-                          className={`rounded-full font-sans text-[10px] ${artifact.status === 'ok' ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-destructive/35 bg-destructive/10 text-destructive'}`}
-                        >
-                          {artifact.status}
-                        </Badge>
-                      </div>
-                    </div>
-                    <p className="mt-1 font-sans text-[10px] text-muted-foreground" title={String(artifact.updatedAt)}>
-                      Updated {formatTimestamp(artifact.updatedAt)}
-                    </p>
-                  </button>
-                ))
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="overflow-hidden rounded-2xl border-border/80 bg-card shadow-sm" data-testid="cowork-project-recents">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center justify-between gap-2 text-sm">
-                Recents in this project
-                <Badge variant="outline" className="rounded-full font-sans text-[10px]">{projectTasks.length}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="max-h-52 space-y-1.5 overflow-y-auto pt-0 pr-1">
-              {projectTasks.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border px-2.5 py-2">
-                  <p className="font-sans text-xs text-muted-foreground">No project recents yet.</p>
-                </div>
-              ) : (
-                projectTasks.map((task) => (
-                  <div key={`recent-${task.id}`} className="rounded-lg border border-border bg-background px-2.5 py-2">
-                    <div className="mb-1 flex items-center gap-2">
-                      <Badge variant="outline" className={`rounded-full font-sans text-[10px] capitalize ${taskStatusClasses(task.status)}`}>
-                        {taskStatusLabel(task.status)}
-                      </Badge>
-                    </div>
-                    <p className="truncate font-sans text-xs font-medium text-foreground">{task.prompt}</p>
-                    <p className="mt-1 font-sans text-[10px] text-muted-foreground" title={String(task.updatedAt)}>
-                      Updated {formatTimestamp(task.updatedAt)}
-                    </p>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </aside>
     </section>
     )
   );

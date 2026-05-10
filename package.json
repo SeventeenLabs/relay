@@ -3,7 +3,7 @@
   "version": "2026.4.3",
   "private": false,
   "license": "MIT",
-  "description": "Electron desktop cowork client for OpenClaw backends",
+  "description": "Electron desktop cowork client for Hermes backends",
   "main": "dist-electron/electron/main.js",
   "type": "module",
   "scripts": {
@@ -43,6 +43,10 @@
     "directories": {
       "buildResources": "assets",
       "output": "release"
+    },
+    "icon": "assets/icons/icon.png",
+    "win": {
+      "icon": "assets/icons/icon.ico"
     }
   },
   "dependencies": {
@@ -88,3 +92,4 @@
     "ws": "^8.18.3"
   }
 }
+

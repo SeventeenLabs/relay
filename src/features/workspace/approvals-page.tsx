@@ -122,7 +122,7 @@ export function ApprovalsPage({
             {filtered.length === 0 ? (
               <div className="grid place-items-center rounded-lg border border-dashed border-border/70 bg-background px-3 py-10 text-center">
                 <div>
-                  <CheckCircle2 className="mx-auto mb-1.5 size-4 text-emerald-600" />
+                  <CheckCircle2 className="mx-auto mb-1.5 size-4 text-blue-600" />
                   <p className="font-sans text-sm text-foreground">No pending approvals</p>
                   <p className="mt-1 font-sans text-[11px] text-muted-foreground">New approval requests will appear here.</p>
                 </div>
@@ -143,7 +143,7 @@ export function ApprovalsPage({
                               ? 'border-orange-500/35 bg-orange-500/12 text-orange-700 dark:text-orange-300'
                               : approval.riskLevel === 'medium'
                                 ? 'border-amber-500/40 bg-amber-500/12 text-amber-800 dark:text-amber-300'
-                                : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                : 'border-blue-500/35 bg-blue-500/10 text-blue-700 dark:text-blue-300'
                         }`}
                       >
                         {approval.riskLevel}

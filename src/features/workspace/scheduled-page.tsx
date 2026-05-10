@@ -414,8 +414,8 @@ export function ScheduledPage({
           </div>
           <p className="mt-1 font-sans text-sm text-muted-foreground">
             {projectId
-              ? 'Project-based schedule view from your OpenClaw gateway.'
-              : 'Overview of all scheduled jobs from your OpenClaw gateway.'}
+              ? 'Project-based schedule view from your Hermes gateway.'
+              : 'Overview of all scheduled jobs from your Hermes gateway.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -526,7 +526,7 @@ export function ScheduledPage({
       {/* Stats bar */}
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-2.5">
         <div className="flex items-center gap-1.5">
-          <Play className="size-3.5 text-emerald-600" />
+          <Play className="size-3.5 text-blue-600" />
           <span className="font-sans text-[12px] text-muted-foreground">{enabledCount} active</span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -574,12 +574,12 @@ export function ScheduledPage({
                         <div
                           className={`relative z-10 flex size-5 shrink-0 items-center justify-center rounded-full border ${
                             isEnabled
-                              ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/30'
+                              ? 'border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/30'
                               : 'border-border bg-background'
                           }`}
                         >
                           {isEnabled ? (
-                            <Play className="size-2.5 text-emerald-600" />
+                            <Play className="size-2.5 text-blue-600" />
                           ) : (
                             <Pause className="size-2.5 text-muted-foreground/50" />
                           )}
@@ -756,7 +756,7 @@ export function ScheduledPage({
                           {dayJobs.slice(0, 3).map((j) => (
                             <span
                               key={j.id}
-                              className={`inline-block size-1.5 rounded-full ${j.enabled ? 'bg-emerald-500' : 'bg-muted-foreground/30'}`}
+                              className={`inline-block size-1.5 rounded-full ${j.enabled ? 'bg-blue-500' : 'bg-muted-foreground/30'}`}
                             />
                           ))}
                           {dayJobs.length > 3 && (
@@ -793,7 +793,7 @@ export function ScheduledPage({
                         <div key={job.id} className="rounded-lg border border-border/60 bg-background px-2.5 py-2">
                           <div className="flex items-center gap-1.5">
                             {job.enabled ? (
-                              <Play className="size-3 text-emerald-600" />
+                              <Play className="size-3 text-blue-600" />
                             ) : (
                               <Pause className="size-3 text-muted-foreground/50" />
                             )}

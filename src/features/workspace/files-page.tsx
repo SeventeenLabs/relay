@@ -10,7 +10,6 @@ import {
   Clock,
   Code,
   Copy,
-  Download,
   Edit3,
   Eye,
   File,
@@ -33,7 +32,6 @@ import {
   Search,
   Shield,
   Sparkles,
-  Terminal,
   Trash2,
   Upload,
   X,
@@ -124,14 +122,14 @@ const EXT_LANG: Record<string, string> = {
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp']);
 
 const RISK_COLORS: Record<string, { dot: string; bg: string; text: string }> = {
-  low: { dot: 'bg-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-950/30', text: 'text-emerald-700 dark:text-emerald-400' },
+  low: { dot: 'bg-blue-500', bg: 'bg-blue-50 dark:bg-blue-950/30', text: 'text-blue-700 dark:text-blue-400' },
   medium: { dot: 'bg-amber-500', bg: 'bg-amber-50 dark:bg-amber-950/30', text: 'text-amber-700 dark:text-amber-400' },
   high: { dot: 'bg-orange-500', bg: 'bg-orange-50 dark:bg-orange-950/30', text: 'text-orange-700 dark:text-orange-400' },
   critical: { dot: 'bg-red-500', bg: 'bg-red-50 dark:bg-red-950/30', text: 'text-red-700 dark:text-red-400' },
 };
 
 const CHANGE_COLORS: Record<string, string> = {
-  created: 'text-emerald-600 dark:text-emerald-400',
+  created: 'text-blue-600 dark:text-blue-400',
   modified: 'text-blue-600 dark:text-blue-400',
   deleted: 'text-red-600 dark:text-red-400',
   moved: 'text-amber-600 dark:text-amber-400',
@@ -241,7 +239,7 @@ function syntaxHighlight(code: string, lang: string): { spans: { text: string; c
     const spans: { text: string; color: string }[] = [];
     // comment lines
     if (line.trimStart().startsWith('//') || line.trimStart().startsWith('#')) {
-      spans.push({ text: line, color: 'text-emerald-600/70 dark:text-emerald-400/70' });
+      spans.push({ text: line, color: 'text-blue-600/70 dark:text-blue-400/70' });
       return { spans };
     }
     // string-only lines or lines with mostly strings
@@ -278,26 +276,6 @@ const FILE_PERMISSIONS: PermissionRef[] = [
   { id: 'file-delete', name: 'Delete', risk: 'high' },
   { id: 'file-move', name: 'Move', risk: 'medium' },
 ];
-
-/* ─── Copy Command Button ─────────────────── */
-function CopyCommandButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-      title="Copy to clipboard"
-      onClick={() => {
-        void navigator.clipboard.writeText(text).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        });
-      }}
-    >
-      {copied ? <Check className="size-3.5 text-primary" /> : <Copy className="size-3.5" />}
-    </button>
-  );
-}
 
 /* ═══════════════════════════════════════════ Main Component ═══════════════════════════════════════════ */
 
@@ -367,27 +345,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
   const [mdRendered, setMdRendered] = useState(true);
 
   // Remote unsupported state
-  const [remoteUnsupported, setRemoteUnsupported] = useState(false);
-  const [agentTools, setAgentTools] = useState<Array<{ name: string; group?: string }>>([]);
-  const [agentHasFileTools, setAgentHasFileTools] = useState(false);
-  const [installStatus, setInstallStatus] = useState<'idle' | 'installing' | 'success' | 'error'>('idle');
-  const [installError, setInstallError] = useState('');
-  // null = not checked yet, true/false = result
-  const [pluginInstalled, setPluginInstalled] = useState<boolean | null>(null);
-
   const isRemote = fileService.mode === 'remote';
-
-  // Check on mount whether the workspace plugin is already installed.
-  // Only meaningful for local gateways — for remote connections the plugin
-  // lives on the server, so we skip the local binary check and rely on
-  // the RPC call itself to tell us if the plugin is missing (remoteUnsupported).
-  useEffect(() => {
-    if (isRemote) return; // skip local binary check for remote gateways
-    if (!window.relay?.checkWorkspacePlugin) return;
-    window.relay.checkWorkspacePlugin()
-      .then((r) => setPluginInstalled(r.installed))
-      .catch(() => setPluginInstalled(null));
-  }, [isRemote]);
   const activeRoot: ExplorerRoot = rootProp ?? 'workspace';
   const isLocalGateway = !gatewayUrl || /127\.0\.0\.1|localhost/.test(gatewayUrl);
 
@@ -418,19 +376,8 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
         setDiffOldContent('');
         setDiffNewContent('');
         setFileInfo(null);
-        setRemoteUnsupported(false);
       } catch (err) {
-        if (err instanceof WorkspaceRpcUnsupportedError) {
-          setRemoteUnsupported(true);
-          setError('');
-          // Fetch tool catalog to show what the agent can do
-          fileService.fetchToolsCatalog().then((tools) => {
-            if (tools) setAgentTools(tools.map((t) => ({ name: t.name, group: t.group })));
-          }).catch(() => {});
-          fileService.hasFileTools().then(setAgentHasFileTools).catch(() => {});
-        } else {
-          setError(err instanceof Error ? err.message : 'Fehler beim Laden');
-        }
+        setError(err instanceof Error ? err.message : 'Fehler beim Laden');
         setItems([]);
       } finally {
         setLoading(false);
@@ -438,26 +385,6 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
     },
     [activeExplorerService, activeRootPath, fileService],
   );
-
-  /* ── Plugin Install ── */
-  const handleInstallPlugin = useCallback(async () => {
-    if (!window.relay?.installWorkspacePlugin) return;
-    setInstallStatus('installing');
-    setInstallError('');
-    const result = await window.relay.installWorkspacePlugin();
-    if (result.ok) {
-      setInstallStatus('success');
-      setTimeout(() => {
-        setPluginInstalled(true);
-        setRemoteUnsupported(false);
-        setInstallStatus('idle');
-        void loadDirectory('');
-      }, 1200);
-    } else {
-      setInstallStatus('error');
-      setInstallError(result.error ?? 'Installation failed.');
-    }
-  }, [loadDirectory]);
 
   const loadSubDir = useCallback(
     async (relPath: string) => {
@@ -812,115 +739,6 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
     );
   }
 
-  /* ── Render: workspace plugin not installed or RPCs unsupported ── */
-  // For local gateways: show install UI if local binary check says plugin is missing.
-  // For remote gateways: only show install UI if the RPC call actually fails (remoteUnsupported).
-  const showPluginInstallUi = rootProp !== 'working-folder' &&
-    ((!isRemote && pluginInstalled === false) || (remoteUnsupported && activeRoot === 'workspace'));
-  if (showPluginInstallUi) {
-    const INSTALL_CMD = 'openclaw plugins install @seventeenlabs/openclaw-relay-workspace';
-    return (
-      <section className="flex h-full items-center justify-center overflow-y-auto p-6">
-        <div className="w-full max-w-md">
-          {/* Header */}
-          <div className="mb-6 text-center">
-            <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10">
-              {installStatus === 'success'
-                ? <Check className="size-7 text-primary" />
-                : <Download className="size-7 text-primary" />}
-            </div>
-            <h2 className="text-base font-semibold">Workspace plugin required</h2>
-            <p className="mt-1.5 text-sm text-muted-foreground">
-              The OpenClaw gateway needs the{' '}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">openclaw-relay-workspace</code>{' '}
-              plugin to expose the file explorer.
-            </p>
-          </div>
-
-          {/* Local: auto-install */}
-          {isLocalGateway && desktopBridgeAvailable && (
-            <div className="rounded-xl border border-border bg-card p-5">
-              <p className="mb-3 text-sm font-medium">Install automatically</p>
-              <p className="mb-4 text-xs text-muted-foreground">
-                Relay can install the plugin on your local OpenClaw instance with one click.
-                OpenClaw will need to be restarted after installation.
-              </p>
-              {installStatus === 'error' && (
-                <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
-                  <span className="font-medium">Installation failed: </span>{installError}
-                </div>
-              )}
-              <Button
-                type="button"
-                variant="default"
-                className="w-full gap-2"
-                disabled={installStatus === 'installing' || installStatus === 'success'}
-                onClick={() => void handleInstallPlugin()}
-              >
-                {installStatus === 'installing' && (
-                  <svg className="size-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                  </svg>
-                )}
-                {installStatus === 'success' && <Check className="size-4" />}
-                {installStatus === 'installing' ? 'Installing…' : installStatus === 'success' ? 'Installed — loading…' : 'Install Plugin'}
-              </Button>
-            </div>
-          )}
-
-          {/* Remote or no bridge: show copy command */}
-          {(!isLocalGateway || !desktopBridgeAvailable) && (
-            <div className="rounded-xl border border-border bg-card p-5">
-              <div className="mb-2 flex items-center gap-2">
-                <Terminal className="size-3.5 text-muted-foreground" />
-                <p className="text-sm font-medium">Run on your server</p>
-              </div>
-              <p className="mb-3 text-xs text-muted-foreground">
-                SSH into your OpenClaw host and run this command, then restart OpenClaw.
-              </p>
-              <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/40 p-3">
-                <code className="flex-1 break-all font-mono text-xs">{INSTALL_CMD}</code>
-                <CopyCommandButton text={INSTALL_CMD} />
-              </div>
-            </div>
-          )}
-
-          {/* Retry / fallback buttons */}
-          <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setRemoteUnsupported(false);
-                if (window.relay?.checkWorkspacePlugin) {
-                  window.relay.checkWorkspacePlugin()
-                    .then((r) => {
-                      setPluginInstalled(r.installed);
-                      if (r.installed) void loadDirectory('');
-                    })
-                    .catch(() => void loadDirectory(''));
-                } else {
-                  void loadDirectory('');
-                }
-              }}
-            >
-              <RefreshCw className="mr-1.5 size-3.5" />
-              Retry
-            </Button>
-            {rootProp !== 'workspace' && desktopBridgeAvailable && (
-              <Button type="button" variant="outline" size="sm" onClick={onPickFolder}>
-                <Folder className="mr-1.5 size-3.5" />
-                    Pick project folder
-              </Button>
-            )}
-          </div>
-        </div>
-      </section>
-    );
-  }
-
   /* ── Render helper: tree row ── */
   const renderTreeNode = (node: TreeNode) => {
     const isDir = node.kind === 'directory';
@@ -982,7 +800,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
           </span>
           {node.changeStatus && (
             <span className={`size-2 shrink-0 rounded-full ${
-              node.changeStatus === 'created' ? 'bg-emerald-500' :
+              node.changeStatus === 'created' ? 'bg-blue-500' :
               node.changeStatus === 'modified' ? 'bg-blue-500' :
               node.changeStatus === 'deleted' ? 'bg-red-500' :
               node.changeStatus === 'moved' ? 'bg-amber-500' :
@@ -1040,7 +858,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
               type="button"
               className="shrink-0 rounded px-1 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={() => void loadDirectory('')}
-              title={activeRootPath || 'OpenClaw Workspace'}
+              title={activeRootPath || 'Hermes Workspace'}
             >
               <HardDrive className="inline size-3" />
             </button>
@@ -1225,8 +1043,8 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
           <div className="flex items-center gap-3 border-t border-border/40 bg-muted/20 px-3 py-1.5">
             <span className="font-sans text-[10px] font-medium text-muted-foreground">Changes:</span>
             {[...changeLog.values()].filter((v) => v === 'created').length > 0 && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
-                <span className="size-1.5 rounded-full bg-emerald-500" />
+              <span className="inline-flex items-center gap-1 text-[10px] text-blue-600 dark:text-blue-400">
+                <span className="size-1.5 rounded-full bg-blue-500" />
                 {[...changeLog.values()].filter((v) => v === 'created').length} new
               </span>
             )}
@@ -1361,7 +1179,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
                       <div
                         key={i}
                         className={`flex px-2 ${
-                          line.type === 'added' ? 'bg-emerald-50/80 dark:bg-emerald-950/30' :
+                          line.type === 'added' ? 'bg-blue-50/80 dark:bg-blue-950/30' :
                           line.type === 'removed' ? 'bg-red-50/80 dark:bg-red-950/30' : ''
                         }`}
                       >
@@ -1369,7 +1187,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
                           {line.type === 'added' ? '+' : line.type === 'removed' ? '−' : ' '}
                         </span>
                         <span className={`min-w-0 flex-1 whitespace-pre-wrap break-words pl-2 ${
-                          line.type === 'added' ? 'text-emerald-800 dark:text-emerald-300' :
+                          line.type === 'added' ? 'text-blue-800 dark:text-blue-300' :
                           line.type === 'removed' ? 'text-red-800 dark:text-red-300 line-through' : ''
                         }`}>
                           {line.text}
@@ -1422,7 +1240,7 @@ export function FilesPage({ workingFolder, desktopBridgeAvailable, onPickFolder,
                       <div className="mt-3 rounded-lg border border-border/40 bg-muted/20 p-2.5">
                         <span className={`inline-flex items-center gap-1.5 font-sans text-[11px] font-medium ${CHANGE_COLORS[selectedNode.changeStatus]}`}>
                           <span className={`size-2 rounded-full ${
-                            selectedNode.changeStatus === 'created' ? 'bg-emerald-500' :
+                            selectedNode.changeStatus === 'created' ? 'bg-blue-500' :
                             selectedNode.changeStatus === 'modified' ? 'bg-blue-500' :
                             selectedNode.changeStatus === 'deleted' ? 'bg-red-500' :
                             'bg-amber-500'

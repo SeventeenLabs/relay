@@ -10,7 +10,7 @@ Relay should be structured as four product planes:
 1. Interaction plane (Relay frontend)
 - Chat, steering, details, execution timeline, history.
 
-2. Execution plane (OpenClaw backend)
+2. Execution plane (Hermes backend)
 - Planning, policy checks, connector orchestration, retries, final actions.
 
 3. Governance plane
@@ -149,7 +149,7 @@ Stage D: Platform maturity
 Minimum internal ownership:
 
 1. Product owner: recipe scope, UX quality, KPI outcomes.
-2. Orchestration owner: OpenClaw reliability and connector behavior.
+2. Orchestration owner: Hermes reliability and connector behavior.
 3. Implementation owner: pilot onboarding and customer workflow mapping.
 4. Security/compliance owner: trust posture and control documentation.
 
@@ -163,9 +163,9 @@ Review monthly:
 4. Is override rate trending down as product quality improves?
 5. Are new customers reaching time-to-first-value quickly?
 
-## 12. OpenClaw Runtime Object Model
+## 12. Hermes Runtime Object Model
 
-Relay should explicitly model OpenClaw runtime composition:
+Relay should explicitly model Hermes runtime composition:
 
 1. Agent
 - Runtime identity that receives the task.
@@ -194,3 +194,4 @@ Relay responsibility:
 
 Reference specification:
 [docs/RELAY-OPENCLAW-AGENT-SKILL-NODE-MODEL.md](docs/RELAY-OPENCLAW-AGENT-SKILL-NODE-MODEL.md)
+

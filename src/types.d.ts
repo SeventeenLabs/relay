@@ -1,7 +1,6 @@
 import type {
   AppConfig,
   HealthCheckResult,
-  GatewayDiscoveryResult,
   LocalFileApplyResult,
   LocalFileAppendResult,
   LocalFileCreateResult,
@@ -10,6 +9,7 @@ import type {
   LocalFileListResult,
   LocalFileReadResult,
   LocalFileRenameResult,
+  LocalFileReplaceResult,
   LocalFileStatResult,
   LocalFilePlanAction,
   LocalFilePlanResult,
@@ -19,9 +19,11 @@ type RelayApi = {
   getConfig: () => Promise<AppConfig>;
   saveConfig: (config: AppConfig) => Promise<AppConfig>;
   healthCheck: (baseUrl: string) => Promise<HealthCheckResult>;
-  discoverGateway: () => Promise<GatewayDiscoveryResult>;
-  checkWorkspacePlugin: () => Promise<{ installed: boolean; error?: string }>;
-  installWorkspacePlugin: () => Promise<{ ok: boolean; output?: string; error?: string }>;
+  backendHttpRequest: (payload: { baseUrl: string; path: string; method?: string; token?: string; body?: string }) => Promise<{ ok: boolean; status: number; statusText: string; body: string }>;
+  hermesModelOptions: (payload?: { gatewayUrl?: string }) => Promise<{ providers: Array<{ slug: string; name: string; is_current?: boolean; models: string[] }>; model?: string; provider?: string }>;
+  hermesSetMainModel: (payload: { gatewayUrl?: string; provider: string; model: string }) => Promise<{ ok: boolean; provider: string; model: string; confirmedProvider?: string; confirmedModel?: string }>;
+  hermesServiceStatus: () => Promise<{ gateway: boolean; apiServer: boolean; dashboard: boolean }>;
+  hermesStartAllServices: () => Promise<{ ok: boolean; gateway: boolean; apiServer: boolean; dashboard: boolean; message?: string }>;
   minimizeWindow: () => Promise<void>;
   toggleMaximizeWindow: () => Promise<boolean>;
   isWindowMaximized: () => Promise<boolean>;
@@ -35,6 +37,7 @@ type RelayApi = {
   applyOrganizeFolderPlan: (rootPath: string, actions: LocalFilePlanAction[]) => Promise<LocalFileApplyResult>;
   createFileInFolder: (rootPath: string, relativePath: string, content: string, overwrite?: boolean) => Promise<LocalFileCreateResult>;
   appendFileInFolder: (rootPath: string, relativePath: string, content: string) => Promise<LocalFileAppendResult>;
+  replaceInFile: (rootPath: string, relativePath: string, oldString: string, newString: string, replaceAll?: boolean) => Promise<LocalFileReplaceResult>;
   readFileInFolder: (rootPath: string, relativePath: string) => Promise<LocalFileReadResult>;
   listDirInFolder: (rootPath: string, relativePath?: string) => Promise<LocalFileListResult>;
   existsInFolder: (rootPath: string, relativePath: string) => Promise<LocalFileExistsResult>;

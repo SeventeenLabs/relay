@@ -4,7 +4,7 @@ Date: 2026-03-23
 Status: Draft v1
 
 ## 1. Category
-Relay is a governed AI cowork interface for business operations, powered by OpenClaw as the execution runtime.
+Relay is a governed AI cowork interface for business operations, powered by Hermes as the execution runtime.
 
 ## 2. One-Line Positioning
 Relay helps teams move from AI conversation to controlled execution across real workflows, with human approval and auditability built in.
@@ -42,7 +42,7 @@ Relay turns fragmented operational work into a plan-approve-execute loop:
 ## 6. Differentiation Pillars
 1. Architecture separation:
 - Relay handles human interaction.
-- OpenClaw handles orchestration and tool execution.
+- Hermes handles orchestration and tool execution.
 
 2. Human-in-the-loop by default:
 - Consequential actions require explicit approval.
@@ -75,7 +75,7 @@ Support points:
 - From suggestion to action in one thread.
 - Human approval for high-impact decisions.
 - Shared team context and auditable outcomes.
-- Built on OpenClaw for controlled orchestration.
+- Built on Hermes for controlled orchestration.
 
 Proof themes:
 
@@ -85,17 +85,18 @@ Proof themes:
 - Clear execution trace for stakeholders.
 
 ## 9. Elevator Pitch
-Relay is the operator layer on top of OpenClaw. It gives teams a Claude-style cowork experience while keeping enterprise controls intact. Users can delegate real work across systems, approve key actions, and keep a complete record of what happened and why.
+Relay is the operator layer on top of Hermes. It gives teams a Claude-style cowork experience while keeping enterprise controls intact. Users can delegate real work across systems, approve key actions, and keep a complete record of what happened and why.
 
 ## 10. Positioning Guardrails
 Do say:
 
 - Governed AI operations interface.
 - Human-led, AI-assisted execution.
-- OpenClaw-powered orchestration runtime.
+- Hermes-powered orchestration runtime.
 
 Do not say:
 
 - Fully autonomous black-box AI.
 - Another generic chatbot.
 - Model lab or frontier model company.
+

@@ -59,6 +59,7 @@ export type ConnectorActionResult = {
 export type BridgeApi = {
   createFileInFolder?: (root: string, rel: string, content: string, overwrite?: boolean) => Promise<unknown>;
   appendFileInFolder?: (root: string, rel: string, content: string) => Promise<unknown>;
+  replaceInFile?: (root: string, rel: string, oldString: string, newString: string, replaceAll?: boolean) => Promise<unknown>;
   readFileInFolder?: (root: string, rel: string) => Promise<unknown>;
   listDirInFolder?: (root: string, rel?: string) => Promise<unknown>;
   existsInFolder?: (root: string, rel: string) => Promise<unknown>;

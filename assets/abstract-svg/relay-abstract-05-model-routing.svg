@@ -46,8 +46,9 @@
   <rect x="640" y="568" width="320" height="56" rx="14" fill="#FFFFFF" stroke="#DDE6EE"/>
 
   <text x="130" y="154" fill="#5E7587" font-size="18" font-family="Manrope, Segoe UI, Arial, sans-serif" font-weight="600">Operator intent</text>
-  <text x="614" y="154" fill="#5E7587" font-size="18" font-family="Manrope, Segoe UI, Arial, sans-serif" font-weight="600">OpenClaw routing</text>
+  <text x="614" y="154" fill="#5E7587" font-size="18" font-family="Manrope, Segoe UI, Arial, sans-serif" font-weight="600">Hermes routing</text>
   <text x="1100" y="154" fill="#5E7587" font-size="18" font-family="Manrope, Segoe UI, Arial, sans-serif" font-weight="600">Execution targets</text>
 
-  <text x="614" y="780" fill="#7B90A1" font-size="15" font-family="Manrope, Segoe UI, Arial, sans-serif">Model-agnostic through OpenClaw routing</text>
+  <text x="614" y="780" fill="#7B90A1" font-size="15" font-family="Manrope, Segoe UI, Arial, sans-serif">Model-agnostic through Hermes routing</text>
 </svg>
+
