@@ -5970,7 +5970,7 @@ export default function App() {
             onLogout={handleLogout}
           />
 
-          <SidebarInset>
+          <SidebarInset className="relative z-0">
             <Dialog
               open={Boolean(recentRenameTarget)}
               onOpenChange={(nextOpen) => {

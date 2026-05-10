@@ -74,55 +74,76 @@ const sectionDescriptions: Record<SettingsSection, { en: string; de: string }> =
   },
 };
 
+type PreviewPalette = {
+  bg: string;
+  surface: string;
+  border: string;
+  lineStrong: string;
+  lineSoft: string;
+  lineMuted: string;
+  panel: string;
+  accentStrong: string;
+  accentSoft: string;
+};
+
+const previewPaletteByStyle: Record<StyleOption, { light: PreviewPalette; dark: PreviewPalette }> = {
+  relay: {
+    light: {
+      bg: 'var(--preview-relay-light-bg)',
+      surface: 'var(--preview-relay-light-surface)',
+      border: 'var(--preview-relay-light-border)',
+      lineStrong: 'var(--preview-relay-light-line-strong)',
+      lineSoft: 'var(--preview-relay-light-line-soft)',
+      lineMuted: 'var(--preview-relay-light-line-muted)',
+      panel: 'var(--preview-relay-light-panel)',
+      accentStrong: 'var(--preview-relay-light-accent-strong)',
+      accentSoft: 'var(--preview-relay-light-accent-soft)',
+    },
+    dark: {
+      bg: 'var(--preview-relay-dark-bg)',
+      surface: 'var(--preview-relay-dark-surface)',
+      border: 'var(--preview-relay-dark-border)',
+      lineStrong: 'var(--preview-relay-dark-line-strong)',
+      lineSoft: 'var(--preview-relay-dark-line-soft)',
+      lineMuted: 'var(--preview-relay-dark-line-muted)',
+      panel: 'var(--preview-relay-dark-panel)',
+      accentStrong: 'var(--preview-relay-dark-accent-strong)',
+      accentSoft: 'var(--preview-relay-dark-accent-soft)',
+    },
+  },
+  claude: {
+    light: {
+      bg: 'var(--preview-claude-light-bg)',
+      surface: 'var(--preview-claude-light-surface)',
+      border: 'var(--preview-claude-light-border)',
+      lineStrong: 'var(--preview-claude-light-line-strong)',
+      lineSoft: 'var(--preview-claude-light-line-soft)',
+      lineMuted: 'var(--preview-claude-light-line-muted)',
+      panel: 'var(--preview-claude-light-panel)',
+      accentStrong: 'var(--preview-claude-light-accent-strong)',
+      accentSoft: 'var(--preview-claude-light-accent-soft)',
+    },
+    dark: {
+      bg: 'var(--preview-claude-dark-bg)',
+      surface: 'var(--preview-claude-dark-surface)',
+      border: 'var(--preview-claude-dark-border)',
+      lineStrong: 'var(--preview-claude-dark-line-strong)',
+      lineSoft: 'var(--preview-claude-dark-line-soft)',
+      lineMuted: 'var(--preview-claude-dark-line-muted)',
+      panel: 'var(--preview-claude-dark-panel)',
+      accentStrong: 'var(--preview-claude-dark-accent-strong)',
+      accentSoft: 'var(--preview-claude-dark-accent-soft)',
+    },
+  },
+};
+
+function getPreviewPalette(style: StyleOption, dark: boolean): PreviewPalette {
+  return dark ? previewPaletteByStyle[style].dark : previewPaletteByStyle[style].light;
+}
+
 function StylePreview({ style, dark }: { style: StyleOption; dark: boolean }) {
   const isRelay = style === 'relay';
-  const colors = isRelay
-    ? dark
-      ? {
-          bg: '#0a0f16',
-          surface: '#121923',
-          border: '#28384c',
-          lineStrong: '#eef4fb',
-          lineSoft: '#9eb0c6',
-          lineMuted: '#6f8299',
-          panel: '#182231',
-          accentStrong: '#4a9fd8',
-          accentSoft: '#16345c',
-        }
-      : {
-          bg: '#f5f9fd',
-          surface: '#ffffff',
-          border: '#d7e3f0',
-          lineStrong: '#0f2741',
-          lineSoft: '#4f6e90',
-          lineMuted: '#7f9dbd',
-          panel: '#eef5fc',
-          accentStrong: '#1e5ba8',
-          accentSoft: '#d6e6f8',
-        }
-    : dark
-      ? {
-          bg: '#1f1d1a',
-          surface: '#2a2723',
-          border: '#3b3732',
-          lineStrong: '#e4dacd',
-          lineSoft: '#a79a8b',
-          lineMuted: '#7f7569',
-          panel: '#302d29',
-          accentStrong: '#df9a79',
-          accentSoft: '#553f35',
-        }
-      : {
-          bg: '#f4f3ee',
-          surface: '#fff9f2',
-          border: '#ded3c2',
-          lineStrong: '#9b806f',
-          lineSoft: '#c7b19d',
-          lineMuted: '#dcc9b7',
-          panel: '#f0e5d7',
-          accentStrong: '#c47a5c',
-          accentSoft: '#edd4c7',
-        };
+  const colors = getPreviewPalette(style, dark);
 
   return (
     <svg viewBox="0 0 320 140" className="block h-full w-full" preserveAspectRatio="none" role="img" aria-label={`${isRelay ? 'Relay' : 'Claude'} style preview`}>
@@ -145,45 +166,8 @@ function StylePreview({ style, dark }: { style: StyleOption; dark: boolean }) {
 
 function ThemePreview({ mode, style }: { mode: ThemeOption; style: StyleOption }) {
   const modeLabel = mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'Auto';
-  const isRelay = style === 'relay';
-  const light = isRelay
-    ? {
-        bg: '#f5f9fd',
-        surface: '#ffffff',
-        border: '#d7e3f0',
-        lineStrong: '#0f2741',
-        lineSoft: '#4f6e90',
-        lineMuted: '#7f9dbd',
-        panel: '#eef5fc',
-      }
-    : {
-        bg: '#f4f3ee',
-        surface: '#fff9f2',
-        border: '#ded3c2',
-        lineStrong: '#9b806f',
-        lineSoft: '#c7b19d',
-        lineMuted: '#dcc9b7',
-        panel: '#f0e5d7',
-      };
-  const dark = isRelay
-    ? {
-        bg: '#0a0f16',
-        surface: '#121923',
-        border: '#28384c',
-        lineStrong: '#eef4fb',
-        lineSoft: '#9eb0c6',
-        lineMuted: '#6f8299',
-        panel: '#182231',
-      }
-    : {
-        bg: '#1f1d1a',
-        surface: '#2a2723',
-        border: '#3b3732',
-        lineStrong: '#e4dacd',
-        lineSoft: '#a79a8b',
-        lineMuted: '#7f7569',
-        panel: '#302d29',
-      };
+  const light = getPreviewPalette(style, false);
+  const dark = getPreviewPalette(style, true);
 
   const active = mode === 'dark' ? dark : light;
   return (

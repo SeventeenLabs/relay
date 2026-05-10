@@ -17,12 +17,12 @@ function CodeBlock({ className, children }: { className?: string; children?: Rea
   return (
     <div className="group relative mb-3 last:mb-0">
       {lang && (
-        <div className="flex items-center justify-between rounded-t-lg bg-[rgba(31,31,28,0.12)] px-3 py-1">
+        <div className="flex items-center justify-between rounded-t-lg bg-muted/60 px-3 py-1">
           <span className="font-mono text-[11px] text-muted-foreground">{lang}</span>
           <button
             type="button"
             onClick={handleCopy}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-sans text-[11px] text-muted-foreground transition hover:bg-[rgba(31,31,28,0.1)]"
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-sans text-[11px] text-muted-foreground transition hover:bg-muted/60"
             aria-label="Copy code"
           >
             {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -35,13 +35,13 @@ function CodeBlock({ className, children }: { className?: string; children?: Rea
           <button
             type="button"
             onClick={handleCopy}
-            className="absolute right-2 top-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-sans text-[11px] text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:bg-[rgba(31,31,28,0.1)]"
+            className="absolute right-2 top-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-sans text-[11px] text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:bg-muted/60"
             aria-label="Copy code"
           >
             {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           </button>
         )}
-        <pre className={`overflow-x-auto bg-[rgba(31,31,28,0.08)] px-3 py-2 font-mono text-[13px] leading-6 text-foreground ${lang ? 'rounded-b-lg' : 'rounded-lg'}`}>
+        <pre className={`overflow-x-auto bg-muted/50 px-3 py-2 font-mono text-[13px] leading-6 text-foreground ${lang ? 'rounded-b-lg' : 'rounded-lg'}`}>
           <code>{text}</code>
         </pre>
       </div>
@@ -58,10 +58,10 @@ export const chatMarkdownComponents: Components = {
   ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-6 last:mb-0">{children}</ol>,
   li: ({ children }) => <li className="break-words leading-6 [overflow-wrap:anywhere]">{children}</li>,
   blockquote: ({ children }) => (
-    <blockquote className="mb-3 break-words border-l-2 border-[rgba(31,31,28,0.15)] pl-3 italic text-muted-foreground [overflow-wrap:anywhere]">{children}</blockquote>
+    <blockquote className="mb-3 break-words border-l-2 border-border/70 pl-3 italic text-muted-foreground [overflow-wrap:anywhere]">{children}</blockquote>
   ),
   a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noreferrer" className="underline decoration-[rgba(31,31,28,0.35)] underline-offset-2 hover:text-foreground">
+    <a href={href} target="_blank" rel="noreferrer" className="underline decoration-border underline-offset-2 hover:text-foreground">
       {children}
     </a>
   ),
@@ -70,7 +70,7 @@ export const chatMarkdownComponents: Components = {
     if (isBlock) {
       return <CodeBlock className={className}>{children}</CodeBlock>;
     }
-    return <code className="rounded bg-[rgba(31,31,28,0.08)] px-1 py-0.5 font-mono text-[13px] text-foreground break-all">{children}</code>;
+    return <code className="rounded bg-muted/50 px-1 py-0.5 font-mono text-[13px] text-foreground break-all">{children}</code>;
   },
   pre: ({ children }) => {
     // If child is already a CodeBlock, render without extra wrapper

@@ -1,5 +1,58 @@
 @import "tailwindcss";
 
+:root {
+  --ui-window-control-close-hover: color-mix(in srgb, var(--destructive) 88%, black 12%);
+  --ui-window-control-close-active: color-mix(in srgb, var(--destructive) 78%, black 22%);
+  --ui-window-control-close-ring: color-mix(in srgb, var(--destructive) 38%, transparent);
+  --ui-window-control-neutral-hover: color-mix(in srgb, var(--muted-foreground) 20%, transparent);
+  --ui-window-control-neutral-active: color-mix(in srgb, var(--muted-foreground) 28%, transparent);
+  --ui-footer-trigger-hover: color-mix(in srgb, var(--foreground) 18%, transparent);
+  --ui-primary-button-border: color-mix(in srgb, var(--app-primary) 80%, black 20%);
+  --ui-primary-button-inset: color-mix(in srgb, var(--app-primary) 22%, transparent);
+  --ui-primary-button-shadow: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --ui-ring: color-mix(in srgb, var(--app-primary) 40%, transparent);
+  --ui-focus-ring: color-mix(in srgb, var(--app-primary) 36%, transparent);
+  --ui-destructive-surface: color-mix(in srgb, var(--destructive) 14%, transparent);
+  --ui-scrollbar-thumb: #c7b19d;
+  --ui-scrollbar-track: #f0e5d7;
+  --preview-relay-light-bg: #f5f9fd;
+  --preview-relay-light-surface: #ffffff;
+  --preview-relay-light-border: #d7e3f0;
+  --preview-relay-light-line-strong: #0f2741;
+  --preview-relay-light-line-soft: #4f6e90;
+  --preview-relay-light-line-muted: #7f9dbd;
+  --preview-relay-light-panel: #eef5fc;
+  --preview-relay-light-accent-strong: #1e5ba8;
+  --preview-relay-light-accent-soft: #d6e6f8;
+  --preview-relay-dark-bg: #0a0f16;
+  --preview-relay-dark-surface: #121923;
+  --preview-relay-dark-border: #28384c;
+  --preview-relay-dark-line-strong: #eef4fb;
+  --preview-relay-dark-line-soft: #9eb0c6;
+  --preview-relay-dark-line-muted: #6f8299;
+  --preview-relay-dark-panel: #182231;
+  --preview-relay-dark-accent-strong: #4a9fd8;
+  --preview-relay-dark-accent-soft: #16345c;
+  --preview-claude-light-bg: #f4f3ee;
+  --preview-claude-light-surface: #fff9f2;
+  --preview-claude-light-border: #ded3c2;
+  --preview-claude-light-line-strong: #9b806f;
+  --preview-claude-light-line-soft: #c7b19d;
+  --preview-claude-light-line-muted: #dcc9b7;
+  --preview-claude-light-panel: #f0e5d7;
+  --preview-claude-light-accent-strong: #c47a5c;
+  --preview-claude-light-accent-soft: #edd4c7;
+  --preview-claude-dark-bg: #1f1d1a;
+  --preview-claude-dark-surface: #2a2723;
+  --preview-claude-dark-border: #3b3732;
+  --preview-claude-dark-line-strong: #e4dacd;
+  --preview-claude-dark-line-soft: #a79a8b;
+  --preview-claude-dark-line-muted: #7f7569;
+  --preview-claude-dark-panel: #302d29;
+  --preview-claude-dark-accent-strong: #df9a79;
+  --preview-claude-dark-accent-soft: #553f35;
+}
+
 html {
   --app-primary: #c47a5c;
   --app-primary-foreground: #fff9f2;
@@ -69,10 +122,10 @@ html .bg-primary { background-color: var(--app-primary); }
 html .text-primary-foreground { color: var(--app-primary-foreground); }
 html .text-primary { color: var(--app-accent); }
 html .border-primary { border-color: var(--app-primary); }
-html .ring-ring { --tw-ring-color: color-mix(in srgb, var(--app-primary) 40%, transparent); }
+html .ring-ring { --tw-ring-color: var(--ui-ring); }
 html :is(button.bg-primary, a.bg-primary) {
-  border-color: color-mix(in srgb, var(--app-primary) 80%, black 20%);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), 0 0 0 1px color-mix(in srgb, var(--app-primary) 22%, transparent) inset;
+  border-color: var(--ui-primary-button-border);
+  box-shadow: 0 1px 0 var(--ui-primary-button-shadow), 0 0 0 1px var(--ui-primary-button-inset) inset;
 }
 html :is(button.bg-primary:hover, a.bg-primary:hover) {
   background-color: color-mix(in srgb, var(--app-primary) 88%, black 12%);
@@ -110,6 +163,8 @@ html.dark {
   --preview-claude-accent-soft: #553f35;
   --preview-relay-accent-strong: #4a9fd8;
   --preview-relay-accent-soft: #16345c;
+  --ui-scrollbar-thumb: #7f7569;
+  --ui-scrollbar-track: #302d29;
 }
 
 html.dark .bg-background { background-color: #1c1b18; }
@@ -213,6 +268,8 @@ html.relay-style {
   --preview-line-soft: #4f6e90;
   --preview-line-muted: #7f9dbd;
   --preview-panel: #eef5fc;
+  --ui-scrollbar-thumb: #b8c3bd;
+  --ui-scrollbar-track: #eef2f0;
 }
 
 html.relay-style * {
@@ -265,25 +322,25 @@ html.relay-style .border-primary {
 }
 
 html.relay-style .ring-ring {
-  --tw-ring-color: rgb(74 159 216 / 0.4);
+  --tw-ring-color: var(--ui-ring);
 }
 
 html.relay-style :is(button.bg-primary, a.bg-primary) {
-  border-color: #3f8fc4;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(74, 159, 216, 0.2) inset;
+  border-color: var(--ui-primary-button-border);
+  box-shadow: 0 1px 0 var(--ui-primary-button-shadow), 0 0 0 1px var(--ui-primary-button-inset) inset;
 }
 
 html.relay-style :is(button.bg-primary:hover, a.bg-primary:hover) {
-  background-color: #3f8fc4;
+  background-color: color-mix(in srgb, var(--app-primary) 88%, black 12%);
 }
 
 html.relay-style .titlebar-mode-trigger[data-active] {
-  background: #4a9fd8 !important;
-  color: #ffffff !important;
+  background: var(--app-primary) !important;
+  color: var(--app-primary-foreground) !important;
 }
 
 html.relay-style .titlebar-mode-trigger[data-active]:hover {
-  background: #3f8fc4 !important;
+  background: color-mix(in srgb, var(--app-primary) 88%, black 12%) !important;
 }
 
 html.relay-style .text-foreground {
@@ -311,13 +368,7 @@ html .app-titlebar .window-control-btn {
 }
 
 html .footer-settings-trigger:hover {
-  background-color: rgba(120, 120, 120, 0.22) !important;
-}
-
-html.dark .footer-settings-trigger:hover,
-html.relay-style.dark .footer-settings-trigger:hover,
-html.dark.relay-style .footer-settings-trigger:hover {
-  background-color: rgba(255, 255, 255, 0.18) !important;
+  background-color: var(--ui-footer-trigger-hover) !important;
 }
 
 html .footer-gateway-badge:hover {
@@ -325,25 +376,25 @@ html .footer-gateway-badge:hover {
 }
 
 html .app-titlebar .window-control-neutral:hover {
-  background-color: rgba(90, 90, 90, 0.22) !important;
-  color: #111 !important;
+  background-color: var(--ui-window-control-neutral-hover) !important;
+  color: var(--foreground) !important;
 }
 
 html .app-titlebar .window-control-neutral:active {
-  background-color: rgba(90, 90, 90, 0.3) !important;
+  background-color: var(--ui-window-control-neutral-active) !important;
 }
 
-html.dark .app-titlebar .window-control-neutral:hover,
-html.relay-style.dark .app-titlebar .window-control-neutral:hover,
-html.dark.relay-style .app-titlebar .window-control-neutral:hover {
-  background-color: rgba(255, 255, 255, 0.16) !important;
-  color: #f4f4f4 !important;
+html .app-titlebar .window-control-close:hover {
+  background-color: var(--ui-window-control-close-hover) !important;
+  color: var(--app-primary-foreground) !important;
 }
 
-html.dark .app-titlebar .window-control-neutral:active,
-html.relay-style.dark .app-titlebar .window-control-neutral:active,
-html.dark.relay-style .app-titlebar .window-control-neutral:active {
-  background-color: rgba(255, 255, 255, 0.24) !important;
+html .app-titlebar .window-control-close:active {
+  background-color: var(--ui-window-control-close-active) !important;
+}
+
+html .app-titlebar .window-control-close:focus-visible {
+  box-shadow: 0 0 0 2px var(--ui-window-control-close-ring) !important;
 }
 
 html.relay-style :is(button, a) {
@@ -375,6 +426,8 @@ html.dark.relay-style {
   --preview-line-soft: #98a8a2;
   --preview-line-muted: #6d7b75;
   --preview-panel: #1a1f1d;
+  --ui-scrollbar-thumb: #4a4a4a;
+  --ui-scrollbar-track: #141414;
 }
 
 html.relay-style.dark *,
@@ -447,29 +500,29 @@ html.dark.relay-style .border-primary {
 
 html.relay-style.dark .ring-ring,
 html.dark.relay-style .ring-ring {
-  --tw-ring-color: rgb(74 159 216 / 0.42);
+  --tw-ring-color: var(--ui-ring);
 }
 
 html.relay-style.dark :is(button.bg-primary, a.bg-primary),
 html.dark.relay-style :is(button.bg-primary, a.bg-primary) {
-  border-color: #3f8fc4;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(74, 159, 216, 0.24) inset;
+  border-color: var(--ui-primary-button-border);
+  box-shadow: 0 1px 0 var(--ui-primary-button-shadow), 0 0 0 1px var(--ui-primary-button-inset) inset;
 }
 
 html.relay-style.dark :is(button.bg-primary:hover, a.bg-primary:hover),
 html.dark.relay-style :is(button.bg-primary:hover, a.bg-primary:hover) {
-  background-color: #3f8fc4;
+  background-color: color-mix(in srgb, var(--app-primary) 88%, black 12%);
 }
 
 html.relay-style.dark .titlebar-mode-trigger[data-active],
 html.dark.relay-style .titlebar-mode-trigger[data-active] {
-  background: #4a9fd8 !important;
-  color: #ffffff !important;
+  background: var(--app-primary) !important;
+  color: var(--app-primary-foreground) !important;
 }
 
 html.relay-style.dark .titlebar-mode-trigger[data-active]:hover,
 html.dark.relay-style .titlebar-mode-trigger[data-active]:hover {
-  background: #3f8fc4 !important;
+  background: color-mix(in srgb, var(--app-primary) 88%, black 12%) !important;
 }
 
 html.relay-style.dark .text-foreground,
@@ -492,21 +545,8 @@ html.dark.relay-style .border-border {
   scrollbar-width: thin;
 }
 
-html:not(.relay-style):not(.dark) {
-  scrollbar-color: #c7b19d #f0e5d7;
-}
-
-html.dark:not(.relay-style) {
-  scrollbar-color: #7f7569 #302d29;
-}
-
-html.relay-style:not(.dark) {
-  scrollbar-color: #b8c3bd #eef2f0;
-}
-
-html.relay-style.dark,
-html.dark.relay-style {
-  scrollbar-color: #4a4a4a #141414;
+html {
+  scrollbar-color: var(--ui-scrollbar-thumb) var(--ui-scrollbar-track);
 }
 
 *::-webkit-scrollbar {
@@ -518,28 +558,9 @@ html.dark.relay-style {
   background: transparent;
 }
 
-html:not(.relay-style):not(.dark) *::-webkit-scrollbar-thumb {
-  background: #c7b19d;
-  border: 2px solid #f0e5d7;
-  border-radius: 999px;
-}
-
-html.dark:not(.relay-style) *::-webkit-scrollbar-thumb {
-  background: #7f7569;
-  border: 2px solid #302d29;
-  border-radius: 999px;
-}
-
-html.relay-style:not(.dark) *::-webkit-scrollbar-thumb {
-  background: #b8c3bd;
-  border: 2px solid #eef2f0;
-  border-radius: 999px;
-}
-
-html.relay-style.dark *::-webkit-scrollbar-thumb,
-html.dark.relay-style *::-webkit-scrollbar-thumb {
-  background: #4a4a4a;
-  border: 2px solid #141414;
+html *::-webkit-scrollbar-thumb {
+  background: var(--ui-scrollbar-thumb);
+  border: 2px solid var(--ui-scrollbar-track);
   border-radius: 999px;
 }
 

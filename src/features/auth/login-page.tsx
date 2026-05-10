@@ -35,7 +35,7 @@ export function LoginPage({ authenticating, errorMessage, onLogin, onContinueAsG
 
   return (
     <main className="grid h-full place-items-center overflow-auto p-6">
-      <Card className="w-full max-w-[480px] rounded-2xl border-border bg-card shadow-[0_12px_30px_rgba(31,31,28,0.12)]">
+      <Card className="w-full max-w-[480px] rounded-2xl border-border bg-card shadow-2xl">
         <CardHeader className="space-y-2 border-b border-border/70 pb-4">
           <Badge variant="outline" className="w-fit font-sans text-[11px] text-muted-foreground">
             Relay Login
@@ -75,13 +75,13 @@ export function LoginPage({ authenticating, errorMessage, onLogin, onContinueAsG
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(event) => setRememberMe(event.target.checked)}
-                className="h-4 w-4 rounded border border-border accent-[#d67f5c]"
+                className="h-4 w-4 rounded border border-border accent-primary"
               />
               Remember me on this device
             </label>
 
             {errorMessage ? (
-              <p className="rounded-md border border-[rgba(191,77,77,0.35)] bg-[rgba(191,77,77,0.1)] px-3 py-2 font-sans text-xs text-[#8f3232]">
+              <p className="rounded-md border border-destructive/35 bg-destructive/10 px-3 py-2 font-sans text-xs text-destructive">
                 {errorMessage}
               </p>
             ) : null}
@@ -89,7 +89,7 @@ export function LoginPage({ authenticating, errorMessage, onLogin, onContinueAsG
             <Button
               type="submit"
               disabled={authenticating}
-              className="mt-1 h-10 border-0 bg-[linear-gradient(120deg,#ea9f7d,#de825e)] font-sans text-sm text-[#fffefb]"
+              className="mt-1 h-10 border-0 font-sans text-sm"
             >
               {authenticating ? 'Signing in...' : 'Login'}
             </Button>

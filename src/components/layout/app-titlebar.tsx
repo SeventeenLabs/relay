@@ -180,7 +180,7 @@ export function AppTitlebar({
         </button>
         <button
           type="button"
-          className={`window-control-btn ${windowControlBaseClass} hover:bg-[#d45d4e] hover:text-white active:bg-[#bf4e41] focus-visible:ring-[#d45d4e]/40`}
+          className={`window-control-btn window-control-close ${windowControlBaseClass}`}
           style={noDragStyle}
           onMouseDown={preventTitlebarDragCapture}
           onClick={() => void onClose()}

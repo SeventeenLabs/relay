@@ -295,13 +295,13 @@ export function CoworkComposer({
   return (
     <div className="space-y-2">
       <form
-        className="relative rounded-[18px] border border-border/75 bg-card shadow-[0_1px_2px_rgba(16,16,14,0.08)]"
+        className="relative rounded-[18px] border border-border/75 bg-card shadow-sm"
         onSubmit={onSubmit}
         ref={formRef}
         aria-busy={sending}
       >
         {mentionMenuOpen && mentionCommands.length > 0 ? (
-          <div className="absolute bottom-full left-4 z-20 mb-2 w-[min(680px,calc(100%-2rem))] overflow-hidden rounded-2xl border border-border bg-popover shadow-[0_20px_45px_rgba(20,20,18,0.20)]">
+          <div className="absolute bottom-full left-4 z-20 mb-2 w-[min(680px,calc(100%-2rem))] overflow-hidden rounded-2xl border border-border bg-popover shadow-xl">
             <div className="flex items-center justify-between border-b border-border bg-muted px-3 py-2">
               <p className="font-sans text-xs font-semibold tracking-wide text-foreground">References</p>
               <p className="font-sans text-[11px] text-muted-foreground">Enter to insert</p>
@@ -384,7 +384,7 @@ export function CoworkComposer({
               </button>
 
               {openDropdown === 'model' && !modelDropdownDisabled ? (
-                <div className="absolute bottom-[calc(100%+0.4rem)] left-0 z-30 w-[560px] overflow-hidden rounded-xl border border-border/80 bg-popover shadow-[0_12px_28px_rgba(0,0,0,0.25)]">
+                <div className="absolute bottom-[calc(100%+0.4rem)] left-0 z-30 w-[560px] overflow-hidden rounded-xl border border-border/80 bg-popover shadow-2xl">
                   <div className="border-b border-border/80 px-2.5 py-2.5">
                     <div className="mb-2 flex items-center justify-between gap-2 px-0.5">
                       <p className="font-sans text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Model selector</p>
