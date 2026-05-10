@@ -59,7 +59,7 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 
-type AppPage = 'chat' | 'cowork' | 'project' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'approvals' | 'safety' | 'settings';
+type AppPage = 'chat' | 'cowork' | 'project' | 'settings';
 type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Gateway' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 type AppLanguage = 'en' | 'de';
 
@@ -115,12 +115,6 @@ type AppSidebarProps = {
   onLanguageChange: (language: AppLanguage) => void;
   onLogout: () => void;
 };
-
-const coworkNavItems = [
-  { label: 'Search', icon: Search },
-  { label: 'Plugins', icon: Globe },
-  { label: 'Automations', icon: CalendarClock },
-] as const;
 
 const settingsNavItems: { label: SettingsSection; icon: typeof User }[] = [
   { label: 'Profile', icon: User },
@@ -186,7 +180,6 @@ export function AppSidebar({
   const isSettingsView = activePage === 'settings';
   const isWorkspacePage = ['cowork', 'project'].includes(activePage);
   const compact = !sidebarOpen;
-  const navItems = coworkNavItems;
   const safeChatRecentItems = chatRecentItems ?? [];
   const safeScheduledItems = scheduledItems ?? [];
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -452,27 +445,6 @@ export function AppSidebar({
                       {!compact && <span className="min-w-0 flex-1 truncate">Neuer Chat</span>}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                  {navItems.map((item) => (
-                    <SidebarMenuItem key={item.label}>
-                      <SidebarMenuButton
-                        type="button"
-                        active={item.label === activeMenuItem}
-                        aria-current={item.label === activeMenuItem ? 'page' : undefined}
-                        onClick={() => {
-                          if (item.label === 'Search') {
-                            onOpenSearch();
-                            return;
-                          }
-                          onSelectMenuItem(item.label);
-                        }}
-                        className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
-                        title={item.label}
-                      >
-                        <item.icon data-icon="inline-start" />
-                        {!compact && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

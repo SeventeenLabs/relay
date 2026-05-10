@@ -105,12 +105,6 @@ import {
 const CoworkPage = lazy(() => import('./features/cowork/cowork-page').then((module) => ({ default: module.CoworkPage })));
 const ProjectPage = lazy(() => import('./features/cowork/project-page').then((module) => ({ default: module.ProjectPage })));
 const SettingsPage = lazy(() => import('./features/settings/settings-page').then((module) => ({ default: module.SettingsPage })));
-const ActivityPage = lazy(() => import('./features/workspace/activity-page').then((module) => ({ default: module.ActivityPage })));
-const FilesPage = lazy(() => import('./features/workspace/files-page').then((module) => ({ default: module.FilesPage })));
-const MemoryPage = lazy(() => import('./features/workspace/memory-page').then((module) => ({ default: module.MemoryPage })));
-const SafetyPage = lazy(() => import('./features/workspace/safety-page').then((module) => ({ default: module.SafetyPage })));
-const ApprovalsPage = lazy(() => import('./features/workspace/approvals-page').then((module) => ({ default: module.ApprovalsPage })));
-const ScheduledPage = lazy(() => import('./features/workspace/scheduled-page').then((module) => ({ default: module.ScheduledPage })));
 
 const DEFAULT_HERMES_GATEWAY_URL = 'http://127.0.0.1:8642/v1';
 
@@ -136,7 +130,7 @@ const defaultConfig: AppConfig = {
   gatewayToken: '',
 };
 
-type AppPage = 'chat' | 'cowork' | 'project' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'approvals' | 'safety' | 'settings';
+type AppPage = 'chat' | 'cowork' | 'project' | 'settings';
 type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Gateway' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 
 const COWORK_SEND_SPINNER_MS = 300;
@@ -1564,8 +1558,7 @@ export default function App() {
   }, [bridge]);
 
   const handleReviewFileChanges = useCallback(() => {
-    setActivePage('files');
-    setStatus('Opened changed files for review.');
+    setStatus('Review changed files in your project workspace.');
   }, []);
 
   const handleUndoFileChanges = useCallback(async () => {
@@ -3776,15 +3769,15 @@ export default function App() {
             if (cacheKey) {
               threadMessageCache.current.set(cacheKey, next);
             }
+            if (eventSessionKey) {
+              const titleFromMessages = deriveThreadTitleFromMessages(next);
+              upsertChatThread(eventSessionKey, {
+                title: titleFromMessages || undefined,
+                touchedAt: Date.now(),
+              });
+            }
             return next;
           });
-
-          if (eventSessionKey) {
-            upsertChatThread(eventSessionKey, {
-              title: deriveThreadTitleFromMessages([{ id: finalId, role: 'user', text: '' }, ...withoutStream, finalMsg]),
-              touchedAt: Date.now(),
-            });
-          }
         }
       }
     });
@@ -4387,12 +4380,7 @@ export default function App() {
       return;
     }
 
-    setActivePage('scheduled');
-    setStatus(
-      activeCoworkProject?.name
-        ? `Opened Schedule for project "${activeCoworkProject.name}".`
-        : 'Opened Schedule. Create a cron job for this task prompt from your gateway scheduler.',
-    );
+    setStatus('Scheduling from Relay UI is deprecated. Use Hermes cron directly for scheduled runs.');
   };
 
   const handleAssignScheduledJobToProject = useCallback((jobId: string, projectId?: string | null) => {
@@ -5740,13 +5728,13 @@ export default function App() {
   }, [draftGatewayToken, draftGatewayUrl]);
 
   useEffect(() => {
-    if (activePage !== 'cowork' && activePage !== 'scheduled') {
+    if (activePage !== 'cowork') {
       return;
     }
 
     void loadScheduledJobs();
     const client = gatewayClientRef.current;
-    if (client && activePage === 'cowork') {
+    if (client) {
       const sessionKey = normalizeSessionKey(coworkSessionKeyRef.current);
       void loadCoworkModels(client, sessionKey || undefined);
     }
@@ -6178,134 +6166,40 @@ export default function App() {
                   onWebSearchEnabledChange={setCoworkWebSearchEnabled}
                   onSelectPage={(page) => setActivePage(page)}
                 />
-              ) : activePage === 'files' ? (
-                gatewayConnected ? (
-                  <FilesPage
-                    workingFolder={workingFolder}
-                    desktopBridgeAvailable={Boolean(bridge)}
-                    onPickFolder={handlePickWorkingFolder}
-                    fileService={fileService}
-                    localFileService={localFileService}
-                    gatewayUrl={draftGatewayUrl}
-                    root="workspace"
-                  />
-                ) : (
-                  <section className="grid h-full place-items-center p-6">
-                    <div className="w-full max-w-xl rounded-2xl border border-border bg-card p-6 text-center">
-                      <h2 className="text-lg font-semibold">Gateway disconnected</h2>
-                      <p className="mt-2 font-sans text-sm text-muted-foreground">
-                        Connect the gateway to view workspace contents.
-                      </p>
-                      <Button type="button" className="mt-4" onClick={() => setActivePage('settings')}>
-                        Open Gateway Settings
-                      </Button>
-                    </div>
-                  </section>
-                )
-              ) : activePage === 'local-files' ? (
-                gatewayConnected ? (
-                  <FilesPage
-                    workingFolder={workingFolder}
-                    desktopBridgeAvailable={Boolean(bridge)}
-                    onPickFolder={handlePickWorkingFolder}
-                    fileService={fileService}
-                    localFileService={localFileService}
-                    gatewayUrl={draftGatewayUrl}
-                    root="working-folder"
-                  />
-                ) : (
-                  <section className="grid h-full place-items-center p-6">
-                    <div className="w-full max-w-xl rounded-2xl border border-border bg-card p-6 text-center">
-                      <h2 className="text-lg font-semibold">Gateway disconnected</h2>
-                      <p className="mt-2 font-sans text-sm text-muted-foreground">
-                        Connect the gateway to view project folder contents.
-                      </p>
-                      <Button type="button" className="mt-4" onClick={() => setActivePage('settings')}>
-                        Open Gateway Settings
-                      </Button>
-                    </div>
-                  </section>
-                )
+              ) : activePage === 'settings' ? (
+                <SettingsPage
+                  activeSection={settingsSection}
+                  draftGatewayUrl={draftGatewayUrl}
+                  draftGatewayToken={draftGatewayToken}
+                  health={health}
+                  status={status}
+                  saving={saving}
+                  preferences={preferences}
+                  gatewayConnections={gatewayConnections}
+                  selectedGatewayConnectionId={selectedGatewayConnectionId}
+                  onDraftGatewayUrlChange={setDraftGatewayUrl}
+                  onDraftGatewayTokenChange={setDraftGatewayToken}
+                  onSave={handleSave}
+                  onSelectGatewayConnection={handleSelectGatewayConnection}
+                  onSaveGatewayConnection={handleSaveGatewayConnection}
+                  onOverwriteGatewayConnection={handleOverwriteGatewayConnection}
+                  onDeleteGatewayConnection={handleDeleteGatewayConnection}
+                  onQuickConnectHermes={handleQuickConnectHermes}
+                  onUpdatePreferences={updatePreferences}
+                />
               ) : (
-                <>
-                {(
-                  <ScrollArea className="h-full">
-                    {activePage === 'activity' && (
-                      <ActivityPage
-                        chatMessages={chatMessages}
-                        coworkMessages={coworkMessages}
-                        activeSessionKey={activeSessionKey}
-                        coworkSessionKey={coworkSessionKey}
-                        gatewayConnected={gatewayConnected}
-                      />
-                    )}
-
-                    {activePage === 'memory' && (
-                      <MemoryPage
-                        gatewayConnected={gatewayConnected}
-                      />
-                    )}
-
-                    {activePage === 'scheduled' && (
-                      <ScheduledPage
-                        jobs={scheduledJobs}
-                        projectId={activeCoworkProject?.id}
-                        projectTitle={activeCoworkProject?.name}
-                        draftPrompt={[...coworkMessages].reverse().find((message) => message.role === 'user')?.text?.trim() || coworkDraftPrompt.trim()}
-                        jobProjectLinks={scheduledJobProjectLinks}
-                        loading={scheduledLoading}
-                        status={status}
-                        onAssignJobToProject={handleAssignScheduledJobToProject}
-                        onCreateJob={handleCreateScheduledJob}
-                        onUpdateJob={handleUpdateScheduledJob}
-                        onDeleteJob={handleDeleteScheduledJob}
-                        onRefresh={loadScheduledJobs}
-                      />
-                    )}
-
-                    {activePage === 'approvals' && (
-                      <ApprovalsPage
-                        projectTitle={activeCoworkProject?.name}
-                        pendingApprovals={visiblePendingApprovals}
-                        onApprovePendingAction={handleApprovePendingAction}
-                        onRejectPendingAction={handleRejectPendingAction}
-                      />
-                    )}
-
-                    {activePage === 'safety' && (
-                      <SafetyPage
-                        gatewayConnected={gatewayConnected}
-                        projectId={activeCoworkProject?.id}
-                        projectTitle={activeCoworkProject?.name}
-                      />
-                    )}
-
-                    {activePage === 'settings' && (
-                      <SettingsPage
-                        activeSection={settingsSection}
-                        draftGatewayUrl={draftGatewayUrl}
-                        draftGatewayToken={draftGatewayToken}
-                        health={health}
-                        status={status}
-                        saving={saving}
-                        preferences={preferences}
-                        gatewayConnections={gatewayConnections}
-                        selectedGatewayConnectionId={selectedGatewayConnectionId}
-                        onDraftGatewayUrlChange={setDraftGatewayUrl}
-                        onDraftGatewayTokenChange={setDraftGatewayToken}
-                        onSave={handleSave}
-                        onSelectGatewayConnection={handleSelectGatewayConnection}
-                        onSaveGatewayConnection={handleSaveGatewayConnection}
-                        onOverwriteGatewayConnection={handleOverwriteGatewayConnection}
-                        onDeleteGatewayConnection={handleDeleteGatewayConnection}
-                        onQuickConnectHermes={handleQuickConnectHermes}
-                        onUpdatePreferences={updatePreferences}
-                      />
-                    )}
-                  </ScrollArea>
-                )}
-                </>
-                )}
+                <section className="grid h-full place-items-center p-6">
+                  <div className="w-full max-w-xl rounded-2xl border border-border bg-card p-6 text-center">
+                    <h2 className="text-lg font-semibold">Page unavailable</h2>
+                    <p className="mt-2 font-sans text-sm text-muted-foreground">
+                      This surface has been removed during Relay cleanup.
+                    </p>
+                    <Button type="button" className="mt-4" onClick={() => setActivePage('cowork')}>
+                      Back to Cowork
+                    </Button>
+                  </div>
+                </section>
+              )}
               </Suspense>
             </div>
           </SidebarInset>

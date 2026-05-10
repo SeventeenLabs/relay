@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, Clock3, FileText, FolderOpen, Lock, Pencil, Play, Search, Shield, Sparkles, Zap } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronRight, Clock3, FileText, FolderOpen, Lock, Pencil, Play, Search, Sparkles } from 'lucide-react';
 
 import type { CoworkArtifact, CoworkProject, CoworkProjectTask, OperatorDefinition, OperatorRun, OutcomePipeline, ProjectKnowledgeItem } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
-type ProjectPageTarget = 'cowork' | 'files' | 'local-files' | 'activity' | 'memory' | 'scheduled' | 'approvals' | 'safety';
+type ProjectPageTarget = 'cowork' | 'project' | 'settings';
 
 type ProjectPageProps = {
   project: CoworkProject | null;
@@ -70,12 +70,9 @@ type ProjectPageProps = {
 };
 
 const navItems: Array<{ label: string; page: ProjectPageTarget; icon: typeof FolderOpen }> = [
-  { label: 'Project Folder', page: 'local-files', icon: FolderOpen },
-  { label: 'Activity', page: 'activity', icon: Zap },
-  { label: 'Memory', page: 'memory', icon: Search },
-  { label: 'Schedule', page: 'scheduled', icon: CalendarClock },
-  { label: 'Approvals', page: 'approvals', icon: AlertTriangle },
-  { label: 'Safety', page: 'safety', icon: Shield },
+  { label: 'Cowork', page: 'cowork', icon: Play },
+  { label: 'Project Home', page: 'project', icon: FolderOpen },
+  { label: 'Settings', page: 'settings', icon: Search },
 ];
 
 function statusLabel(value: CoworkProjectTask['status']): string {
@@ -196,13 +193,13 @@ export function ProjectPage(props: ProjectPageProps) {
               <Play className="size-3.5" />
               Run Task
             </Button>
-            <Button type="button" variant="outline" className="gap-2" onClick={() => props.onSelectPage('local-files')}>
+            <Button type="button" variant="outline" className="gap-2" onClick={() => props.onSelectPage('project')}>
               <FolderOpen className="size-3.5" />
-              Files
+              Project Home
             </Button>
-            <Button type="button" variant="outline" className="gap-2" onClick={() => props.onSelectPage('approvals')}>
-              <AlertTriangle className="size-3.5" />
-              Approvals
+            <Button type="button" variant="outline" className="gap-2" onClick={() => props.onSelectPage('settings')}>
+              <Search className="size-3.5" />
+              Settings
             </Button>
             <Button type="button" variant="outline" className="gap-2" onClick={() => setEditingProject((value) => !value)}>
               <Pencil className="size-3.5" />
