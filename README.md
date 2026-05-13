@@ -389,9 +389,18 @@ In **Settings > Gateway**:
 
 **Typical endpoint patterns:**
 
-- **Local:** `ws://127.0.0.1:18789`
-- **VPS:** `wss://your-domain.com`
+- **Local:** `http://127.0.0.1:8642/v1`
+- **VPS:** `https://your-domain.com/v1`
 - **Custom:** Any Hermes-compatible endpoint
+
+Need a quick connection sanity check?
+
+```bash
+npm run doctor:hermes
+```
+
+Deep dive on how Relay talks to Hermes:
+- [docs/HERMES-CONNECTION-TRANSPARENCY.md](docs/HERMES-CONNECTION-TRANSPARENCY.md)
 
 <p align="center">
   <img src="assets/screenshots/gateway.png" alt="Relay gateway settings" width="1100" style="border-radius: 10px;" />
@@ -409,6 +418,7 @@ npm run package             # Build and package app to release/
 npm run lint                # ESLint
 npm run typecheck           # TS type checks (renderer + electron)
 npm run verify              # lint + typecheck + smoke tests
+npm run doctor:hermes       # check gateway + dashboard reachability
 npm run test:local-actions  # Local actions smoke tests
 npm run test:e2e            # Electron E2E tests (mock gateway)
 ```

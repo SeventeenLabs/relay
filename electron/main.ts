@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { exec, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
+import { HermesAcpManager } from './hermes-acp-manager.js';
 
 const execAsync = promisify(exec);
 import type {
@@ -24,12 +25,16 @@ import type {
   LocalFileReplaceResult,
   LocalFileStatResult,
 } from '../src/app-types.js';
-
-
-const DEFAULT_HERMES_GATEWAY_URL = 'http://127.0.0.1:8642/v1';
+import {
+  DEFAULT_HERMES_GATEWAY_URL,
+  DEFAULT_HERMES_TRANSPORT,
+  HERMES_DEFAULT_DASHBOARD_PORT,
+  HERMES_DEFAULT_GATEWAY_PORT,
+} from '../src/lib/hermes-constants.js';
 
 const defaultConfig: AppConfig = {
   backendType: 'hermes',
+  transport: DEFAULT_HERMES_TRANSPORT,
   gatewayUrl: DEFAULT_HERMES_GATEWAY_URL,
   gatewayToken: '',
 };
@@ -93,8 +98,29 @@ const windowIconPath = WINDOW_ICON_CANDIDATES.find((candidate) => existsSync(can
 const MAX_READ_FILE_BYTES = 256 * 1024;
 const MAX_LIST_DIR_ITEMS = 200;
 const BLOCKED_BASENAMES = new Set(['desktop.ini', 'thumbs.db']);
+const HERMES_MAIN_LOG_PREFIX = '[Relay:HermesMain]';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const hermesAcpManager = new HermesAcpManager();
+hermesAcpManager.onLiveActivity((event) => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send('acp:live-activity', event);
+    }
+  }
+});
+
+function logHermesMain(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) {
+  if (level === 'error') {
+    console.error(HERMES_MAIN_LOG_PREFIX, message, meta ?? '');
+    return;
+  }
+  if (level === 'warn') {
+    console.warn(HERMES_MAIN_LOG_PREFIX, message, meta ?? '');
+    return;
+  }
+  console.info(HERMES_MAIN_LOG_PREFIX, message, meta ?? '');
+}
 
 const isLoopbackHost = (host: string) => host === 'localhost' || host === '127.0.0.1' || host === '::1';
 
@@ -936,6 +962,36 @@ app.whenReady().then(async () => {
       };
     },
   );
+  ipcMain.handle('acp:ensure-agent', async () => {
+    return hermesAcpManager.ensureAgent();
+  });
+  ipcMain.handle('acp:new-session', async (_event, payload: { cwd: string }) => {
+    return hermesAcpManager.newSession(payload);
+  });
+  ipcMain.handle('acp:prompt', async (_event, payload: { sessionId: string; text: string }) => {
+    return hermesAcpManager.prompt(payload);
+  });
+  ipcMain.handle('acp:cancel', async (_event, payload: { sessionId: string }) => {
+    return hermesAcpManager.cancel(payload);
+  });
+  ipcMain.handle('acp:close-session', async (_event, payload: { sessionId: string }) => {
+    return hermesAcpManager.closeSession(payload);
+  });
+  ipcMain.handle('acp:list-sessions', async (_event, payload?: { limit?: number }) => {
+    return hermesAcpManager.listSessions(typeof payload?.limit === 'number' ? payload.limit : 200);
+  });
+  ipcMain.handle('acp:get-history', async (_event, payload: { sessionId: string; limit?: number }) => {
+    return hermesAcpManager.getHistory(payload.sessionId, typeof payload?.limit === 'number' ? payload.limit : 50);
+  });
+  ipcMain.handle('acp:set-session-model', async (_event, payload: { sessionId: string; modelValue: string | null }) => {
+    return hermesAcpManager.setSessionModel(payload);
+  });
+  ipcMain.handle('acp:get-session-model', async (_event, payload: { sessionId: string }) => {
+    return { model: hermesAcpManager.getSessionModel(payload.sessionId) };
+  });
+  ipcMain.handle('acp:list-models', async () => {
+    return hermesAcpManager.listModels();
+  });
   ipcMain.handle(
     'hermes:model-options',
     async (
@@ -944,11 +1000,12 @@ app.whenReady().then(async () => {
         gatewayUrl?: string;
       },
     ) => {
+      logHermesMain('info', 'IPC hermes:model-options called', { hasGatewayUrl: Boolean(payload?.gatewayUrl) });
       const rawGatewayUrl = typeof payload?.gatewayUrl === 'string' ? payload.gatewayUrl.trim() : '';
       const parsedGatewayUrl = rawGatewayUrl || defaultConfig.gatewayUrl;
       const normalized = /^https?:\/\//i.test(parsedGatewayUrl) ? parsedGatewayUrl : `http://${parsedGatewayUrl}`;
       const gateway = new URL(normalized);
-      const dashboardBaseUrl = `${gateway.protocol}//${gateway.hostname}:9119`;
+      const dashboardBaseUrl = `${gateway.protocol}//${gateway.hostname}:${HERMES_DEFAULT_DASHBOARD_PORT}`;
 
       const normalizeModelOptionsResponse = (data: {
         providers?: Array<{ slug?: string; name?: string; is_current?: boolean; models?: string[] }>;
@@ -1005,9 +1062,12 @@ app.whenReady().then(async () => {
       };
 
       try {
-        return await fetchModelOptions();
+        const result = await fetchModelOptions();
+        logHermesMain('info', 'Model options fetched', { providers: result.providers.length });
+        return result;
       } catch {
-        spawn('wsl', ['bash', '-lc', 'nohup hermes dashboard --no-open --host 127.0.0.1 --port 9119 >/tmp/hermes-dashboard.log 2>&1 &'], {
+        logHermesMain('warn', 'Model options fetch failed; attempting dashboard auto-start');
+        spawn('wsl', ['bash', '-lc', `nohup hermes dashboard --no-open --host 127.0.0.1 --port ${HERMES_DEFAULT_DASHBOARD_PORT} >/tmp/hermes-dashboard.log 2>&1 &`], {
           detached: true,
           stdio: 'ignore',
         }).unref();
@@ -1015,12 +1075,15 @@ app.whenReady().then(async () => {
         for (let attempt = 0; attempt < 12; attempt += 1) {
           await delay(500);
           try {
-            return await fetchModelOptions();
+            const result = await fetchModelOptions();
+            logHermesMain('info', 'Model options fetched after retry', { attempt: attempt + 1, providers: result.providers.length });
+            return result;
           } catch {
             // Retry until timeout.
           }
         }
 
+        logHermesMain('error', 'Unable to read model options after retries');
         throw new Error('Unable to read Hermes model options. Make sure `hermes dashboard` can run locally.');
       }
     },
@@ -1040,12 +1103,13 @@ app.whenReady().then(async () => {
       if (!provider || !model) {
         throw new Error('Provider and model are required.');
       }
+      logHermesMain('info', 'IPC hermes:model-set-main called', { provider, model, hasGatewayUrl: Boolean(payload?.gatewayUrl) });
 
       const rawGatewayUrl = typeof payload?.gatewayUrl === 'string' ? payload.gatewayUrl.trim() : '';
       const parsedGatewayUrl = rawGatewayUrl || defaultConfig.gatewayUrl;
       const normalized = /^https?:\/\//i.test(parsedGatewayUrl) ? parsedGatewayUrl : `http://${parsedGatewayUrl}`;
       const gateway = new URL(normalized);
-      const dashboardBaseUrl = `${gateway.protocol}//${gateway.hostname}:9119`;
+      const dashboardBaseUrl = `${gateway.protocol}//${gateway.hostname}:${HERMES_DEFAULT_DASHBOARD_PORT}`;
 
       const ensureToken = async () => {
         const dashboardHtml = await fetch(`${dashboardBaseUrl}/`).then(async (response) => {
@@ -1099,9 +1163,11 @@ app.whenReady().then(async () => {
 
       try {
         const confirmed = await postSetMain();
+        logHermesMain('info', 'Main model set succeeded', { provider, model, confirmedProvider: confirmed.confirmedProvider, confirmedModel: confirmed.confirmedModel });
         return { ok: true, provider, model, ...confirmed };
       } catch {
-        spawn('wsl', ['bash', '-lc', 'nohup hermes dashboard --no-open --host 127.0.0.1 --port 9119 >/tmp/hermes-dashboard.log 2>&1 &'], {
+        logHermesMain('warn', 'Model set failed; attempting dashboard auto-start', { provider, model });
+        spawn('wsl', ['bash', '-lc', `nohup hermes dashboard --no-open --host 127.0.0.1 --port ${HERMES_DEFAULT_DASHBOARD_PORT} >/tmp/hermes-dashboard.log 2>&1 &`], {
           detached: true,
           stdio: 'ignore',
         }).unref();
@@ -1109,11 +1175,13 @@ app.whenReady().then(async () => {
           await delay(500);
           try {
             const confirmed = await postSetMain();
+            logHermesMain('info', 'Main model set succeeded after retry', { attempt: attempt + 1, provider, model, confirmedProvider: confirmed.confirmedProvider, confirmedModel: confirmed.confirmedModel });
             return { ok: true, provider, model, ...confirmed };
           } catch {
             // Retry until timeout.
           }
         }
+        logHermesMain('error', 'Unable to set main model after retries', { provider, model });
         throw new Error('Unable to set Hermes main model. Make sure `hermes dashboard` can run locally.');
       }
     },
@@ -1121,7 +1189,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('hermes:service-status', async () => {
     const checkApi = async () => {
       try {
-        const response = await fetch('http://127.0.0.1:8642/v1/models');
+        const response = await fetch(`http://127.0.0.1:${HERMES_DEFAULT_GATEWAY_PORT}/v1/models`);
         return response.ok;
       } catch {
         return false;
@@ -1129,13 +1197,14 @@ app.whenReady().then(async () => {
     };
     const checkDashboard = async () => {
       try {
-        const response = await fetch('http://127.0.0.1:9119/');
+        const response = await fetch(`http://127.0.0.1:${HERMES_DEFAULT_DASHBOARD_PORT}/`);
         return response.ok;
       } catch {
         return false;
       }
     };
     const [apiServer, dashboard] = await Promise.all([checkApi(), checkDashboard()]);
+    logHermesMain('info', 'Service status checked', { apiServer, dashboard });
     return {
       gateway: apiServer,
       apiServer,
@@ -1143,16 +1212,18 @@ app.whenReady().then(async () => {
     };
   });
   ipcMain.handle('hermes:start-all-services', async () => {
-    const startCmd = 'nohup hermes gateway > /tmp/hermes-gateway.log 2>&1 & nohup hermes dashboard --no-open --host 127.0.0.1 --port 9119 > /tmp/hermes-dashboard.log 2>&1 &';
+    logHermesMain('info', 'Starting Hermes services');
+    const startCmd = `nohup hermes gateway > /tmp/hermes-gateway.log 2>&1 & nohup hermes dashboard --no-open --host 127.0.0.1 --port ${HERMES_DEFAULT_DASHBOARD_PORT} > /tmp/hermes-dashboard.log 2>&1 &`;
     spawn('wsl', ['bash', '-lc', startCmd], { detached: true, stdio: 'ignore' }).unref();
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await delay(500);
       try {
         const [apiResp, dashResp] = await Promise.all([
-          fetch('http://127.0.0.1:8642/v1/models'),
-          fetch('http://127.0.0.1:9119/'),
+          fetch(`http://127.0.0.1:${HERMES_DEFAULT_GATEWAY_PORT}/v1/models`),
+          fetch(`http://127.0.0.1:${HERMES_DEFAULT_DASHBOARD_PORT}/`),
         ]);
         if (apiResp.ok && dashResp.ok) {
+          logHermesMain('info', 'Hermes services are up', { attempt: attempt + 1 });
           return { ok: true, gateway: true, apiServer: true, dashboard: true };
         }
       } catch {
@@ -1162,7 +1233,7 @@ app.whenReady().then(async () => {
     const [apiServer, dashboard] = await Promise.all([
       (async () => {
         try {
-          const response = await fetch('http://127.0.0.1:8642/v1/models');
+          const response = await fetch(`http://127.0.0.1:${HERMES_DEFAULT_GATEWAY_PORT}/v1/models`);
           return response.ok;
         } catch {
           return false;
@@ -1170,13 +1241,14 @@ app.whenReady().then(async () => {
       })(),
       (async () => {
         try {
-          const response = await fetch('http://127.0.0.1:9119/');
+          const response = await fetch(`http://127.0.0.1:${HERMES_DEFAULT_DASHBOARD_PORT}/`);
           return response.ok;
         } catch {
           return false;
         }
       })(),
     ]);
+    logHermesMain('warn', 'Hermes services start finished with partial availability', { apiServer, dashboard });
     return {
       ok: apiServer || dashboard,
       gateway: apiServer,

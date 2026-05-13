@@ -1,4 +1,8 @@
-import type { AgentBackendEvent } from './agent-backend-client';
+import type {
+  AgentBackendEvent,
+  BackendTypedEventName,
+  LegacyAgentBackendEvent,
+} from './agent-backend-client';
 
 export type GatewayConnectOptions = {
   gatewayUrl: string;
@@ -91,6 +95,7 @@ type StoredSession = {
 
 type OpenAIMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 const MODEL_VALUE_SEPARATOR = '::';
+const HERMES_CLIENT_LOG_PREFIX = '[Relay:HermesClient]';
 
 export class HermesGatewayClient {
   private connected = false;
@@ -101,6 +106,20 @@ export class HermesGatewayClient {
   private sessions = new Map<string, StoredSession>();
   private defaultModel: string | null = null;
   private inflightChat = new Map<string, AbortController>();
+  private requestCounter = 0;
+
+  private log(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) {
+    const payload = meta ? { ...meta } : undefined;
+    if (level === 'error') {
+      console.error(HERMES_CLIENT_LOG_PREFIX, message, payload ?? '');
+      return;
+    }
+    if (level === 'warn') {
+      console.warn(HERMES_CLIENT_LOG_PREFIX, message, payload ?? '');
+      return;
+    }
+    console.info(HERMES_CLIENT_LOG_PREFIX, message, payload ?? '');
+  }
 
   setEventHandler(handler: (event: AgentBackendEvent) => void) {
     this.onEventHandler = handler;
@@ -138,6 +157,11 @@ export class HermesGatewayClient {
       headers.set('Authorization', `Bearer ${this.token}`);
     }
 
+    const requestId = ++this.requestCounter;
+    const method = init?.method ?? 'GET';
+    const startedAt = Date.now();
+    this.log('info', 'HTTP request started', { requestId, method, path, baseUrl: this.apiBaseUrl });
+
     let response: Response;
     try {
       if (window.relay?.backendHttpRequest) {
@@ -160,8 +184,11 @@ export class HermesGatewayClient {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      this.log('error', 'HTTP request failed before response', { requestId, method, path, durationMs: Date.now() - startedAt, error: message });
       throw new GatewayRequestError(`Unable to reach Hermes endpoint (${this.apiBaseUrl}): ${message}`, 'network_error');
     }
+
+    this.log('info', 'HTTP response received', { requestId, method, path, status: response.status, durationMs: Date.now() - startedAt });
 
     if (!response.ok) {
       let message = `Hermes API request failed (${response.status}).`;
@@ -178,6 +205,7 @@ export class HermesGatewayClient {
       } else if (response.status === 404) {
         message = `${message} Check endpoint URL includes /v1.`;
       }
+      this.log('warn', 'HTTP request returned non-ok status', { requestId, method, path, status: response.status, message });
       throw new GatewayRequestError(message, String(response.status), { status: response.status, path });
     }
 
@@ -222,21 +250,63 @@ export class HermesGatewayClient {
     return this.defaultModel;
   }
 
-  private emitChatEvent(sessionKey: string, runId: string, state: 'delta' | 'final' | 'error' | 'aborted', text: string, extra?: Record<string, unknown>) {
+  private emitLegacyEvent(event: LegacyAgentBackendEvent): void {
+    this.onEventHandler?.(event);
+  }
+
+  private emitTypedEvent(event: BackendTypedEventName, payload: Record<string, unknown>): void {
     this.onEventHandler?.({
+      type: 'typed_event',
+      event,
+      payload,
+    });
+  }
+
+  private emitChatEvent(sessionKey: string, runId: string, state: 'delta' | 'final' | 'error' | 'aborted', text: string, extra?: Record<string, unknown>) {
+    const payload = {
+      sessionKey,
+      runId,
+      state,
+      message: {
+        id: `${runId}-${state}`,
+        role: 'assistant' as const,
+        text,
+      },
+      ...extra,
+    };
+
+    this.emitLegacyEvent({
       type: 'event',
       event: 'chat',
-      payload: {
+      payload,
+    });
+
+    this.emitTypedEvent('chat', payload);
+
+    if (state === 'final') {
+      this.emitTypedEvent('run.completed', {
         sessionKey,
         runId,
-        state,
-        message: {
-          id: `${runId}-${state}`,
-          role: 'assistant',
-          text,
-        },
-        ...extra,
-      },
+        summary: typeof text === 'string' ? text.slice(0, 200) : '',
+      });
+    }
+
+    if (state === 'error') {
+      this.emitTypedEvent('run.failed', {
+        sessionKey,
+        runId,
+        errorMessage: typeof extra?.errorMessage === 'string' ? extra.errorMessage : 'Run failed.',
+      });
+    }
+  }
+
+  private emitRunActivity(sessionKey: string, runId: string, label: string, details?: string, tone: 'neutral' | 'success' | 'danger' = 'neutral') {
+    this.emitTypedEvent('run.activity', {
+      sessionKey,
+      runId,
+      label,
+      details,
+      tone,
     });
   }
 
@@ -247,6 +317,7 @@ export class HermesGatewayClient {
     this.apiBaseUrl = base;
     this.token = nextToken;
 
+    this.log('info', 'Connect requested', { gatewayUrl: base, hasToken: Boolean(nextToken) });
     try {
       const response = await this.request('/models', { method: 'GET' });
       const json = await response.json() as { data?: Array<{ id?: string }> };
@@ -255,10 +326,12 @@ export class HermesGatewayClient {
       this.defaultModel = first?.id?.trim() || null;
       this.connected = true;
       this.ensureSession('main', 'main');
+      this.log('info', 'Connect succeeded', { gatewayUrl: base, defaultModel: this.defaultModel });
       this.onConnectionHandler?.(true, `Connected to ${base}`);
     } catch (error) {
       this.connected = false;
       const message = error instanceof Error ? error.message : 'Failed to connect to Hermes endpoint.';
+      this.log('error', 'Connect failed', { gatewayUrl: base, error: message });
       this.onConnectionHandler?.(false, message);
       throw error;
     }
@@ -270,6 +343,7 @@ export class HermesGatewayClient {
     }
     this.inflightChat.clear();
     this.connected = false;
+    this.log('info', 'Disconnected');
     this.onConnectionHandler?.(false, 'Disconnected from Hermes API.');
   }
 
@@ -317,6 +391,13 @@ export class HermesGatewayClient {
     const runId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : `run-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    this.log('info', 'Chat run started', { sessionKey: key, runId, userChars: text.length });
+
+    this.emitTypedEvent('run.started', {
+      sessionKey: key,
+      runId,
+      label: 'Chat run started',
+    });
 
     const sessionModelRaw = session.model?.trim() || '';
     const separatorIndex = sessionModelRaw.indexOf(MODEL_VALUE_SEPARATOR);
@@ -335,6 +416,7 @@ export class HermesGatewayClient {
     this.inflightChat.set(key, controller);
 
     try {
+      this.emitRunActivity(key, runId, 'Calling Hermes API', 'Requesting /chat/completions');
       const response = await this.request('/chat/completions', {
         method: 'POST',
         body: JSON.stringify(body),
@@ -344,6 +426,7 @@ export class HermesGatewayClient {
         choices?: Array<{ message?: { content?: string } }>;
       };
       const accumulated = json.choices?.[0]?.message?.content ?? '';
+      this.log('info', 'Chat run completed', { sessionKey: key, runId, assistantChars: accumulated.length, model });
 
       session.history.push({
         id: `assistant-${Date.now()}`,
@@ -353,10 +436,12 @@ export class HermesGatewayClient {
       this.emitChatEvent(key, runId, 'final', accumulated, { model });
     } catch (error) {
       if (controller.signal.aborted) {
+        this.log('warn', 'Chat run aborted', { sessionKey: key, runId });
         this.emitChatEvent(key, runId, 'aborted', '');
         return { sessionKey: key };
       }
       const message = error instanceof Error ? error.message : 'Hermes request failed.';
+      this.log('error', 'Chat run failed', { sessionKey: key, runId, error: message });
       this.emitChatEvent(key, runId, 'error', '', { errorMessage: message });
       throw error;
     } finally {
@@ -391,6 +476,7 @@ export class HermesGatewayClient {
   }
 
   async listModels(): Promise<GatewayModelChoice[]> {
+    this.log('info', 'Listing models');
     if (window.relay?.hermesModelOptions) {
       try {
         const options = await window.relay.hermesModelOptions({ gatewayUrl: this.apiBaseUrl ?? undefined });
@@ -414,9 +500,11 @@ export class HermesGatewayClient {
         }
 
         if (mapped.length > 0) {
+          this.log('info', 'Model list loaded from dashboard bridge', { count: mapped.length });
           return mapped;
         }
       } catch {
+        this.log('warn', 'Dashboard model options failed; falling back to /models');
         // Fall through to OpenAI-compatible endpoint as a last resort.
       }
     }
@@ -424,9 +512,11 @@ export class HermesGatewayClient {
     const response = await this.request('/models', { method: 'GET' });
     const json = await response.json() as { data?: Array<{ id?: string }> };
     const models = Array.isArray(json.data) ? json.data : [];
-    return models
+    const mapped = models
       .map((m) => (typeof m.id === 'string' && m.id.trim() ? { value: m.id.trim(), label: m.id.trim() } : null))
       .filter((m): m is GatewayModelChoice => Boolean(m));
+    this.log('info', 'Model list loaded from gateway /models', { count: mapped.length });
+    return mapped;
   }
 
   async getSessionModel(sessionKey: string): Promise<string | null> {
@@ -477,6 +567,7 @@ export class HermesGatewayClient {
       provider,
       model,
     });
+    this.log('info', 'Requested main model change', { sessionKey, provider, model, confirmedProvider: result.confirmedProvider, confirmedModel: result.confirmedModel });
 
     const confirmedProvider = result.confirmedProvider?.trim() || '';
     const confirmedModel = result.confirmedModel?.trim() || '';

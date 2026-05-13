@@ -1,7 +1,9 @@
 export type BackendType = 'hermes';
+export type HermesTransport = 'hermes_http' | 'hermes_acp';
 
 export type AppConfig = {
   backendType: BackendType;
+  transport?: HermesTransport;
   gatewayUrl: string;
   gatewayToken: string;
 };
@@ -10,6 +12,7 @@ export type GatewayConnectionProfile = {
   id: string;
   name: string;
   backendType: BackendType;
+  transport?: HermesTransport;
   gatewayUrl: string;
   gatewayToken: string;
   createdAt: number;
@@ -411,6 +414,8 @@ export type SafetyPermissionScope = {
   enabled: boolean;
   requiresApproval: boolean;
 };
+
+export type PendingApprovalDecision = 'allow_once' | 'allow_always' | 'deny';
 
 export type PendingApprovalAction = {
   id: string;

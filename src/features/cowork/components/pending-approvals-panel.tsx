@@ -11,6 +11,7 @@ type PendingApprovalsPanelProps = {
   approvalRejectReasons: Record<string, string>;
   onRejectReasonChange: (approvalId: string, value: string) => void;
   onApprovePendingAction: (approvalId: string) => void;
+  onApprovePendingActionAlways: (approvalId: string) => void;
   onRejectPendingAction: (approvalId: string, reason: string) => void;
 };
 
@@ -20,6 +21,7 @@ export function PendingApprovalsPanel({
   approvalRejectReasons,
   onRejectReasonChange,
   onApprovePendingAction,
+  onApprovePendingActionAlways,
   onRejectPendingAction,
 }: PendingApprovalsPanelProps) {
   if (pendingApprovals.length === 0) {
@@ -89,9 +91,19 @@ export function PendingApprovalsPanel({
                   size="sm"
                   className="h-7 border-0 bg-primary text-primary-foreground hover:bg-primary/90"
                   onClick={() => onApprovePendingAction(approval.id)}
-                  data-testid={`pending-approval-approve-${approval.id}`}
+                  data-testid={`pending-approval-allow-once-${approval.id}`}
                 >
-                  Approve
+                  Allow once
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-7"
+                  onClick={() => onApprovePendingActionAlways(approval.id)}
+                  data-testid={`pending-approval-allow-always-${approval.id}`}
+                >
+                  Allow always
                 </Button>
                 <Button
                   type="button"
@@ -100,9 +112,9 @@ export function PendingApprovalsPanel({
                   className="h-7"
                   onClick={() => onRejectPendingAction(approval.id, rejectReason)}
                   disabled={!rejectReason.trim()}
-                  data-testid={`pending-approval-reject-${approval.id}`}
+                  data-testid={`pending-approval-deny-${approval.id}`}
                 >
-                  Reject
+                  Deny
                 </Button>
               </div>
             </div>

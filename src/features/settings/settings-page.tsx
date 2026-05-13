@@ -1,8 +1,8 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { Code2, Folder, Globe, KeyRound, Link2, Shield, Terminal, Trash2 } from 'lucide-react';
+import { Code2, Folder, Globe, KeyRound, Link2, Shield, Terminal } from 'lucide-react';
 
-import type { GatewayConnectionProfile, HealthCheckResult, UserPreferences } from '@/app-types';
+import type { HealthCheckResult, UserPreferences } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,16 +26,9 @@ type SettingsPageProps = {
   status: string;
   saving: boolean;
   preferences: UserPreferences;
-  gatewayConnections: GatewayConnectionProfile[];
-  selectedGatewayConnectionId: string | null;
   onDraftGatewayUrlChange: (value: string) => void;
   onDraftGatewayTokenChange: (value: string) => void;
   onSave: (event: FormEvent) => void;
-  onSelectGatewayConnection: (connectionId: string) => void;
-  onSaveGatewayConnection: (name: string) => void;
-  onOverwriteGatewayConnection: (connectionId: string) => void;
-  onDeleteGatewayConnection: (connectionId: string) => void;
-  onQuickConnectHermes: () => void | Promise<void>;
   onUpdatePreferences: (patch: Partial<UserPreferences>) => void;
 };
 
@@ -219,21 +212,12 @@ export function SettingsPage({
   status,
   saving,
   preferences,
-  gatewayConnections,
-  selectedGatewayConnectionId,
   onDraftGatewayUrlChange,
   onDraftGatewayTokenChange,
   onSave,
-  onSelectGatewayConnection,
-  onSaveGatewayConnection,
-  onOverwriteGatewayConnection,
-  onDeleteGatewayConnection,
-  onQuickConnectHermes,
   onUpdatePreferences,
 }: SettingsPageProps) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [prefersDarkSystem, setPrefersDarkSystem] = useState(false);
-  const [connectionNameDraft, setConnectionNameDraft] = useState('');
   const t = useCallback((en: string, de: string) => (preferences.language === 'de' ? de : en), [preferences.language]);
   const settingsCardClass = 'max-w-[980px] rounded-2xl border border-border/60 bg-card p-4';
 
@@ -252,13 +236,6 @@ export function SettingsPage({
 
   const useDarkPreview =
     preferences.theme === 'dark' || (preferences.theme === 'auto' && prefersDarkSystem);
-
-  const handleSaveCurrentConnection = useCallback(() => {
-    const fallbackName = draftGatewayUrl.trim() || 'Gateway connection';
-    const nextName = connectionNameDraft.trim() || fallbackName;
-    onSaveGatewayConnection(nextName);
-    setConnectionNameDraft('');
-  }, [connectionNameDraft, draftGatewayUrl, onSaveGatewayConnection]);
 
   const renderPlaceholder = (icon: ReactNode, hint: string) => (
     <div className="max-w-[980px] flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/60 py-12 text-center">
@@ -486,205 +463,63 @@ export function SettingsPage({
       )}
 
       {activeSection === 'Gateway' && (
-        <div className="flex flex-col gap-4">
-          <section className={settingsCardClass}>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-base font-medium">{t('Hermes Instance', 'Hermes-Instanz')}</h2>
-              <Badge
-                variant="outline"
-                className={
-                  health?.ok
-                    ? 'rounded-full border border-primary/35 bg-primary/10 font-sans text-[11px] text-primary'
-                    : 'rounded-full font-sans text-[11px]'
-                }
-              >
-                {health?.ok ? t('Connected', 'Verbunden') : t('Not connected', 'Nicht verbunden')}
-              </Badge>
-            </div>
-            <div className="grid gap-3">
-              <div className="rounded-lg border border-border/70 bg-card p-3">
-                <p className="mb-2 font-sans text-xs font-medium text-foreground">{t('Step 1: Quick start', 'Schritt 1: Schnellstart')}</p>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => onDraftGatewayUrlChange('http://127.0.0.1:8642/v1')}>
-                    Local preset
-                  </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => onDraftGatewayUrlChange('http://YOUR_VPS_IP:8642/v1')}>
-                    VPS preset
-                  </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => void onQuickConnectHermes()}>
-                    {t('Connect local Hermes', 'Lokales Hermes verbinden')}
-                  </Button>
-                </div>
-              </div>
-
-              <form className="grid gap-3 rounded-lg border border-border/70 bg-card p-3" onSubmit={onSave}>
-                <p className="font-sans text-xs font-medium text-foreground">{t('Step 2: Manual endpoint', 'Schritt 2: Manueller Endpunkt')}</p>
-                <label className="grid gap-1">
-                  <span className="font-sans text-xs text-muted-foreground">
-                    Hermes endpoint
-                  </span>
-                  <Input
-                    value={draftGatewayUrl}
-                    onChange={(event) => onDraftGatewayUrlChange(event.target.value)}
-                    placeholder="http://127.0.0.1:8642/v1"
-                    className="font-sans"
-                  />
-                </label>
-
-                <label className="grid gap-1">
-                  <span className="font-sans text-xs text-muted-foreground">Hermes token</span>
-                  <Input
-                    type="password"
-                    value={draftGatewayToken}
-                    onChange={(event) => onDraftGatewayTokenChange(event.target.value)}
-                    placeholder={t('Optional auth token for Hermes endpoint', 'Optionaler Auth-Token fuer Hermes-Endpunkt')}
-                    className="font-sans"
-                  />
-                </label>
-
-                <Button
-                  className="w-full border-0 bg-primary text-primary-foreground hover:bg-primary/90"
-                  type="submit"
-                  disabled={saving}
-                >
-                  {saving ? t('Connecting...', 'Verbinde...') : t('Connect this instance', 'Diese Instanz verbinden')}
-                </Button>
-              </form>
-            </div>
-
-            {health && !health.ok ? (
-              <div className="mt-3 rounded-lg border border-destructive/25 bg-destructive/10 p-3">
-                <p className="font-sans text-xs font-medium text-destructive">{t('Connection failed', 'Verbindung fehlgeschlagen')}</p>
-                <p className="mt-1 font-sans text-xs text-destructive/85">{health.message}</p>
-              </div>
-            ) : health?.ok ? (
-              <p className="mt-3 font-sans text-xs text-primary">{status}</p>
-            ) : status ? (
-              <p className="mt-3 font-sans text-xs text-muted-foreground">{status}</p>
-            ) : null}
-          </section>
-
-          <section className={settingsCardClass}>
-            <div className="mb-3">
-              <h2 className="text-base font-medium">{t('Instance Profiles', 'Instanz-Profile')}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t('Save local and VPS Hermes endpoints and switch with one click.', 'Speichere lokale und VPS-Hermes-Endpunkte und wechsle mit einem Klick.')}
-              </p>
-            </div>
-            <div className="grid gap-3">
-              <div className="rounded-lg border border-border/70 bg-card p-3">
-                <p className="mb-2 font-sans text-xs text-muted-foreground">
-                  {t('Save the current URL/token as a reusable profile.', 'Speichere die aktuelle URL/den Token als wiederverwendbares Profil.')}
-                </p>
-                <div className="flex gap-2">
-                  <Input
-                    value={connectionNameDraft}
-                    onChange={(event) => setConnectionNameDraft(event.target.value)}
-                    placeholder={t('Connection name (e.g. Local dev)', 'Verbindungsname (z. B. Local dev)')}
-                    className="font-sans text-sm"
-                  />
-                  <Button type="button" variant="outline" onClick={handleSaveCurrentConnection}>
-                    {t('Save current', 'Aktuelle speichern')}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="grid gap-2">
-                {gatewayConnections.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border px-3 py-2.5">
-                    <p className="font-sans text-xs text-muted-foreground">
-                      {t('No saved connections yet.', 'Noch keine gespeicherten Verbindungen.')}
-                    </p>
-                  </div>
-                ) : (
-                  gatewayConnections.map((connection) => {
-                    const isSelected = selectedGatewayConnectionId === connection.id;
-                    return (
-                      <div
-                        key={connection.id}
-                        className={`rounded-lg border px-3 py-2.5 ${
-                          isSelected ? 'border-primary/45 bg-primary/10' : 'border-border bg-card'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{connection.name}</p>
-                            <p className="truncate font-mono text-[11px] text-muted-foreground">{connection.gatewayUrl}</p>
-                            <p className="mt-0.5 font-sans text-[11px] text-muted-foreground">
-                              {connection.gatewayToken ? t('Token saved', 'Token gespeichert') : t('No token', 'Kein Token')}
-                              {connection.lastUsedAt
-                                ? ` â€¢ ${t('Last used', 'Zuletzt verwendet')} ${new Date(connection.lastUsedAt).toLocaleString()}`
-                                : ''}
-                            </p>
-                          </div>
-                          {isSelected ? (
-                            <Badge variant="outline" className="rounded-full font-sans text-[10px]">
-                              {t('Selected', 'Ausgewaehlt')}
-                            </Badge>
-                          ) : null}
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          <Button type="button" size="sm" variant="outline" onClick={() => onSelectGatewayConnection(connection.id)}>
-                            {t('Use', 'Verwenden')}
-                          </Button>
-                          <Button type="button" size="sm" variant="outline" onClick={() => onOverwriteGatewayConnection(connection.id)}>
-                            {t('Update', 'Aktualisieren')}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => onDeleteGatewayConnection(connection.id)}
-                          >
-                            <Trash2 className="mr-1 h-3.5 w-3.5" />
-                            {t('Delete', 'Loeschen')}
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </section>
-
-          <section className={settingsCardClass}>
-            <div className="mb-3">
-              <h2 className="text-base font-medium">{t('Hermes model', 'Hermes-Modell')}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t('Model/provider selection is managed in Hermes itself (dashboard, hermes model, or /model). Relay uses whatever Hermes is configured to run.', 'Modell/Provider-Auswahl wird in Hermes selbst verwaltet (Dashboard, hermes model oder /model). Relay nutzt die aktuelle Hermes-Konfiguration.')}
-              </p>
-            </div>
-          </section>
-
-          <section className={settingsCardClass}>
-            <button
-              type="button"
-              className="font-sans text-xs text-muted-foreground/70 underline-offset-2 hover:text-muted-foreground hover:underline"
-              onClick={() => setShowAdvanced(!showAdvanced)}
+        <section className={settingsCardClass}>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-base font-medium">{t('Hermes connection', 'Hermes-Verbindung')}</h2>
+            <Badge
+              variant="outline"
+              className={
+                health?.ok
+                  ? 'rounded-full border border-primary/35 bg-primary/10 font-sans text-[11px] text-primary'
+                  : 'rounded-full font-sans text-[11px]'
+              }
             >
-              {showAdvanced ? t('Hide advanced options', 'Erweiterte Optionen ausblenden') : t('Advanced options', 'Erweiterte Optionen')}
-            </button>
+              {health?.ok ? t('Connected', 'Verbunden') : t('Not connected', 'Nicht verbunden')}
+            </Badge>
+          </div>
 
-            {showAdvanced && (
-              <div className="mt-3 grid gap-3">
-                <label className="grid gap-1">
-                  <span className="font-sans text-xs text-muted-foreground">{t('Reconnect attempts (max)', 'Reconnect-Versuche (max)')}</span>
-                  <Input type="number" className="font-sans w-32" placeholder="6" defaultValue="6" />
-                </label>
-                <label className="grid gap-1">
-                  <span className="font-sans text-xs text-muted-foreground">{t('Reconnect base interval (ms)', 'Reconnect-Basisintervall (ms)')}</span>
-                  <Input type="number" className="font-sans w-32" placeholder="1000" defaultValue="1000" />
-                </label>
-                <label className="grid gap-1">
-                  <span className="font-sans text-xs text-muted-foreground">Connection timeout (ms)</span>
-                  <Input type="number" className="font-sans w-32" placeholder="30000" defaultValue="30000" />
-                </label>
-              </div>
-            )}
-          </section>
-        </div>
+          <form className="grid gap-3" onSubmit={onSave}>
+            <label className="grid gap-1">
+              <span className="font-sans text-xs text-muted-foreground">Hermes endpoint</span>
+              <Input
+                value={draftGatewayUrl}
+                onChange={(event) => onDraftGatewayUrlChange(event.target.value)}
+                placeholder="http://127.0.0.1:8642/v1"
+                className="font-sans"
+              />
+            </label>
+
+            <label className="grid gap-1">
+              <span className="font-sans text-xs text-muted-foreground">Hermes token</span>
+              <Input
+                type="password"
+                value={draftGatewayToken}
+                onChange={(event) => onDraftGatewayTokenChange(event.target.value)}
+                placeholder={t('Optional auth token for Hermes endpoint', 'Optionaler Auth-Token fuer Hermes-Endpunkt')}
+                className="font-sans"
+              />
+            </label>
+
+            <Button
+              className="w-full border-0 bg-primary text-primary-foreground hover:bg-primary/90"
+              type="submit"
+              disabled={saving}
+            >
+              {saving ? t('Connecting...', 'Verbinde...') : t('Connect', 'Verbinden')}
+            </Button>
+          </form>
+
+          {health && !health.ok ? (
+            <div className="mt-3 rounded-lg border border-destructive/25 bg-destructive/10 p-3">
+              <p className="font-sans text-xs font-medium text-destructive">{t('Connection failed', 'Verbindung fehlgeschlagen')}</p>
+              <p className="mt-1 font-sans text-xs text-destructive/85">{health.message}</p>
+            </div>
+          ) : health?.ok ? (
+            <p className="mt-3 font-sans text-xs text-primary">{status}</p>
+          ) : status ? (
+            <p className="mt-3 font-sans text-xs text-muted-foreground">{status}</p>
+          ) : null}
+        </section>
       )}
 
       {activeSection === 'Connectors' && <ConnectorsSection language={preferences.language ?? 'en'} />}

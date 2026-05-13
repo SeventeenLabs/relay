@@ -1,3 +1,4 @@
+import type { AppConfig } from '../app-types';
 import {
   HermesGatewayClient,
   type GatewayChatMessage,
@@ -10,8 +11,9 @@ import {
   type GatewayToolsCatalog,
   type GatewayUpdateCronJobInput,
 } from './hermes-gateway-client';
+import { HermesAcpClient } from './hermes-acp-client';
 
-export type AgentBackendEvent = {
+export type LegacyAgentBackendEvent = {
   type: 'res' | 'event';
   event?: string;
   payload?: unknown;
@@ -21,6 +23,24 @@ export type AgentBackendEvent = {
   seq?: number;
   stateVersion?: Record<string, unknown>;
 };
+
+export type BackendTypedEventName = 'chat' | 'run.activity' | 'run.started' | 'run.completed' | 'run.failed';
+
+export type BackendTypedEvent = {
+  type: 'typed_event';
+  event: BackendTypedEventName;
+  payload: Record<string, unknown>;
+};
+
+export type AgentBackendEvent = LegacyAgentBackendEvent | BackendTypedEvent;
+
+export function isTypedBackendEvent(event: AgentBackendEvent): event is BackendTypedEvent {
+  return event.type === 'typed_event';
+}
+
+export function isLegacyBackendEvent(event: AgentBackendEvent): event is LegacyAgentBackendEvent {
+  return event.type === 'event' || event.type === 'res';
+}
 
 export interface AgentBackendClient {
   setEventHandler(handler: (event: AgentBackendEvent) => void): void;
@@ -72,6 +92,10 @@ export interface AgentBackendClient {
 
 export type { GatewayToolEntry };
 
-export function createDefaultBackendClient(): AgentBackendClient {
+export function createDefaultBackendClient(config?: Pick<AppConfig, 'transport'>): AgentBackendClient {
+  const transport = config?.transport ?? 'hermes_acp';
+  if (transport === 'hermes_acp') {
+    return new HermesAcpClient();
+  }
   return new HermesGatewayClient();
 }

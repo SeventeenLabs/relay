@@ -97,8 +97,6 @@ import {
   readGatewayError,
   parseRelayFileActions,
   stripRelayActionPayloadFromText,
-  parseRelayActivityItems,
-  deriveActivityItemsFromAssistantText,
   normalizeCoworkMessage,
 } from './lib/chat-utils';
 
@@ -199,33 +197,6 @@ type CoworkTaskQueueEntry = {
   runId?: string;
   status: CoworkProjectTaskStatus;
 };
-
-function validateProjectRelativePath(inputPath: string, options?: { allowEmpty?: boolean }): { ok: true } | { ok: false; reason: string } {
-  const raw = (inputPath ?? '').trim();
-  if (!raw) {
-    return options?.allowEmpty ? { ok: true } : { ok: false, reason: 'Path is required.' };
-  }
-
-  const normalized = raw.replace(/\\/g, '/');
-  const hasControlChars = Array.from(normalized).some((char) => char.charCodeAt(0) < 32);
-  if (hasControlChars) {
-    return { ok: false, reason: 'Path contains invalid control characters.' };
-  }
-  if (normalized.startsWith('/') || normalized.startsWith('~/') || /^[a-zA-Z]:\//.test(normalized)) {
-    return { ok: false, reason: 'Absolute paths are not allowed for project-bound actions.' };
-  }
-
-  if (normalized === '.' || normalized === './') {
-    return { ok: false, reason: 'A concrete relative path is required.' };
-  }
-
-  const segments = normalized.split('/').filter((segment) => segment.length > 0);
-  if (segments.some((segment) => segment === '..' || segment === '.')) {
-    return { ok: false, reason: 'Parent directory traversal is not allowed.' };
-  }
-
-  return { ok: true };
-}
 
 function extractProjectFileMentions(inputText: string): string[] {
   if (!inputText) {
@@ -829,6 +800,11 @@ export default function App() {
 
   const bridge = window.relay;
   const gatewayClientRef = useRef<AgentBackendClient | null>(null);
+  const gatewayClientGenerationRef = useRef(0);
+  const gatewayConnectAttemptRef = useRef<{ client: AgentBackendClient | null; key: string }>({
+    client: null,
+    key: '',
+  });
   const activeSessionKeyRef = useRef('');
   const coworkSessionKeyRef = useRef('');
   const workingFolderRef = useRef('');
@@ -843,6 +819,7 @@ export default function App() {
   const resolvedCoworkRunContextsRef = useRef<Map<string, CoworkRunProjectContext>>(new Map());
   const pendingCoworkTaskQueueRef = useRef<Map<string, CoworkTaskQueueEntry[]>>(new Map());
   const coworkStreamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncedChatTitlesRef = useRef<Map<string, string>>(new Map());
 
   const [config, setConfig] = useState<AppConfig>(defaultConfig);
   const [configReady, setConfigReady] = useState(false);
@@ -945,6 +922,12 @@ export default function App() {
     return !gatewayConnected;
   }, [gatewayConnected]);
   const [sessionUsage, setSessionUsage] = useState(() => loadTodayUsage());
+  const [chatContextWindowUsedTokens, setChatContextWindowUsedTokens] = useState(0);
+  const [chatContextWindowTotalTokens, setChatContextWindowTotalTokens] = useState(1);
+  const [coworkContextWindowUsedTokens, setCoworkContextWindowUsedTokens] = useState(0);
+  const [coworkContextWindowTotalTokens, setCoworkContextWindowTotalTokens] = useState(1);
+  const [chatLiveActivityItems, setChatLiveActivityItems] = useState<ChatActivityItem[]>([]);
+  const [coworkLiveActivityItems, setCoworkLiveActivityItems] = useState<ChatActivityItem[]>([]);
 
   const handleChatPromptChange = useCallback((value: string) => {
     setChatDraftPrompt(value);
@@ -1443,6 +1426,30 @@ export default function App() {
     }
   };
 
+  const syncChatSessionTitle = useCallback((sessionKey: string, title?: string) => {
+    const normalizedSessionKey = normalizeSessionKey(sessionKey);
+    const normalizedTitle = title ? toRecentSidebarLabel(title) : '';
+    if (!normalizedSessionKey || !normalizedTitle || normalizedTitle === DEFAULT_CHAT_THREAD_TITLE) {
+      return;
+    }
+
+    const titleKey = normalizedSessionKey.toLowerCase();
+    const previousTitle = syncedChatTitlesRef.current.get(titleKey);
+    if (previousTitle === normalizedTitle) {
+      return;
+    }
+    syncedChatTitlesRef.current.set(titleKey, normalizedTitle);
+
+    const client = gatewayClientRef.current;
+    if (!client) {
+      return;
+    }
+
+    void client.setSessionTitle(normalizedSessionKey, normalizedTitle).catch(() => {
+      // Some transports do not support title sync; local title remains authoritative.
+    });
+  }, []);
+
   const pushLocalActionReceipts = (entries: LocalActionReceipt[]) => {
     if (entries.length === 0) {
       return;
@@ -1634,6 +1641,10 @@ export default function App() {
   };
 
   const handleApprovePendingAction = (approvalId: string) => {
+    resolvePendingApproval(approvalId, { approved: true });
+  };
+
+  const handleApprovePendingActionAlways = (approvalId: string) => {
     resolvePendingApproval(approvalId, { approved: true });
   };
 
@@ -2141,6 +2152,7 @@ export default function App() {
       upsertChatThread(resolvedSessionKey, {
         title: titleFromHistory || undefined,
       });
+      syncChatSessionTitle(resolvedSessionKey, titleFromHistory || undefined);
 
       if (statusMessage) {
         if (titleFromHistory) {
@@ -2187,22 +2199,58 @@ export default function App() {
         token: draftGatewayToken,
       });
 
-      const history = await client.getHistory(requestedSessionKey, 50);
-      const normalizedHistory = history.map(normalizeCoworkMessage);
+      let resolvedSessionKey = requestedSessionKey;
+      let normalizedHistory: ChatMessage[];
+      try {
+        const history = await client.getHistory(resolvedSessionKey, 50);
+        normalizedHistory = history.map(normalizeCoworkMessage);
+      } catch (error) {
+        const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+        const isMissingSession = message.includes('no session found') || message.includes('no sendable session found') || message.includes('session not found');
+        if (!isMissingSession) {
+          throw error;
+        }
+
+        let retrySessionKey = '';
+        try {
+          const liveSessions = await client.listSessions(200);
+          const liveKeys = liveSessions.map((session) => session.key);
+          retrySessionKey = findMatchingSessionKey(liveKeys, resolvedSessionKey) ?? '';
+        } catch {
+          // fallback below
+        }
+
+        if (!retrySessionKey) {
+          retrySessionKey = normalizeSessionKey(await client.resolveSessionKey(resolvedSessionKey));
+        }
+
+        if (!retrySessionKey) {
+          throw error;
+        }
+
+        resolvedSessionKey = retrySessionKey;
+        if (resolvedSessionKey !== requestedSessionKey) {
+          rekeyCoworkThread(requestedSessionKey, resolvedSessionKey);
+        }
+
+        const history = await client.getHistory(resolvedSessionKey, 50);
+        normalizedHistory = history.map(normalizeCoworkMessage);
+      }
 
       if (requestId !== coworkLoadRequestRef.current) {
         return;
       }
 
-      void loadCoworkModels(client, requestedSessionKey);
+      commitCoworkSessionKey(resolvedSessionKey);
+      void loadCoworkModels(client, resolvedSessionKey);
 
       setCoworkMessages(normalizedHistory);
       if (normalizedHistory.length > 0) {
-        coworkMessageCache.current.set(requestedSessionKey, normalizedHistory);
+        coworkMessageCache.current.set(resolvedSessionKey, normalizedHistory);
       }
 
       const titleFromHistory = deriveThreadTitleFromMessages(normalizedHistory);
-      upsertCoworkThread(requestedSessionKey, {
+      upsertCoworkThread(resolvedSessionKey, {
         title: titleFromHistory || undefined,
       });
 
@@ -2210,13 +2258,50 @@ export default function App() {
         setStatus(
           titleFromHistory
             ? `${statusMessage}: ${titleFromHistory}`
-            : `${statusMessage}: ${toFallbackThreadTitle(requestedSessionKey, 'cowork')}`,
+            : `${statusMessage}: ${toFallbackThreadTitle(resolvedSessionKey, 'cowork')}`,
         );
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to load cowork session.';
+      const normalizedMessage = message.toLowerCase();
+      const isMissingSession =
+        normalizedMessage.includes('no session found') ||
+        normalizedMessage.includes('no sendable session found') ||
+        normalizedMessage.includes('session not found');
+      if (isMissingSession) {
+        removeThread(requestedSessionKey, 'cowork');
+      }
       setStatus(message);
     }
+  };
+
+  const rekeyCoworkThread = (fromSessionKey: string, toSessionKey: string) => {
+    const from = normalizeSessionKey(fromSessionKey);
+    const to = normalizeSessionKey(toSessionKey);
+    if (!from || !to || from === to) {
+      return;
+    }
+
+    setCoworkThreads((current) => {
+      const source = current.find((thread) => thread.sessionKey === from);
+      const target = current.find((thread) => thread.sessionKey === to);
+      if (!source && !target) {
+        return current;
+      }
+
+      const merged: ChatThread = {
+        id: getThreadIdForSession(to),
+        sessionKey: to,
+        title:
+          target?.title && target.title !== DEFAULT_COWORK_THREAD_TITLE
+            ? target.title
+            : source?.title || target?.title || DEFAULT_COWORK_THREAD_TITLE,
+        updatedAt: Math.max(source?.updatedAt ?? 0, target?.updatedAt ?? 0, Date.now()),
+      };
+
+      const remaining = current.filter((thread) => thread.sessionKey !== from && thread.sessionKey !== to);
+      return mergeChatThreads(remaining, [merged]);
+    });
   };
 
   const ensureConnectedClient = async (client: AgentBackendClient) => {
@@ -2707,12 +2792,86 @@ export default function App() {
   }, [workingFolder]);
 
   useEffect(() => {
-    const client = createDefaultBackendClient();
+    const client = createDefaultBackendClient(config);
+    const generation = gatewayClientGenerationRef.current + 1;
+    gatewayClientGenerationRef.current = generation;
     client.setConnectionHandler((connected, message) => {
+      if (gatewayClientGenerationRef.current !== generation || gatewayClientRef.current !== client) {
+        return;
+      }
       setStatus(message);
       setGatewayConnected(connected);
+      setHealth((prev) => ({
+        ok: connected,
+        message: message || (connected ? (prev?.message ?? 'Connected.') : 'Disconnected.'),
+      }));
     });
     client.setEventHandler((event) => {
+      if (event.type === 'typed_event') {
+        const payload = (event.payload ?? {}) as Record<string, unknown>;
+        const eventSessionKey = typeof payload.sessionKey === 'string' ? payload.sessionKey.trim() : '';
+        if (event.event === 'run.activity') {
+          const rawItems = Array.isArray(payload.activityItems) ? payload.activityItems : [];
+          const items: ChatActivityItem[] = [];
+          for (let index = 0; index < rawItems.length; index += 1) {
+            const item = rawItems[index];
+            if (!item || typeof item !== 'object') continue;
+            const record = item as Record<string, unknown>;
+            const label = typeof record.label === 'string' ? record.label.trim() : '';
+            if (!label) continue;
+            const normalizedLabel = label.toLowerCase();
+            if (
+              normalizedLabel.includes('usage_update') ||
+              normalizedLabel.includes('agent_thought_chunk') ||
+              normalizedLabel.includes('thought_chunk') ||
+              normalizedLabel.startsWith('agent update:')
+            ) {
+              continue;
+            }
+            const id =
+              typeof record.id === 'string' && record.id.trim().length > 0
+                ? record.id.trim()
+                : `activity-${Date.now()}-${index + 1}`;
+            const details = typeof record.details === 'string' ? record.details.trim() : undefined;
+            const toneValue = typeof record.tone === 'string' ? record.tone.trim() : 'neutral';
+            const tone: ChatActivityItem['tone'] =
+              toneValue === 'success' || toneValue === 'danger' || toneValue === 'neutral'
+                ? toneValue
+                : 'neutral';
+            items.push({ id, label, details, tone });
+          }
+          const isCoworkEvent = !!eventSessionKey && eventSessionKey === coworkSessionKeyRef.current;
+          const latestItem = items[items.length - 1];
+          if (!latestItem) {
+            return;
+          }
+          if (isCoworkEvent) {
+            setCoworkLiveActivityItems([latestItem]);
+          } else {
+            setChatLiveActivityItems([latestItem]);
+          }
+          return;
+        }
+        if (event.event === 'run.started') {
+          const isCoworkEvent = !!eventSessionKey && eventSessionKey === coworkSessionKeyRef.current;
+          if (isCoworkEvent) {
+            setCoworkLiveActivityItems([]);
+          } else {
+            setChatLiveActivityItems([]);
+          }
+          return;
+        }
+        if (event.event === 'run.completed') {
+          const isCoworkEvent = !!eventSessionKey && eventSessionKey === coworkSessionKeyRef.current;
+          if (isCoworkEvent) {
+            setCoworkLiveActivityItems([]);
+          } else {
+            setChatLiveActivityItems([]);
+          }
+          return;
+        }
+        return;
+      }
       if (event.type === 'event' && event.event === 'chat') {
         const payload = (event.payload ?? {}) as Record<string, unknown>;
         const eventSessionKey = typeof payload.sessionKey === 'string' ? payload.sessionKey.trim() : '';
@@ -2722,11 +2881,13 @@ export default function App() {
         const state = typeof payload.state === 'string' ? payload.state : 'final';
         const message = payload.message ?? payload;
         const text = extractChatText(message);
-        const visibleText = stripRelayActionPayloadFromText(text);
+        const sanitizedText = stripRelayActionPayloadFromText(text);
+        const visibleText = sanitizedText || text;
         const role = extractChatRole(message);
 
         if (isCoworkEvent) {
           if (state === 'error') {
+            setCoworkLiveActivityItems([]);
             clearCoworkStreamWatchdog();
             setCoworkAwaitingStream(false);
             setCoworkRunPhase('error');
@@ -2792,6 +2953,7 @@ export default function App() {
           }
 
           if (state === 'final' || state === 'aborted') {
+            setCoworkLiveActivityItems([]);
             clearCoworkStreamWatchdog();
             setCoworkAwaitingStream(false);
             setCoworkRunPhase('completed');
@@ -2802,6 +2964,20 @@ export default function App() {
             setCoworkStreamingText(visibleText);
             const streamId = `cowork-stream-${runId}`;
             const finalId = `cowork-final-${runId}`;
+            const contextWindowUsed =
+              typeof payload.contextWindowUsed === 'number' && Number.isFinite(payload.contextWindowUsed)
+                ? Math.max(0, Math.round(payload.contextWindowUsed))
+                : null;
+            const contextWindowSize =
+              typeof payload.contextWindowSize === 'number' && Number.isFinite(payload.contextWindowSize) && payload.contextWindowSize > 0
+                ? Math.round(payload.contextWindowSize)
+                : null;
+            if (contextWindowUsed !== null) {
+              setCoworkContextWindowUsedTokens(contextWindowUsed);
+            }
+            if (contextWindowSize !== null) {
+              setCoworkContextWindowTotalTokens(contextWindowSize);
+            }
             const activeModel = typeof payload.model === 'string' ? payload.model : undefined;
             const coworkUsage = parseUsageFromPayload(payload, activeModel);
             if (coworkUsage) {
@@ -2813,21 +2989,13 @@ export default function App() {
               message,
               payload,
             });
-            const structuredActivityItems = parseRelayActivityItems({
-              text,
-              message,
-              payload,
-            });
-            const fallbackActivityItems = deriveActivityItemsFromAssistantText(visibleText, runId);
-            const activityItems = structuredActivityItems.length > 0 ? structuredActivityItems : fallbackActivityItems;
             const hasStructuredActions = relayActions.length > 0;
-            const hasStructuredActivity = activityItems.length > 0;
             setCoworkMessages((current) => {
               const withoutStream = current.filter((entry) => {
                 if (entry.id === streamId) {
                   return false;
                 }
-                if ((hasStructuredActions || hasStructuredActivity) && entry.id.startsWith('cowork-stream-')) {
+                if (hasStructuredActions && entry.id.startsWith('cowork-stream-')) {
                   return false;
                 }
                 return true;
@@ -2845,29 +3013,6 @@ export default function App() {
               return next;
             });
 
-            if (!hasStructuredActions && hasStructuredActivity) {
-              const activityMessage: ChatMessage = {
-                id: `cowork-activity-${runId}`,
-                role: 'system',
-                text: activityItems.map((item) => item.label).join('\n'),
-                meta: {
-                  kind: 'activity',
-                  items: activityItems,
-                },
-              };
-
-              setCoworkMessages((current) => {
-                if (current.some((entry) => entry.id === activityMessage.id)) {
-                  return current;
-                }
-
-                const next = [...current, activityMessage];
-                if (eventSessionKey) {
-                  coworkMessageCache.current.set(eventSessionKey, next);
-                }
-                return next;
-              });
-            }
             if (eventSessionKey) {
               upsertCoworkThread(eventSessionKey, {
                 touchedAt: Date.now(),
@@ -3104,44 +3249,11 @@ export default function App() {
                 for (let index = 0; index < boundedActions.length; index += 1) {
                   const action = boundedActions[index];
                   const actionId = action.id || `action-${index + 1}`;
-                  const actionPath = action.path ?? '.';
+                  const actionPathRaw = action.path ?? '';
+                  const actionPath = actionPathRaw || '.';
                   const policy = resolveLocalActionPolicy(action.type, safetyScopes);
                   let createFileOverwriteApproved = false;
                   let approvedByOperator = false;
-
-                  const pathValidation = validateProjectRelativePath(actionPath, {
-                    allowEmpty: action.type === 'list_dir',
-                  });
-                  if (!pathValidation.ok) {
-                    const message = `Blocked by project boundary: ${pathValidation.reason}`;
-                    errors.push(`${actionPath || '.'}: ${message}`);
-                    actionReceipts.push({
-                      id: actionId,
-                      type: action.type,
-                      path: actionPath || '.',
-                      status: 'error',
-                      errorCode: 'PROJECT_BOUNDARY_BLOCK',
-                      message,
-                    });
-                    continue;
-                  }
-
-                  if (action.type === 'rename') {
-                    const targetValidation = validateProjectRelativePath(action.newPath);
-                    if (!targetValidation.ok) {
-                      const message = `Blocked by project boundary: ${targetValidation.reason}`;
-                      errors.push(`${action.newPath}: ${message}`);
-                      actionReceipts.push({
-                        id: actionId,
-                        type: action.type,
-                        path: action.newPath,
-                        status: 'error',
-                        errorCode: 'PROJECT_BOUNDARY_BLOCK',
-                        message,
-                      });
-                      continue;
-                    }
-                  }
 
                   if ((action.type === 'create_file' || action.type === 'append_file' || action.type === 'replace_in_file' || action.type === 'rename' || action.type === 'delete') && !runContext.projectId) {
                     const message = 'Blocked: write actions require an active project context.';
@@ -3724,6 +3836,7 @@ export default function App() {
         }
 
         if (state === 'error') {
+          setChatLiveActivityItems([]);
           setAwaitingChatStream(false);
           const errorMessage =
             typeof payload.errorMessage === 'string' && payload.errorMessage.trim()
@@ -3748,10 +3861,25 @@ export default function App() {
           return;
         }
 
-        if ((state === 'final' || state === 'aborted') && text) {
+        if (state === 'final' || state === 'aborted') {
+          setChatLiveActivityItems([]);
           setAwaitingChatStream(false);
           const streamId = `stream-${runId}`;
           const finalId = `final-${runId}`;
+          const contextWindowUsed =
+            typeof payload.contextWindowUsed === 'number' && Number.isFinite(payload.contextWindowUsed)
+              ? Math.max(0, Math.round(payload.contextWindowUsed))
+              : null;
+          const contextWindowSize =
+            typeof payload.contextWindowSize === 'number' && Number.isFinite(payload.contextWindowSize) && payload.contextWindowSize > 0
+              ? Math.round(payload.contextWindowSize)
+              : null;
+          if (contextWindowUsed !== null) {
+            setChatContextWindowUsedTokens(contextWindowUsed);
+          }
+          if (contextWindowSize !== null) {
+            setChatContextWindowTotalTokens(contextWindowSize);
+          }
           const activeModel = typeof payload.model === 'string' ? payload.model : undefined;
           const usage = parseUsageFromPayload(payload, activeModel);
           if (usage) {
@@ -3763,20 +3891,23 @@ export default function App() {
             if (withoutStream.some((entry) => entry.id === finalId)) {
               return withoutStream;
             }
-            const finalMsg = { id: finalId, role, text, ...(usage ? { usage } : {}) };
-            const next = [...withoutStream, finalMsg];
+            const next = visibleText
+              ? [...withoutStream, { id: finalId, role, text: visibleText, ...(usage ? { usage } : {}) }]
+              : withoutStream;
+            const withActivity = next;
             const cacheKey = activeSessionKeyRef.current;
             if (cacheKey) {
-              threadMessageCache.current.set(cacheKey, next);
+              threadMessageCache.current.set(cacheKey, withActivity);
             }
             if (eventSessionKey) {
-              const titleFromMessages = deriveThreadTitleFromMessages(next);
+              const titleFromMessages = deriveThreadTitleFromMessages(withActivity);
               upsertChatThread(eventSessionKey, {
                 title: titleFromMessages || undefined,
                 touchedAt: Date.now(),
               });
+              syncChatSessionTitle(eventSessionKey, titleFromMessages || undefined);
             }
-            return next;
+            return withActivity;
           });
         }
       }
@@ -3784,15 +3915,22 @@ export default function App() {
 
     gatewayClientRef.current = client;
     return () => {
+      if (gatewayClientGenerationRef.current === generation) {
+        gatewayClientGenerationRef.current += 1;
+      }
       clearCoworkStreamWatchdog();
       for (const entry of approvalResolversRef.current.values()) {
         clearTimeout(entry.timeoutId);
       }
       approvalResolversRef.current.clear();
-      gatewayClientRef.current?.disconnect();
-      gatewayClientRef.current = null;
+      if (gatewayClientRef.current === client) {
+        gatewayClientRef.current.disconnect();
+        gatewayClientRef.current = null;
+      } else {
+        client.disconnect();
+      }
     };
-  }, []);
+  }, [config]);
 
   useEffect(() => {
     if (!configReady) {
@@ -3806,6 +3944,12 @@ export default function App() {
 
     const gatewayUrl = normalizeGatewayUrl(config.gatewayUrl ?? '');
     const gatewayToken = config.gatewayToken ?? '';
+    const connectKey = `${gatewayUrl}::${gatewayToken}`;
+    const lastAttempt = gatewayConnectAttemptRef.current;
+    if (lastAttempt.client === client && lastAttempt.key === connectKey && client.isConnected()) {
+      return;
+    }
+    gatewayConnectAttemptRef.current = { client, key: connectKey };
 
     void client
       .connect({
@@ -3813,6 +3957,9 @@ export default function App() {
         token: gatewayToken,
       })
       .then(async () => {
+        if (gatewayClientRef.current !== client) {
+          return;
+        }
         setHealth({ ok: true, message: `Connected to ${gatewayUrl}` });
         markGatewayConnectionLastUsed({
           backendType: 'hermes',
@@ -3825,9 +3972,15 @@ export default function App() {
         await loadRecentChatsFromBackend(client);
       })
       .catch((error: unknown) => {
+        if (gatewayClientRef.current !== client) {
+          return;
+        }
         const info = readGatewayError(error);
         const offlineMessage = info.message || 'Gateway is offline or unreachable.';
         void appendGatewayDiscoveryHint(offlineMessage).then((nextMessage) => {
+          if (gatewayClientRef.current !== client) {
+            return;
+          }
           setHealth({ ok: false, message: nextMessage });
           setStatus(nextMessage);
         });
@@ -3971,6 +4124,7 @@ export default function App() {
       return;
     }
     workingFolderRef.current = workingFolder.trim();
+    setCoworkLiveActivityItems([]);
     setCoworkSending(true);
     setCoworkAwaitingStream(false);
     setCoworkStreamingText('');
@@ -4077,12 +4231,6 @@ export default function App() {
             continue;
           }
 
-          const validated = validateProjectRelativePath(relPath);
-          if (!validated.ok) {
-            snippets.push(`- ${relPath}: skipped (${validated.reason})`);
-            continue;
-          }
-
           if (mentionsDirectory && bridge?.listDirInFolder) {
             try {
               const listing = await bridge.listDirInFolder(folderContext, relPath);
@@ -4131,18 +4279,8 @@ export default function App() {
         rootFolder: folderContext,
         startedAt: Date.now(),
       });
-  const relayFileInstruction = [
-    'If the user request involves local files/folders in any way, your response MUST be ONE JSON code block with relay_actions and no prose.',
-    'Primary code-edit operation: use replace_in_file for targeted edits when a file already exists (Hermes TUI style patching).',
-    'Use append_file only for true appends; use create_file for new files.',
-    'replace_in_file expects exact oldString text and supports replaceAll for multiple matches.',
-    'If exact text is unknown, emit read_file first to fetch the file, then emit replace_in_file.',
-    '```json',
-    '{"relay_actions":[{"id":"a1","type":"list_dir","path":"."},{"id":"a2","type":"read_file","path":"relative/path.ext"},{"id":"a3","type":"replace_in_file","path":"relative/path.ext","oldString":"find this","newString":"replace with this","replaceAll":false},{"id":"a4","type":"create_file","path":"relative/path.ext","content":"file contents","overwrite":false},{"id":"a5","type":"append_file","path":"relative/path.ext","content":"more text"},{"id":"a6","type":"exists","path":"relative/path.ext"},{"id":"a7","type":"rename","path":"old.ext","newPath":"new.ext"},{"id":"a8","type":"delete","path":"obsolete.ext"}]}',
-    '```',
-    'If filenames are unknown, first emit a list_dir action and do not ask follow-up questions.',
-    'Never respond with natural language explanations for file-operation requests.',
-  ].join('\n');
+      const responseStyleInstruction =
+        'Respond in normal assistant prose. Do not output relay_actions JSON or any machine-action envelopes.';
       const projectKnowledgeContext = activeCoworkProject
         ? projectKnowledgeItems
             .filter((item) => item.projectId === activeCoworkProject.id)
@@ -4167,7 +4305,7 @@ export default function App() {
         folderContext ? `Working folder context: ${folderContext}` : '',
         referencedProjectFilesContext,
         webSearchInstruction,
-        relayFileInstruction,
+        responseStyleInstruction,
         '',
         text,
       ]
@@ -4181,6 +4319,29 @@ export default function App() {
       });
       setStatus('Cowork message sent. Waiting for stream...');
       await withTimeout(client.sendChat(sessionKey, outboundMessage), 'Cowork request send');
+      // Reliability sync: recover assistant output from history when stream UI events are dropped.
+      try {
+        const history = await withTimeout(client.getHistory(sessionKey, 20), 'Cowork history sync');
+        const latestAssistant = [...history].reverse().find((entry) => entry.role === 'assistant' && entry.text.trim());
+        if (latestAssistant) {
+          setCoworkMessages((current) => {
+            const exists = current.some((entry) => entry.role === 'assistant' && entry.text.trim() === latestAssistant.text.trim());
+            if (exists) return current;
+            const next = [
+              ...current,
+              {
+                id: `cowork-history-${Date.now()}`,
+                role: 'assistant' as const,
+                text: latestAssistant.text,
+              },
+            ];
+            coworkMessageCache.current.set(sessionKey, next);
+            return next;
+          });
+        }
+      } catch {
+        // Best-effort only.
+      }
       coworkStreamWatchdogRef.current = setTimeout(() => {
         setCoworkAwaitingStream(false);
         setCoworkRunPhase('error');
@@ -5364,6 +5525,7 @@ export default function App() {
     }
 
     setSendingChat(true);
+    setChatLiveActivityItems([]);
     setAwaitingChatStream(false);
     handleChatPromptChange('');
 
@@ -5391,11 +5553,15 @@ export default function App() {
         return next;
       });
 
+      const generatedThreadTitle = deriveThreadTitleFromMessages([
+        { id: `seed-title-${Date.now()}`, role: 'user', text },
+      ]);
       upsertChatThread(sessionKey, {
-        title: text,
+        title: generatedThreadTitle || text,
         touchedAt: Date.now(),
-        createIfMissing: false,
+        createIfMissing: true,
       });
+      syncChatSessionTitle(sessionKey, generatedThreadTitle || text);
 
       const rawOutbound = buildOutboundChatPrompt(text, chatMessages);
       const chatMemoryContext = preferences.injectMemory
@@ -5496,27 +5662,27 @@ export default function App() {
       return;
     }
 
-    const sessionKey = normalizeSessionKey(coworkSessionKeyRef.current);
-    if (!sessionKey) {
-      setStatus(
-        nextModelValue
-          ? `Cowork model selected: ${nextModelValue}. It will apply on the next task run.`
-          : 'Cowork model reset to default. It will apply on the next task run.',
-      );
-      return;
-    }
-
     setChangingCoworkModel(true);
     try {
       await ensureConnectedClient(client);
+      let sessionKey = normalizeSessionKey(coworkSessionKeyRef.current);
+      if (!sessionKey) {
+        sessionKey = normalizeSessionKey(await client.createCoworkSession());
+        if (!sessionKey) {
+          throw new Error('No cowork session key returned while applying model.');
+        }
+        commitCoworkSessionKey(sessionKey);
+      }
+
       await client.setSessionModel(sessionKey, nextModelValue || null);
       setStatus(
         nextModelValue
-          ? `Cowork model updated in Hermes: ${nextModelValue}. Next run will start a fresh session to apply it.`
-          : 'Cowork model reset to default. Next run will start a fresh session to apply it.',
+          ? `Cowork model applied: ${nextModelValue}.`
+          : 'Cowork model reset to server default.',
       );
       commitCoworkSessionKey('');
       setCoworkMessages([]);
+      void loadCoworkModels(client);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update cowork model.';
       setStatus(message);
@@ -5607,6 +5773,17 @@ export default function App() {
     const normalized = sessionKey.trim();
     if (!normalized) {
       return;
+    }
+
+    // Save current cowork messages before switching.
+    const currentKey = coworkSessionKeyRef.current;
+    if (currentKey) {
+      setCoworkMessages((current) => {
+        if (current.length > 0) {
+          coworkMessageCache.current.set(currentKey, current);
+        }
+        return current;
+      });
     }
 
     setActivePage('cowork');
@@ -6094,6 +6271,7 @@ export default function App() {
                   canRerunLastTask={activePage === 'cowork' ? Boolean(latestVisibleCoworkTaskPrompt) : false}
                   taskPrompt={activePage === 'cowork' ? coworkDraftPrompt : chatDraftPrompt}
                   messages={activePage === 'cowork' ? coworkMessages : chatMessages}
+                  liveActivityItems={activePage === 'cowork' ? coworkLiveActivityItems : chatLiveActivityItems}
                   rightPanelOpen={activePage === 'cowork' ? coworkRightPanelOpen : false}
                   awaitingStream={activePage === 'cowork' ? coworkAwaitingStream : awaitingChatStream}
                   artifacts={activePage === 'cowork' ? coworkArtifacts : []}
@@ -6121,8 +6299,8 @@ export default function App() {
                   progressSteps={activePage === 'cowork' ? coworkProgressSteps : []}
                   approvalMode="none"
                   projectPathReferences={activePage === 'cowork' ? coworkProjectPathReferences : []}
-                  contextWindowUsedTokens={0}
-                  contextWindowTotalTokens={1}
+                  contextWindowUsedTokens={activePage === 'cowork' ? coworkContextWindowUsedTokens : chatContextWindowUsedTokens}
+                  contextWindowTotalTokens={activePage === 'cowork' ? coworkContextWindowTotalTokens : chatContextWindowTotalTokens}
                   onOpenGatewaySettings={() => {
                     setActivePage('settings');
                     setSettingsSection('Gateway');
@@ -6132,8 +6310,9 @@ export default function App() {
                   onWebSearchEnabledChange={setCoworkWebSearchEnabled}
                   onApprovalModeChange={() => {}}
                   onSubmit={activePage === 'cowork' ? handlePlanTask : handleSendChat}
-                  onApprovePendingAction={() => {}}
-                  onRejectPendingAction={() => {}}
+                  onApprovePendingAction={handleApprovePendingAction}
+                  onApprovePendingActionAlways={handleApprovePendingActionAlways}
+                  onRejectPendingAction={handleRejectPendingAction}
                   fileChangeSummary={fileChangeSummary}
                   undoingFileChanges={undoingFileChanges}
                   onUndoFileChanges={handleUndoFileChanges}
@@ -6175,16 +6354,9 @@ export default function App() {
                   status={status}
                   saving={saving}
                   preferences={preferences}
-                  gatewayConnections={gatewayConnections}
-                  selectedGatewayConnectionId={selectedGatewayConnectionId}
                   onDraftGatewayUrlChange={setDraftGatewayUrl}
                   onDraftGatewayTokenChange={setDraftGatewayToken}
                   onSave={handleSave}
-                  onSelectGatewayConnection={handleSelectGatewayConnection}
-                  onSaveGatewayConnection={handleSaveGatewayConnection}
-                  onOverwriteGatewayConnection={handleOverwriteGatewayConnection}
-                  onDeleteGatewayConnection={handleDeleteGatewayConnection}
-                  onQuickConnectHermes={handleQuickConnectHermes}
                   onUpdatePreferences={updatePreferences}
                 />
               ) : (

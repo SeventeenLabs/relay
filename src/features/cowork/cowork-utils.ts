@@ -50,6 +50,7 @@ export function taskStatusLabel(status: CoworkProjectTaskStatus): string {
 }
 
 export function isSystemLikeMessage(message: ChatMessage): boolean {
+  // Keep non-activity system noise hidden, but show structured activity updates/tool progress.
   return message.role === 'system' && message.meta?.kind !== 'activity';
 }
 
@@ -58,12 +59,14 @@ export function extractInlineActivityCards(message: ChatMessage): { body: string
     return { body: message.text, cards: [] };
   }
 
-  const toCard = (item: ChatActivityItem): InlineActivityCard => ({
-    id: item.id,
-    label: item.label,
-    details: item.details || `Raw event: ${item.label}`,
-    tone: item.tone,
-  });
+  // Legacy inline card renderer removed: return simple plain-text activity output.
+  const body = message.meta.items
+    .map((item) => {
+      const label = item.label?.trim() || 'Activity';
+      const details = item.details?.trim() || '';
+      return details ? `${label}\n${details}` : label;
+    })
+    .join('\n\n');
 
-  return { body: '', cards: message.meta.items.map(toCard) };
+  return { body: body || message.text || 'Activity update', cards: [] };
 }

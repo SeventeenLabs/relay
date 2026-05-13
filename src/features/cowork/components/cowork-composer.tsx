@@ -60,7 +60,6 @@ export function CoworkComposer({
 
   const [composerText, setComposerText] = useState(taskPrompt);
   const [openDropdown, setOpenDropdown] = useState<'model' | 'effort' | 'approvals' | null>(null);
-  const [modelProviderFilter, setModelProviderFilter] = useState<string>('all');
   const [modelSearchQuery, setModelSearchQuery] = useState('');
   const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
   const [mentionMenuIndex, setMentionMenuIndex] = useState(0);
@@ -122,14 +121,9 @@ export function CoworkComposer({
 
   const visibleProviderBuckets = useMemo(() => {
     const query = modelSearchQuery.trim().toLowerCase();
-    const providerScopedBuckets =
-      modelProviderFilter === 'all'
-        ? modelProviderBuckets
-        : modelProviderBuckets.filter((bucket) => bucket.provider === modelProviderFilter);
+    if (!query) return modelProviderBuckets;
 
-    if (!query) return providerScopedBuckets;
-
-    return providerScopedBuckets
+    return modelProviderBuckets
       .map((bucket) => ({
         ...bucket,
         entries: bucket.entries.filter((model) => {
@@ -144,7 +138,7 @@ export function CoworkComposer({
         }),
       }))
       .filter((bucket) => bucket.entries.length > 0);
-  }, [modelProviderBuckets, modelProviderFilter, modelSearchQuery]);
+  }, [modelProviderBuckets, modelSearchQuery]);
 
   const totalModelCount = useMemo(
     () => modelProviderBuckets.reduce((sum, bucket) => sum + bucket.entries.length, 0),
@@ -234,13 +228,7 @@ export function CoworkComposer({
   useEffect(() => {
     if (openDropdown !== 'model') return;
     setModelSearchQuery('');
-    if (selectedModelOption?.provider) {
-      setModelProviderFilter(selectedModelOption.provider);
-      return;
-    }
-    const firstProvider = modelProviderBuckets[0]?.provider ?? 'all';
-    setModelProviderFilter(firstProvider);
-  }, [modelProviderBuckets, openDropdown, selectedModelOption?.provider]);
+  }, [openDropdown]);
 
   const executeMentionCommand = (index: number) => {
     const command = mentionCommands[index];
@@ -603,9 +591,12 @@ export function CoworkComposer({
       </div>
 
       {(modelsLoading || changingModel || !hasModelChoices) && (
-        <p className="px-1 font-sans text-[11px] text-muted-foreground">
-          {modelsLoading ? 'Loading models...' : changingModel ? 'Switching model...' : 'No models available from Hermes'}
-        </p>
+        <div className="space-y-1 px-1">
+          <p className="font-sans text-[11px] text-muted-foreground">
+            {modelsLoading ? 'Loading models...' : changingModel ? 'Switching model...' : 'No models available from Hermes'}
+          </p>
+          {!modelsLoading && !changingModel ? <p className="font-sans text-[11px] text-muted-foreground/80">Check Hermes provider setup in WSL (`hermes model list`).</p> : null}
+        </div>
       )}
     </div>
   );

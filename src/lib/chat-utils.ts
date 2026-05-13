@@ -106,6 +106,7 @@ const RECENT_CHAT_CHARS_PER_MESSAGE = 500;
 const SIDEBAR_RECENTS_LIMIT = 7;
 const SIDEBAR_RECENT_LABEL_LIMIT = 88;
 const MAX_THREAD_STORE_ITEMS = 100;
+const THREAD_TITLE_TARGET_CHARS = 60;
 
 /* ── Message extraction ──────────────────────────────────────────────────── */
 
@@ -246,9 +247,73 @@ export function findMatchingSessionKey(sessionKeys: string[], requestedKey: stri
 
 /* ── Thread utilities ────────────────────────────────────────────────────── */
 
+const THREAD_TITLE_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'can', 'could', 'did', 'do', 'does', 'for', 'from', 'get',
+  'got', 'had', 'has', 'have', 'help', 'how', 'i', 'if', 'in', 'into', 'is', 'it', 'its', 'just', 'let', 'like',
+  'make', 'me', 'my', 'new', 'of', 'on', 'or', 'our', 'please', 'should', 'so', 'that', 'the', 'their', 'them', 'then',
+  'there', 'they', 'this', 'to', 'use', 'want', 'we', 'what', 'when', 'where', 'which', 'why', 'with', 'you', 'your',
+]);
+
+function normalizeTitleSourceText(raw: string): string {
+  return raw
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function trimLeadInPhrases(text: string): string {
+  return text
+    .replace(/^\s*(can\s+you|could\s+you|would\s+you|please|i\s+need\s+you\s+to|i\s+need\s+help\s+with|help\s+me\s+)(:|-)?\s*/i, '')
+    .replace(/^\s*(let'?s|lets)\s+/i, '')
+    .trim();
+}
+
+function toHeadlineCase(text: string): string {
+  const smallWords = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'vs', 'via']);
+  const words = text.split(/\s+/).filter(Boolean);
+  return words
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (word.toUpperCase() === word && word.length <= 5) {
+        return word;
+      }
+      if (index > 0 && index < words.length - 1 && smallWords.has(lower)) {
+        return lower;
+      }
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(' ');
+}
+
 export function deriveThreadTitleFromMessages(messages: ChatMessage[]): string {
   const firstUserMessage = messages.find((message) => message.role === 'user' && message.text.trim())?.text ?? '';
-  return toRecentSidebarLabel(firstUserMessage);
+  if (!firstUserMessage.trim()) {
+    return '';
+  }
+
+  const normalizedUserText = trimLeadInPhrases(normalizeTitleSourceText(firstUserMessage));
+  const primarySegment = normalizedUserText
+    .split(/[.!?\n:;]+/)
+    .map((segment) => segment.trim())
+    .find(Boolean) ?? normalizedUserText;
+
+  const words = primarySegment
+    .toLowerCase()
+    .match(/[a-z0-9][a-z0-9'_-]*/gi) ?? [];
+
+  const keywords = words.filter((word) => !THREAD_TITLE_STOP_WORDS.has(word));
+
+  const keywordPhrase = keywords.slice(0, 6).join(' ').trim();
+  const rawTitle = keywordPhrase.length >= 12 ? keywordPhrase : primarySegment;
+  const compactTitle = rawTitle.replace(/\s{2,}/g, ' ').trim();
+
+  if (!compactTitle) {
+    return '';
+  }
+
+  return toRecentSidebarLabel(toHeadlineCase(compactTitle));
 }
 
 export function toFallbackThreadTitle(sessionKey: string, kind: 'chat' | 'cowork' = 'chat'): string {

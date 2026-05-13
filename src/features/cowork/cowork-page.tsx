@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 
 import type {
+  ChatActivityItem,
   ChatMessage,
   ChatModelOption,
   CoworkArtifact,
@@ -40,6 +41,7 @@ type CoworkPageProps = {
   canRerunLastTask: boolean;
   taskPrompt: string;
   messages: ChatMessage[];
+  liveActivityItems: ChatActivityItem[];
   rightPanelOpen: boolean;
   awaitingStream: boolean;
   artifacts: CoworkArtifact[];
@@ -68,6 +70,7 @@ type CoworkPageProps = {
   onApprovalModeChange: (mode: 'standard' | 'project' | 'none') => void;
   onSubmit: (event: FormEvent) => void | Promise<void>;
   onApprovePendingAction: (approvalId: string) => void;
+  onApprovePendingActionAlways: (approvalId: string) => void;
   onRejectPendingAction: (approvalId: string, reason: string) => void;
   fileChangeSummary?: FileChangeSummary | null;
   undoingFileChanges?: boolean;
@@ -99,6 +102,7 @@ export function CoworkPage(props: CoworkPageProps) {
     projectSelected,
     taskPrompt,
     messages,
+    liveActivityItems,
     awaitingStream,
     selectedModel,
     models,
@@ -119,6 +123,7 @@ export function CoworkPage(props: CoworkPageProps) {
     onApprovalModeChange,
     onSubmit,
     onApprovePendingAction,
+    onApprovePendingActionAlways,
     onRejectPendingAction,
     fileChangeSummary,
     undoingFileChanges = false,
@@ -311,6 +316,7 @@ export function CoworkPage(props: CoworkPageProps) {
                         }))
                       }
                       onApprovePendingAction={onApprovePendingAction}
+                      onApprovePendingActionAlways={onApprovePendingActionAlways}
                       onRejectPendingAction={onRejectPendingAction}
                     />
 
@@ -347,6 +353,7 @@ export function CoworkPage(props: CoworkPageProps) {
                 sending={sending}
                 awaitingStream={awaitingStream}
                 assistantActivityLabel={assistantActivityLabel}
+                liveActivityItems={liveActivityItems}
                 fileChangeSummary={fileChangeSummary}
                 undoingFileChanges={undoingFileChanges}
                 onUndoFileChanges={onUndoFileChanges}
@@ -371,6 +378,7 @@ export function CoworkPage(props: CoworkPageProps) {
                   }))
                 }
                 onApprovePendingAction={onApprovePendingAction}
+                onApprovePendingActionAlways={onApprovePendingActionAlways}
                 onRejectPendingAction={onRejectPendingAction}
               />
 

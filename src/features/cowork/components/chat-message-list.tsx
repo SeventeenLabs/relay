@@ -1,8 +1,8 @@
-import { ChevronRight, FileText, Loader2 } from 'lucide-react';
+import { ChevronRight, FileText, Loader2, TerminalSquare } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import type { ChatMessage, FileChangeSummary } from '@/app-types';
+import type { ChatActivityItem, ChatMessage, FileChangeSummary } from '@/app-types';
 import { FileChangeSummaryCard } from '@/components/chat/file-change-summary';
 import { chatMarkdownComponents } from '@/lib/chat-markdown';
 import { extractInlineActivityCards } from '../cowork-utils';
@@ -14,6 +14,7 @@ type ChatMessageListProps = {
   sending: boolean;
   awaitingStream: boolean;
   assistantActivityLabel: string;
+  liveActivityItems: ChatActivityItem[];
   fileChangeSummary?: FileChangeSummary | null;
   undoingFileChanges?: boolean;
   onUndoFileChanges?: () => void;
@@ -42,6 +43,7 @@ export function ChatMessageList({
   sending,
   awaitingStream,
   assistantActivityLabel,
+  liveActivityItems,
   fileChangeSummary,
   undoingFileChanges = false,
   onUndoFileChanges,
@@ -122,12 +124,24 @@ export function ChatMessageList({
         );
       })}
 
-      {(sending || awaitingStream) ? (
+      {(sending || awaitingStream || liveActivityItems.length > 0) ? (
         <article className="mx-auto w-full max-w-[720px] px-2 py-0 font-sans text-sm text-foreground">
           <div className="inline-flex items-center gap-2 rounded-xl bg-muted px-3 py-2 font-sans text-sm text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             {assistantActivityLabel || 'Thinking...'}
           </div>
+          {liveActivityItems.length > 0 ? (
+            <div className="mt-2 grid gap-1.5">
+              {liveActivityItems.slice(-1).map((item) => (
+                <div key={item.id} className="inline-flex items-center gap-2 rounded-lg border border-border/70 bg-card px-3 py-2">
+                  <TerminalSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                  <p className="max-w-[560px] overflow-hidden text-ellipsis whitespace-nowrap font-sans text-xs text-foreground" title={item.label}>
+                    {item.label}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </article>
       ) : null}
 
