@@ -223,27 +223,21 @@ export function CoworkPage(props: CoworkPageProps) {
     return () => window.clearInterval(timer);
   }, [activeWorkStartedAt]);
 
-  if (!hermesConnected) {
-    return (
-      <section className="grid h-full w-full place-items-center p-6">
-        <div className="w-full max-w-xl rounded-2xl border border-border bg-card p-6 text-center">
-          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-muted">
-            <WifiOff className="h-5 w-5 text-muted-foreground" />
-          </div>
-          <h2 className="text-lg font-semibold">Cowork is offline</h2>
-          <p className="mt-2 font-sans text-sm text-muted-foreground">
-            Connect Hermes to run cowork tasks and access project context.
-          </p>
-          <Button type="button" className="mt-4" onClick={onOpenConnectionSettings}>
-            Open Connection Settings
-          </Button>
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section data-slot="cowork-surface" className="grid h-full w-full min-h-0 overflow-hidden p-0">
+      {!hermesConnected ? (
+        <div className="absolute inset-x-0 top-9 z-30 mx-3 mt-2 rounded-lg border border-border bg-card/95 px-3 py-2 backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <WifiOff className="h-4 w-4" />
+              <span>Cowork is offline. Reconnect Hermes to send new tasks.</span>
+            </div>
+            <Button type="button" size="sm" variant="outline" onClick={onOpenConnectionSettings}>
+              Open Connection Settings
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <header className="absolute inset-x-0 top-0 z-20 flex h-9 items-center justify-between bg-background px-3">
         <button
           type="button"

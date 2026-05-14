@@ -31,6 +31,7 @@ import {
   HERMES_DEFAULT_DASHBOARD_PORT,
   HERMES_DEFAULT_GATEWAY_PORT,
 } from '../src/lib/hermes-constants.js';
+import { HermesAcpBridge } from './hermes-acp-bridge.js';
 
 const defaultConfig: AppConfig = {
   backendType: 'hermes',
@@ -114,6 +115,31 @@ function logHermesMain(level: 'info' | 'warn' | 'error', message: string, meta?:
   console.info(HERMES_MAIN_LOG_PREFIX, message, meta ?? '');
 }
 
+function describeFetchFailure(error: unknown, targetUrl: string): string {
+  const fallback = error instanceof Error ? error.message : String(error);
+  const cause = (error as { cause?: { code?: string; errno?: number; syscall?: string; address?: string; port?: number; message?: string } })?.cause;
+  const code = typeof cause?.code === 'string' ? cause.code : '';
+  if (code === 'ECONNREFUSED') {
+    return `Connection refused to ${targetUrl}. SSH tunnel may be closed or remote Hermes is not listening.`;
+  }
+  if (code === 'ETIMEDOUT') {
+    return `Connection timed out reaching ${targetUrl}. Check tunnel/network/firewall.`;
+  }
+  if (code === 'ENOTFOUND') {
+    return `Host not found for ${targetUrl}. Check hostname/IP and DNS.`;
+  }
+  if (code === 'EHOSTUNREACH' || code === 'ENETUNREACH') {
+    return `Network unreachable for ${targetUrl}.`;
+  }
+  if (fallback.toLowerCase().includes('aborted') || fallback.toLowerCase().includes('timeout')) {
+    return `Request timed out reaching ${targetUrl}.`;
+  }
+  if (cause?.message) {
+    return `${fallback}. Cause: ${cause.message}`;
+  }
+  return fallback;
+}
+
 const isLoopbackHost = (host: string) => host === 'localhost' || host === '127.0.0.1' || host === '::1';
 
 const normalizeGatewayHttpBase = (value: string) => {
@@ -125,6 +151,17 @@ const normalizeGatewayHttpBase = (value: string) => {
 
 const resolveGatewayBaseForMain = async (baseUrl: string): Promise<string> => {
   return normalizeGatewayHttpBase(baseUrl.trim());
+};
+
+const normalizeStoredTransport = (
+  transport: unknown,
+  gatewayUrl: string,
+): AppConfig['transport'] => {
+  const normalizedGateway = gatewayUrl.trim().toLowerCase();
+  if (normalizedGateway.startsWith('ssh://') || normalizedGateway.startsWith('acp://')) {
+    return 'hermes_acp_stdio';
+  }
+  return transport === 'hermes_acp_stdio' ? 'hermes_acp_stdio' : 'hermes_http';
 };
 
 type GatewayMode = 'local' | 'remote';
@@ -885,8 +922,9 @@ async function readConfig(): Promise<AppConfig> {
       (parsed.baseUrl ? parsed.baseUrl : defaultConfig.gatewayUrl);
 
     const backendType: AppConfig['backendType'] = 'hermes';
-    const transport = 'hermes_http';
     const normalizedStoredGatewayUrl = inferredGatewayUrl.trim();
+    const transport = normalizeStoredTransport(parsed.transport, normalizedStoredGatewayUrl);
+
     const fallbackGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
     const gatewayUrl = normalizedStoredGatewayUrl || fallbackGatewayUrl;
     return {
@@ -902,8 +940,8 @@ async function readConfig(): Promise<AppConfig> {
 
 async function writeConfig(config: AppConfig): Promise<AppConfig> {
   const normalizedBackendType: AppConfig['backendType'] = 'hermes';
-  const normalizedTransport = 'hermes_http';
   const normalizedGatewayUrlInput = config.gatewayUrl.trim();
+  const normalizedTransport = normalizeStoredTransport(config.transport, normalizedGatewayUrlInput);
   const fallbackGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
   const normalizedGatewayUrl = normalizedGatewayUrlInput || fallbackGatewayUrl;
 
@@ -1002,6 +1040,13 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  const acpBridge = new HermesAcpBridge();
+  acpBridge.setUpdateCallback((event) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send('acp:event', event);
+    }
+  });
+
   app.setAppUserModelId(WINDOWS_APP_ID);
   Menu.setApplicationMenu(null);
   registerDevContentSecurityPolicy();
@@ -1009,6 +1054,59 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('config:get', async () => readConfig());
   ipcMain.handle('config:save', async (_event, config: AppConfig) => writeConfig(config));
+  ipcMain.handle(
+    'acp:connect',
+    async (
+      _event,
+      payload?: {
+        gatewayUrl?: string;
+        cwd?: string;
+      },
+    ) => {
+      return acpBridge.connect({
+        gatewayUrl: typeof payload?.gatewayUrl === 'string' ? payload.gatewayUrl : undefined,
+        cwd: typeof payload?.cwd === 'string' ? payload.cwd : undefined,
+      });
+    },
+  );
+  ipcMain.handle('acp:disconnect', async () => acpBridge.disconnect());
+  ipcMain.handle('acp:create-session', async (_event, payload?: { cwd?: string }) =>
+    acpBridge.createSession({
+      cwd: typeof payload?.cwd === 'string' ? payload.cwd : undefined,
+    }),
+  );
+  ipcMain.handle(
+    'acp:prompt',
+    async (
+      _event,
+      payload: {
+        sessionId: string;
+        text: string;
+      },
+    ) =>
+      acpBridge.prompt({
+        sessionId: payload.sessionId,
+        text: payload.text,
+      }),
+  );
+  ipcMain.handle('acp:list-sessions', async () => acpBridge.listSessions());
+  ipcMain.handle(
+    'acp:set-session-model',
+    async (
+      _event,
+      payload: {
+        sessionId: string;
+        model: string;
+      },
+    ) =>
+      acpBridge.setSessionModel({
+        sessionId: payload.sessionId,
+        model: payload.model,
+      }),
+  );
+  ipcMain.handle('acp:cancel', async (_event, payload: { sessionId: string }) =>
+    acpBridge.cancel({ sessionId: payload.sessionId }),
+  );
   ipcMain.handle('backend:health-check', async (_event, baseUrl: string) => runHealthCheck(baseUrl));
   ipcMain.handle(
     'backend:http-request',
@@ -1040,11 +1138,20 @@ app.whenReady().then(async () => {
       }
 
       const resolvedBaseUrl = await resolveGatewayBaseForMain(baseUrl);
-      const response = await fetch(`${resolvedBaseUrl}${path}`, {
-        method,
-        headers,
-        body: typeof payload?.body === 'string' ? payload.body : undefined,
-      });
+      const requestUrl = `${resolvedBaseUrl}${path}`;
+      let response: Response;
+      try {
+        response = await fetch(requestUrl, {
+          method,
+          headers,
+          body: typeof payload?.body === 'string' ? payload.body : undefined,
+          signal: AbortSignal.timeout(15_000),
+        });
+      } catch (error) {
+        const detail = describeFetchFailure(error, requestUrl);
+        logHermesMain('warn', 'backend:http-request failed', { method, requestUrl, detail });
+        throw new Error(detail);
+      }
 
       const text = await response.text();
       return {

@@ -24,6 +24,14 @@ type RelayApi = {
   hermesSetMainModel: (payload: { gatewayUrl?: string; provider: string; model: string }) => Promise<{ ok: boolean; provider: string; model: string; confirmedProvider?: string; confirmedModel?: string }>;
   hermesServiceStatus: () => Promise<{ gateway: boolean; apiServer: boolean; dashboard: boolean }>;
   hermesStartAllServices: () => Promise<{ ok: boolean; gateway: boolean; apiServer: boolean; dashboard: boolean; message?: string }>;
+  acpConnect: (payload?: { gatewayUrl?: string; cwd?: string }) => Promise<{ ok: boolean; sessionId: string }>;
+  acpDisconnect: () => Promise<{ ok: boolean }>;
+  acpCreateSession: (payload?: { cwd?: string }) => Promise<{ sessionId: string }>;
+  acpPrompt: (payload: { sessionId: string; text: string }) => Promise<{ stopReason: string }>;
+  acpListSessions: () => Promise<Array<{ id: string; title?: string; cwd?: string }>>;
+  acpSetSessionModel: (payload: { sessionId: string; model: string }) => Promise<{ ok: boolean; message?: string }>;
+  acpCancel: (payload: { sessionId: string }) => Promise<{ ok: boolean }>;
+  onAcpEvent: (handler: (event: { sessionId: string; update: unknown }) => void) => (() => void);
   minimizeWindow: () => Promise<void>;
   toggleMaximizeWindow: () => Promise<boolean>;
   isWindowMaximized: () => Promise<boolean>;

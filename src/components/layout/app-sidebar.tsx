@@ -60,7 +60,7 @@ import {
 } from '@/components/ui/sidebar';
 
 type AppPage = 'chat' | 'cowork' | 'project' | 'settings';
-type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Gateway' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
+type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Connection' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 type AppLanguage = 'en' | 'de';
 
 type RecentSidebarItem = {
@@ -130,7 +130,7 @@ const sectionLabels: Record<SettingsSection, { en: string; de: string }> = {
   Profile: { en: 'Profile', de: 'Profil' },
   Appearance: { en: 'Appearance', de: 'Darstellung' },
   'System Prompt': { en: 'System Prompt', de: 'System-Prompt' },
-  Gateway: { en: 'Connection', de: 'Verbindung' },
+  Connection: { en: 'Connection', de: 'Verbindung' },
   Connectors: { en: 'Connectors', de: 'Konnektoren' },
   Account: { en: 'Account', de: 'Konto' },
   Privacy: { en: 'Privacy', de: 'Datenschutz' },
@@ -1155,4 +1155,5 @@ export function AppSidebar({
     </Sidebar>
   );
 }
+
 

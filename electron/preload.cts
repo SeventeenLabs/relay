@@ -31,6 +31,29 @@ const api = {
     ipcRenderer.invoke('hermes:service-status') as Promise<{ gateway: boolean; apiServer: boolean; dashboard: boolean }>,
   hermesStartAllServices: () =>
     ipcRenderer.invoke('hermes:start-all-services') as Promise<{ ok: boolean; gateway: boolean; apiServer: boolean; dashboard: boolean; message?: string }>,
+  acpConnect: (payload?: { gatewayUrl?: string; cwd?: string }) =>
+    ipcRenderer.invoke('acp:connect', payload) as Promise<{ ok: boolean; sessionId: string }>,
+  acpDisconnect: () =>
+    ipcRenderer.invoke('acp:disconnect') as Promise<{ ok: boolean }>,
+  acpCreateSession: (payload?: { cwd?: string }) =>
+    ipcRenderer.invoke('acp:create-session', payload) as Promise<{ sessionId: string }>,
+  acpPrompt: (payload: { sessionId: string; text: string }) =>
+    ipcRenderer.invoke('acp:prompt', payload) as Promise<{ stopReason: string }>,
+  acpListSessions: () =>
+    ipcRenderer.invoke('acp:list-sessions') as Promise<Array<{ id: string; title?: string; cwd?: string }>>,
+  acpSetSessionModel: (payload: { sessionId: string; model: string }) =>
+    ipcRenderer.invoke('acp:set-session-model', payload) as Promise<{ ok: boolean; message?: string }>,
+  acpCancel: (payload: { sessionId: string }) =>
+    ipcRenderer.invoke('acp:cancel', payload) as Promise<{ ok: boolean }>,
+  onAcpEvent: (handler: (event: { sessionId: string; update: unknown }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { sessionId: string; update: unknown }) => {
+      handler(payload);
+    };
+    ipcRenderer.on('acp:event', listener);
+    return () => {
+      ipcRenderer.removeListener('acp:event', listener);
+    };
+  },
   minimizeWindow: () => ipcRenderer.invoke('window:minimize') as Promise<void>,
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggle-maximize') as Promise<boolean>,
   isWindowMaximized: () => ipcRenderer.invoke('window:is-maximized') as Promise<boolean>,

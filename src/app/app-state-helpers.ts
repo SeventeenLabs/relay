@@ -49,14 +49,14 @@ export const defaultConfig: AppConfig = {
 };
 
 export type AppPage = 'chat' | 'cowork' | 'project' | 'settings';
-export type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Gateway' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
+export type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Connection' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 
 export const COWORK_SEND_SPINNER_MS = 300;
 export const COWORK_PREP_TIMEOUT_MS = 15_000;
 export const COWORK_STREAM_WATCHDOG_MS = 45_000;
 export const MAX_LOCAL_ACTIONS_PER_RUN = 20;
 export const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000;
-export const COWORK_CONTEXT_CONNECTORS = ['Web search', 'Desktop files', 'Gateway tools'];
+export const COWORK_CONTEXT_CONNECTORS = ['Web search', 'Desktop files', 'Hermes tools'];
 
 const COWORK_PROGRESS_SEQUENCE: Array<{ stage: CoworkProgressStage; label: string }> = [
   { stage: 'planning', label: 'Planning' },
@@ -202,7 +202,8 @@ export function loadGatewayConnectionProfiles(): GatewayConnectionProfile[] {
         const name = typeof record.name === 'string' ? record.name.trim() : '';
         const rawGatewayUrl = typeof record.gatewayUrl === 'string' ? record.gatewayUrl.trim() : '';
         const backendType: AppConfig['backendType'] = 'hermes';
-        const transport: HermesTransport = DEFAULT_TRANSPORT;
+        const transport: HermesTransport =
+          record.transport === 'hermes_acp_stdio' ? 'hermes_acp_stdio' : DEFAULT_TRANSPORT;
         const gatewayUrl = rawGatewayUrl || DEFAULT_HERMES_GATEWAY_URL;
         const gatewayToken = typeof record.gatewayToken === 'string' ? record.gatewayToken : '';
         const createdAt = typeof record.createdAt === 'number' ? record.createdAt : Date.now();
@@ -508,3 +509,4 @@ export function loadOperatorRuns(): OperatorRun[] {
     return [];
   }
 }
+

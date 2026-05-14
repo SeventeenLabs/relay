@@ -1,10 +1,11 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Code2, Folder, Globe, KeyRound, Link2, Shield, Terminal } from 'lucide-react';
 
-import type { UserPreferences } from '@/app-types';
+import type { HealthCheckResult, HermesTransport, UserPreferences } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { listConnectors, persistConnectorConfig } from '@/lib/connectors';
 import { loadAllowedDomains, saveAllowedDomains } from '@/lib/connectors/web-fetch';
@@ -12,7 +13,7 @@ import type { ConnectorDefinition } from '@/lib/connectors/connector-types';
 
 type AppLanguage = 'en' | 'de';
 
-type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Gateway' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
+type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Connection' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 
 type StyleOption = UserPreferences['style'];
 type ThemeOption = UserPreferences['theme'];
@@ -20,7 +21,19 @@ type ThemeOption = UserPreferences['theme'];
 type SettingsPageProps = {
   activeSection: SettingsSection;
   preferences: UserPreferences;
+  transport: HermesTransport;
+  draftHermesEndpoint: string;
+  draftHermesToken: string;
+  health: HealthCheckResult | null;
+  saving: boolean;
+  testingConnection: boolean;
   onUpdatePreferences: (patch: Partial<UserPreferences>) => void;
+  onTransportChange: (value: HermesTransport) => void;
+  ondraftHermesEndpointChange: (value: string) => void;
+  ondraftHermesTokenChange: (value: string) => void;
+  onTestConnection: () => void | Promise<void>;
+  onConnectHermes: () => void | Promise<void>;
+  onReopenOnboarding: () => void;
 };
 
 const sectionDescriptions: Record<SettingsSection, { en: string; de: string }> = {
@@ -36,7 +49,7 @@ const sectionDescriptions: Record<SettingsSection, { en: string; de: string }> =
     en: 'Default instructions for every conversation.',
     de: 'Standardanweisungen fuer jede Konversation.',
   },
-  Gateway: {
+  Connection: {
     en: 'Connection settings.',
     de: 'Verbindungseinstellungen.',
   },
@@ -198,7 +211,19 @@ function ThemePreview({ mode, style }: { mode: ThemeOption; style: StyleOption }
 export function SettingsPage({
   activeSection,
   preferences,
+  transport,
+  draftHermesEndpoint,
+  draftHermesToken,
+  health,
+  saving,
+  testingConnection,
   onUpdatePreferences,
+  onTransportChange,
+  ondraftHermesEndpointChange,
+  ondraftHermesTokenChange,
+  onTestConnection,
+  onConnectHermes,
+  onReopenOnboarding,
 }: SettingsPageProps) {
   const [prefersDarkSystem, setPrefersDarkSystem] = useState(false);
   const t = useCallback((en: string, de: string) => (preferences.language === 'de' ? de : en), [preferences.language]);
@@ -240,7 +265,7 @@ export function SettingsPage({
                 Profile: 'Profil',
                 Appearance: 'Darstellung',
                 'System Prompt': 'System-Prompt',
-                Gateway: 'Connection',
+                Connection: 'Connection',
                 Connectors: 'Konnektoren',
                 Account: 'Konto',
                 Privacy: 'Datenschutz',
@@ -249,6 +274,11 @@ export function SettingsPage({
             : activeSection}
         </h1>
         <p className="font-sans text-sm text-muted-foreground">{sectionDescriptions[activeSection][preferences.language]}</p>
+        <div className="mt-3">
+          <Button type="button" variant="outline" onClick={onReopenOnboarding}>
+            {t('Open onboarding', 'Onboarding oeffnen')}
+          </Button>
+        </div>
       </div>
 
       {activeSection === 'Profile' && (
@@ -444,15 +474,55 @@ export function SettingsPage({
         </section>
       )}
 
-      {activeSection === 'Gateway' && (
+      {activeSection === 'Connection' && (
         <section className={settingsCardClass}>
-          <div className="rounded-lg border border-border/60 bg-muted/40 p-3">
-            <p className="font-sans text-sm text-muted-foreground">
-              {t(
-                'Connection management has been removed from Settings.',
-                'Die Verbindungsverwaltung wurde aus den Einstellungen entfernt.',
-              )}
-            </p>
+          <div className="grid gap-4">
+            <label className="grid gap-1">
+              <span className="font-sans text-xs text-muted-foreground">{t('Transport', 'Transport')}</span>
+              <select
+                className="h-9 rounded-md border border-border bg-background px-2 font-sans text-sm"
+                value={transport}
+                onChange={(event) => onTransportChange(event.target.value as HermesTransport)}
+              >
+                <option value="hermes_http">HTTP API</option>
+                <option value="hermes_acp_stdio">ACP (stdio)</option>
+              </select>
+            </label>
+            <label className="grid gap-1">
+              <span className="font-sans text-xs text-muted-foreground">{t('Hermes endpoint', 'Hermes-Endpunkt')}</span>
+              <Input
+                className="font-mono text-sm"
+                value={draftHermesEndpoint}
+                onChange={(event) => ondraftHermesEndpointChange(event.target.value)}
+                placeholder={transport === 'hermes_acp_stdio' ? 'acp://local or ssh://user@host:22' : 'http://127.0.0.1:8642/v1'}
+              />
+            </label>
+            <label className="grid gap-1">
+              <span className="font-sans text-xs text-muted-foreground">{t('Access token (optional)', 'Access-Token (optional)')}</span>
+              <Input
+                className="font-mono text-sm"
+                type="password"
+                value={draftHermesToken}
+                onChange={(event) => ondraftHermesTokenChange(event.target.value)}
+                placeholder={t('Bearer token for HTTP mode', 'Bearer-Token fuer HTTP-Modus')}
+              />
+            </label>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" disabled={saving || testingConnection} onClick={() => void onTestConnection()}>
+                {testingConnection ? t('Testing…', 'Teste…') : t('Test', 'Testen')}
+              </Button>
+              <Button type="button" disabled={saving || testingConnection} onClick={() => void onConnectHermes()}>
+                {saving ? t('Connecting…', 'Verbinde…') : t('Connect', 'Verbinden')}
+              </Button>
+              <Button type="button" variant="outline" onClick={onReopenOnboarding}>
+                {t('Open onboarding', 'Onboarding oeffnen')}
+              </Button>
+            </div>
+            {health ? (
+              <div className={`rounded-lg border p-3 text-xs ${health.ok ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-destructive/30 bg-destructive/10 text-destructive'}`}>
+                {health.message}
+              </div>
+            ) : null}
           </div>
         </section>
       )}
@@ -465,7 +535,7 @@ export function SettingsPage({
   );
 }
 
-/* â”€â”€ Connectors settings section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Connectors settings section ─────────────────────────────────────────── */
 
 const connectorIcons: Record<string, ReactNode> = {
   folder: <Folder className="size-4" />,
@@ -583,7 +653,7 @@ function ConnectorsSection({ language }: { language: 'en' | 'de' }) {
                       className="ml-1 text-muted-foreground hover:text-foreground"
                       onClick={() => removeDomain(domain)}
                     >
-                      Ã—
+                      ×
                     </button>
                   </Badge>
                 ))}
@@ -610,6 +680,7 @@ function ConnectorsSection({ language }: { language: 'en' | 'de' }) {
     </div>
   );
 }
+
 
 
 

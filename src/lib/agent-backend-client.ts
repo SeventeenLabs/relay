@@ -11,6 +11,7 @@ import {
   type HermesToolsCatalog,
   type HermesUpdateCronJobInput,
 } from './hermes-http-client';
+import { HermesAcpClient } from './hermes-acp-client';
 
 export type LegacyAgentBackendEvent = {
   type: 'res' | 'event';
@@ -93,7 +94,9 @@ export type { HermesToolEntry };
 
 export function createDefaultBackendClient(config?: Pick<AppConfig, 'transport'>): AgentBackendClient {
   const transport = config?.transport ?? 'hermes_http';
-  void transport;
+  if (transport === 'hermes_acp_stdio') {
+    return new HermesAcpClient();
+  }
   return new HermesHttpClient();
 }
 

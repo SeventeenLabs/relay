@@ -1,7 +1,7 @@
 import { type ComponentProps, useState } from 'react';
 import type { FormEvent } from 'react';
 
-import type { HealthCheckResult } from '@/app-types';
+import type { HealthCheckResult, HermesTransport } from '@/app-types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -12,12 +12,17 @@ type OnboardingStep = 'welcome' | 'connect' | 'ready';
 type OnboardingPageProps = {
   draftHermesEndpoint: string;
   draftHermesToken: string;
+  transport: HermesTransport;
   health: HealthCheckResult | null;
   saving: boolean;
   ondraftHermesEndpointChange: (value: string) => void;
   ondraftHermesTokenChange: (value: string) => void;
+  onTransportChange: (value: HermesTransport) => void;
   onSave: (event: FormEvent) => void;
+  onTestConnection: () => void | Promise<void>;
+  testingConnection: boolean;
   onQuickConnectHermes: () => void | Promise<void>;
+  onOpenSettings: () => void;
   onComplete: () => void;
 };
 
@@ -68,12 +73,17 @@ function PrimaryButton({ children, disabled, className, ...props }: ComponentPro
 export function OnboardingPage({
   draftHermesEndpoint,
   draftHermesToken,
+  transport,
   health,
   saving,
   ondraftHermesEndpointChange,
   ondraftHermesTokenChange,
+  onTransportChange,
   onSave,
+  onTestConnection,
+  testingConnection,
   onQuickConnectHermes,
+  onOpenSettings,
   onComplete,
 }: OnboardingPageProps) {
   const [step, setStep] = useState<OnboardingStep>('welcome');
@@ -116,6 +126,9 @@ export function OnboardingPage({
               <button type="button" className="mt-3 inline-flex items-center gap-1.5 font-sans text-[13px] font-medium text-foreground/70 underline underline-offset-4 decoration-foreground/30 transition-colors hover:text-foreground hover:decoration-foreground" onClick={() => setStep('connect')}>
                 Advanced manual setup
               </button>
+              <button type="button" className="mt-2 block font-sans text-[12px] text-muted-foreground underline underline-offset-4" onClick={onOpenSettings}>
+                Open app settings
+              </button>
             </div>
             {connectAttempted && !saving && health && !health.ok && (
               <div className="mt-4 w-full max-w-[360px] rounded-xl border border-destructive/20 bg-destructive/[0.04] px-4 py-3 text-left">
@@ -134,8 +147,24 @@ export function OnboardingPage({
             </div>
             <form className="grid gap-4" onSubmit={handleConnect}>
               <div>
+                <label className="mb-1.5 flex items-center gap-1.5 font-sans text-[12px] font-medium text-foreground">Transport</label>
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 font-sans text-[13px]"
+                  value={transport}
+                  onChange={(event) => onTransportChange(event.target.value as HermesTransport)}
+                >
+                  <option value="hermes_http">HTTP API</option>
+                  <option value="hermes_acp_stdio">ACP (stdio)</option>
+                </select>
+              </div>
+              <div>
                 <label className="mb-1.5 flex items-center gap-1.5 font-sans text-[12px] font-medium text-foreground">Hermes endpoint</label>
-                <Input value={draftHermesEndpoint} onChange={(event) => ondraftHermesEndpointChange(event.target.value)} placeholder="http://127.0.0.1:8642/v1" className="h-10 font-mono text-[13px]" />
+                <Input
+                  value={draftHermesEndpoint}
+                  onChange={(event) => ondraftHermesEndpointChange(event.target.value)}
+                  placeholder={transport === 'hermes_acp_stdio' ? 'acp://local or ssh://user@host:22' : 'http://127.0.0.1:8642/v1'}
+                  className="h-10 font-mono text-[13px]"
+                />
               </div>
               <div>
                 <label className="mb-1.5 flex items-center gap-1.5 font-sans text-[12px] font-medium text-foreground">Access token <span className="font-normal text-muted-foreground">(optional)</span></label>
@@ -154,7 +183,19 @@ export function OnboardingPage({
               )}
               <div className="mt-2 flex gap-2.5">
                 <Button type="button" variant="outline" className="h-10 flex-none px-5 font-sans text-[13px]" onClick={() => { setStep('welcome'); setConnectAttempted(false); }}>Back</Button>
-                <PrimaryButton type="submit" disabled={saving} className="h-10 flex-1 w-auto">{saving ? 'Connecting…' : 'Connect'}</PrimaryButton>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 flex-none px-5 font-sans text-[13px]"
+                  disabled={saving || testingConnection}
+                  onClick={() => {
+                    setConnectAttempted(true);
+                    void onTestConnection();
+                  }}
+                >
+                  {testingConnection ? 'Testing…' : 'Test'}
+                </Button>
+                <PrimaryButton type="submit" disabled={saving || testingConnection} className="h-10 flex-1 w-auto">{saving ? 'Connecting…' : 'Connect'}</PrimaryButton>
               </div>
             </form>
           </div>

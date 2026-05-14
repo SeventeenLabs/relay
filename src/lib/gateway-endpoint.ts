@@ -1,5 +1,10 @@
 export type GatewayMode = 'local' | 'remote';
 
+function extractScheme(value: string): string | null {
+  const match = value.match(/^([a-z][a-z0-9+.-]*):\/\//i);
+  return match ? match[1].toLowerCase() : null;
+}
+
 export function normalizeGatewayInput(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return '';
@@ -11,6 +16,10 @@ export function normalizeGatewayInput(url: string): string {
 export function inferGatewayMode(url: string): GatewayMode {
   const normalized = normalizeGatewayInput(url);
   if (!normalized) return 'local';
+  const scheme = extractScheme(normalized);
+  if (scheme === 'ssh') {
+    return 'remote';
+  }
   const withProtocol = /^https?:\/\//i.test(normalized) ? normalized : `http://${normalized}`;
   try {
     const parsed = new URL(withProtocol);
@@ -23,6 +32,14 @@ export function inferGatewayMode(url: string): GatewayMode {
 export function ensureGatewayApiBase(url: string): string {
   const normalized = normalizeGatewayInput(url);
   if (!normalized) return '';
+
+  const scheme = extractScheme(normalized);
+  if (scheme && scheme !== 'http' && scheme !== 'https') {
+    if (scheme === 'ssh') {
+      throw new Error('SSH endpoints are not HTTP API bases. First open an SSH tunnel, then use http://127.0.0.1:<localPort>/v1.');
+    }
+    throw new Error(`Unsupported endpoint protocol "${scheme}". Use http:// or https://.`);
+  }
 
   const withProtocol = /^https?:\/\//i.test(normalized) ? normalized : `http://${normalized}`;
   const parsed = new URL(withProtocol);
@@ -47,6 +64,21 @@ export function parseGatewayDetails(url: string): {
   const normalized = normalizeGatewayInput(url);
   if (!normalized) {
     return { endpoint: '(empty)', protocol: '-', host: '-', port: '-', path: '-' };
+  }
+  const scheme = extractScheme(normalized);
+  if (scheme === 'ssh') {
+    try {
+      const parsed = new URL(normalized);
+      return {
+        endpoint: normalized,
+        protocol: 'ssh',
+        host: parsed.hostname || '-',
+        port: parsed.port || '22',
+        path: parsed.pathname || '/',
+      };
+    } catch {
+      return { endpoint: normalized, protocol: 'ssh', host: 'invalid', port: '-', path: '-' };
+    }
   }
   const withProtocol = /^https?:\/\//i.test(normalized) ? normalized : `http://${normalized}`;
   try {
