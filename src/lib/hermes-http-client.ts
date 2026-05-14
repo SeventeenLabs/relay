@@ -9,6 +9,7 @@ export type HermesConnectOptions = {
   gatewayUrl: string;
   token?: string;
   password?: string;
+  cwd?: string;
 };
 
 export type HermesChatMessage = {

@@ -29,8 +29,15 @@ type RelayApi = {
   acpCreateSession: (payload?: { cwd?: string }) => Promise<{ sessionId: string }>;
   acpPrompt: (payload: { sessionId: string; text: string }) => Promise<{ stopReason: string }>;
   acpListSessions: () => Promise<Array<{ id: string; title?: string; cwd?: string }>>;
+  acpListModels: (payload?: { sessionId?: string }) => Promise<{ models: Array<{ id: string; name: string }>; currentModelId: string | null }>;
   acpSetSessionModel: (payload: { sessionId: string; model: string }) => Promise<{ ok: boolean; message?: string }>;
   acpCancel: (payload: { sessionId: string }) => Promise<{ ok: boolean }>;
+  acpWorkspaceList: (payload?: { path?: string }) => Promise<{ items?: Array<{ path?: string; kind?: string; size?: number; modifiedMs?: number }>; truncated?: boolean }>;
+  acpWorkspaceRead: (payload: { path: string }) => Promise<{ content?: string }>;
+  acpWorkspaceStat: (payload: { path: string }) => Promise<{ kind?: string; size?: number; createdMs?: number; modifiedMs?: number }>;
+  acpWorkspaceRename: (payload: { oldPath: string; newPath: string }) => Promise<{ ok?: boolean }>;
+  acpWorkspaceDelete: (payload: { path: string }) => Promise<{ ok?: boolean }>;
+  acpWorkspaceWrite: (payload: { path: string; content: string }) => Promise<{ ok?: boolean }>;
   onAcpEvent: (handler: (event: { sessionId: string; update: unknown }) => void) => (() => void);
   minimizeWindow: () => Promise<void>;
   toggleMaximizeWindow: () => Promise<boolean>;

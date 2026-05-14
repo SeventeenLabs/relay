@@ -258,6 +258,10 @@ function normalizeTitleSourceText(raw: string): string {
   return raw
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/working folder context:[^\n]*/gi, ' ')
+    .replace(/project instructions:[^\n]*/gi, ' ')
+    .replace(/connected tools:[^\n]*/gi, ' ')
+    .replace(/[A-Za-z]:\\[^\s]+/g, ' ')
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
@@ -294,10 +298,15 @@ export function deriveThreadTitleFromMessages(messages: ChatMessage[]): string {
   }
 
   const normalizedUserText = trimLeadInPhrases(normalizeTitleSourceText(firstUserMessage));
-  const primarySegment = normalizedUserText
+  const strippedRelayScaffolding = normalizedUserText
+    .replace(/\bworking folder context\b.*$/i, '')
+    .replace(/\bproject instructions\b.*$/i, '')
+    .trim();
+  const effectiveTitleSource = strippedRelayScaffolding || normalizedUserText;
+  const primarySegment = effectiveTitleSource
     .split(/[.!?\n:;]+/)
     .map((segment) => segment.trim())
-    .find(Boolean) ?? normalizedUserText;
+    .find((segment) => segment.length > 0 && !/^working folder context\b/i.test(segment)) ?? effectiveTitleSource;
 
   const words = primarySegment
     .toLowerCase()

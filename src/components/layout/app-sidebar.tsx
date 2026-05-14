@@ -800,12 +800,12 @@ export function AppSidebar({
                                         <div key={item.id} className="group/item relative">
                                           <button
                                             type="button"
-                                            className={`flex w-full items-center justify-between rounded-xl py-1.5 pl-8 pr-2 text-left font-sans text-[12px] transition-colors ${
+                                            className={`flex w-full min-w-0 items-center justify-between overflow-hidden rounded-xl py-1.5 pl-8 pr-2 text-left font-sans text-[12px] transition-colors ${
                                               isActiveCoworkItem ? 'bg-muted text-foreground' : 'text-foreground/90 hover:bg-muted'
                                             }`}
                                             onClick={() => onSelectRecentItem(item)}
                                           >
-                                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                            <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{item.label}</span>
                                             <span className="ml-2 flex shrink-0 items-center gap-2">
                                               {typeof item.updatedAt === 'number' ? (
                                                 <span className="text-[11px] text-muted-foreground">{formatRelativeAge(item.updatedAt)}</span>
@@ -889,12 +889,12 @@ export function AppSidebar({
                           <SidebarMenuItem key={item.id}>
                             <button
                               type="button"
-                              className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left font-sans text-[12px] transition-colors ${
+                              className={`flex w-full min-w-0 items-center justify-between overflow-hidden rounded-xl px-2 py-1.5 text-left font-sans text-[12px] transition-colors ${
                                 isActiveChatItem ? 'bg-muted text-foreground' : 'text-foreground/90 hover:bg-muted'
                               }`}
                               onClick={() => onSelectRecentItem(item)}
                             >
-                              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                              <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{item.label}</span>
                               {typeof item.updatedAt === 'number' ? (
                                 <span className="shrink-0 pl-2 text-[11px] text-muted-foreground">{formatRelativeAge(item.updatedAt)}</span>
                               ) : null}

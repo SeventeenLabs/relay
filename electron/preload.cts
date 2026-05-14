@@ -41,10 +41,24 @@ const api = {
     ipcRenderer.invoke('acp:prompt', payload) as Promise<{ stopReason: string }>,
   acpListSessions: () =>
     ipcRenderer.invoke('acp:list-sessions') as Promise<Array<{ id: string; title?: string; cwd?: string }>>,
+  acpListModels: (payload?: { sessionId?: string }) =>
+    ipcRenderer.invoke('acp:list-models', payload) as Promise<{ models: Array<{ id: string; name: string }>; currentModelId: string | null }>,
   acpSetSessionModel: (payload: { sessionId: string; model: string }) =>
     ipcRenderer.invoke('acp:set-session-model', payload) as Promise<{ ok: boolean; message?: string }>,
   acpCancel: (payload: { sessionId: string }) =>
     ipcRenderer.invoke('acp:cancel', payload) as Promise<{ ok: boolean }>,
+  acpWorkspaceList: (payload?: { path?: string }) =>
+    ipcRenderer.invoke('acp:workspace-list', payload) as Promise<{ items?: Array<{ path?: string; kind?: string; size?: number; modifiedMs?: number }>; truncated?: boolean }>,
+  acpWorkspaceRead: (payload: { path: string }) =>
+    ipcRenderer.invoke('acp:workspace-read', payload) as Promise<{ content?: string }>,
+  acpWorkspaceStat: (payload: { path: string }) =>
+    ipcRenderer.invoke('acp:workspace-stat', payload) as Promise<{ kind?: string; size?: number; createdMs?: number; modifiedMs?: number }>,
+  acpWorkspaceRename: (payload: { oldPath: string; newPath: string }) =>
+    ipcRenderer.invoke('acp:workspace-rename', payload) as Promise<{ ok?: boolean }>,
+  acpWorkspaceDelete: (payload: { path: string }) =>
+    ipcRenderer.invoke('acp:workspace-delete', payload) as Promise<{ ok?: boolean }>,
+  acpWorkspaceWrite: (payload: { path: string; content: string }) =>
+    ipcRenderer.invoke('acp:workspace-write', payload) as Promise<{ ok?: boolean }>,
   onAcpEvent: (handler: (event: { sessionId: string; update: unknown }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: { sessionId: string; update: unknown }) => {
       handler(payload);

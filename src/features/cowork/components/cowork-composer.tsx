@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Menu, MenuGroup, MenuItem } from '@/components/ui/menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-const COWORK_DEFAULT_MODEL_LABEL = 'Server default';
 const MODEL_VALUE_SEPARATOR = '::';
 
 const composerDropdownItemClass =
@@ -83,6 +82,21 @@ export function CoworkComposer({
         const labelMatch = option.label.match(/\(([^)]+)\)\s*$/);
         if (labelMatch?.[1]) {
           provider = labelMatch[1].trim().toLowerCase();
+        } else {
+          const colonIndex = rawValue.indexOf(':');
+          const slashIndex = rawValue.indexOf('/');
+          const splitIndex =
+            colonIndex > 0 && slashIndex > 0
+              ? Math.min(colonIndex, slashIndex)
+              : colonIndex > 0
+                ? colonIndex
+                : slashIndex > 0
+                  ? slashIndex
+                  : -1;
+          if (splitIndex > 0) {
+            provider = rawValue.slice(0, splitIndex).trim().toLowerCase() || 'unknown';
+            modelId = rawValue.slice(splitIndex + 1).trim() || rawValue;
+          }
         }
       }
 
@@ -95,7 +109,11 @@ export function CoworkComposer({
   }, [models]);
 
   const selectedModelOption = parsedModels.find((model) => model.value === selectedModel) ?? null;
-  const selectedModelLabel = selectedModelOption ? `${selectedModelOption.modelId} (${selectedModelOption.provider})` : '';
+  const selectedModelLabel = selectedModelOption
+    ? `${selectedModelOption.modelId} (${selectedModelOption.provider})`
+    : selectedModel.trim()
+      ? selectedModel.trim()
+      : 'Loading models...';
 
   const modelProviderBuckets = useMemo(() => {
     const buckets = new Map<string, typeof parsedModels>();
@@ -367,7 +385,7 @@ export function CoworkComposer({
                 } disabled:cursor-not-allowed disabled:opacity-60`}
                 onClick={() => setOpenDropdown((current) => (current === 'model' ? null : 'model'))}
               >
-                <span className="truncate">{`Model: ${selectedModelLabel || COWORK_DEFAULT_MODEL_LABEL}`}</span>
+                <span className="truncate">{`Model: ${selectedModelLabel}`}</span>
                 <ChevronDown className="h-3 w-3 opacity-80" />
               </button>
 
@@ -392,21 +410,6 @@ export function CoworkComposer({
                   </div>
 
                   <div className="max-h-[340px] overflow-y-auto p-2">
-                    <Menu>
-                      <MenuGroup>
-                        <MenuItem
-                          className={composerDropdownItemClass}
-                          active={selectedModel === ''}
-                          onClick={() => {
-                            onModelChange('');
-                            setOpenDropdown(null);
-                          }}
-                        >
-                          {COWORK_DEFAULT_MODEL_LABEL}
-                        </MenuItem>
-                      </MenuGroup>
-                    </Menu>
-
                     {visibleProviderBuckets.length === 0 ? (
                       <div className="px-2 py-5 text-center font-sans text-[11px] text-muted-foreground">
                         No models match "{modelSearchQuery.trim()}".

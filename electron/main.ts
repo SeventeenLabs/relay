@@ -1090,6 +1090,11 @@ app.whenReady().then(async () => {
       }),
   );
   ipcMain.handle('acp:list-sessions', async () => acpBridge.listSessions());
+  ipcMain.handle('acp:list-models', async (_event, payload?: { sessionId?: string }) =>
+    acpBridge.listModels({
+      sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : undefined,
+    }),
+  );
   ipcMain.handle(
     'acp:set-session-model',
     async (
@@ -1106,6 +1111,38 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle('acp:cancel', async (_event, payload: { sessionId: string }) =>
     acpBridge.cancel({ sessionId: payload.sessionId }),
+  );
+  ipcMain.handle('acp:workspace-list', async (_event, payload?: { path?: string }) =>
+    acpBridge.workspaceList({
+      path: typeof payload?.path === 'string' ? payload.path : undefined,
+    }),
+  );
+  ipcMain.handle('acp:workspace-read', async (_event, payload: { path: string }) =>
+    acpBridge.workspaceRead({
+      path: payload.path,
+    }),
+  );
+  ipcMain.handle('acp:workspace-stat', async (_event, payload: { path: string }) =>
+    acpBridge.workspaceStat({
+      path: payload.path,
+    }),
+  );
+  ipcMain.handle('acp:workspace-rename', async (_event, payload: { oldPath: string; newPath: string }) =>
+    acpBridge.workspaceRename({
+      oldPath: payload.oldPath,
+      newPath: payload.newPath,
+    }),
+  );
+  ipcMain.handle('acp:workspace-delete', async (_event, payload: { path: string }) =>
+    acpBridge.workspaceDelete({
+      path: payload.path,
+    }),
+  );
+  ipcMain.handle('acp:workspace-write', async (_event, payload: { path: string; content: string }) =>
+    acpBridge.workspaceWrite({
+      path: payload.path,
+      content: payload.content,
+    }),
   );
   ipcMain.handle('backend:health-check', async (_event, baseUrl: string) => runHealthCheck(baseUrl));
   ipcMain.handle(

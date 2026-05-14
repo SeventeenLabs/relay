@@ -209,6 +209,14 @@ export function createFileService(
   gatewayUrl: string,
   desktopBridgeAvailable: boolean,
 ): FileService {
+  const normalizedUrl = gatewayUrl.trim().toLowerCase();
+  const isAcpSshEndpoint = normalizedUrl.startsWith('ssh://') || normalizedUrl.startsWith('acp://');
+
+  // ACP over SSH should keep local filesystem operations local in the desktop app.
+  if (isAcpSshEndpoint && desktopBridgeAvailable) {
+    return new LocalFileService();
+  }
+
   const isRemote = gatewayUrl ? isRemoteUrl(gatewayUrl) : false;
 
   // Remote mode: use gateway RPC

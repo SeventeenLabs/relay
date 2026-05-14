@@ -139,6 +139,52 @@ function inferTransportFromEndpoint(endpoint: string, fallback: HermesTransport 
   return fallback;
 }
 
+function resolveSelectedModelValue(choices: ChatModelOption[], currentModel: string | null): string {
+  const normalizedCurrent = (currentModel ?? '').trim();
+  if (!normalizedCurrent) {
+    return '';
+  }
+  const normalizeForCompare = (value: string) => {
+    const trimmed = value.trim();
+    const doubleColon = trimmed.indexOf('::');
+    if (doubleColon > 0) {
+      const provider = trimmed.slice(0, doubleColon).trim().toLowerCase();
+      const model = trimmed.slice(doubleColon + 2).trim().toLowerCase();
+      return `${provider}::${model}`;
+    }
+    const colon = trimmed.indexOf(':');
+    const slash = trimmed.indexOf('/');
+    const splitIndex =
+      colon > 0 && slash > 0
+        ? Math.min(colon, slash)
+        : colon > 0
+          ? colon
+          : slash > 0
+            ? slash
+            : -1;
+    if (splitIndex > 0) {
+      const provider = trimmed.slice(0, splitIndex).trim().toLowerCase();
+      const model = trimmed.slice(splitIndex + 1).trim().toLowerCase();
+      return `${provider}::${model}`;
+    }
+    return trimmed.toLowerCase();
+  };
+  const direct = choices.find((choice) => choice.value.trim() === normalizedCurrent);
+  if (direct) {
+    return direct.value;
+  }
+  const normalizedTarget = normalizeForCompare(normalizedCurrent);
+  const byNormalizedId = choices.find((choice) => normalizeForCompare(choice.value) === normalizedTarget);
+  if (byNormalizedId) {
+    return byNormalizedId.value;
+  }
+  const bySuffix = choices.find((choice) => {
+    const value = choice.value.trim();
+    return value.endsWith(`::${normalizedCurrent}`) || value.endsWith(`:${normalizedCurrent}`) || value.endsWith(`/${normalizedCurrent}`);
+  });
+  return bySuffix?.value ?? normalizedCurrent;
+}
+
 type AppPage = 'chat' | 'cowork' | 'project' | 'settings';
 type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Connection' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 
@@ -2108,6 +2154,7 @@ export default function App() {
       await client.connect({
         gatewayUrl: draftHermesEndpoint,
         token: draftHermesToken,
+        cwd: workingFolderRef.current || workingFolder,
       });
 
       let resolvedSessionKey = requestedSessionKey;
@@ -2214,6 +2261,7 @@ export default function App() {
       await client.connect({
         gatewayUrl: draftHermesEndpoint,
         token: draftHermesToken,
+        cwd: workingFolderRef.current || workingFolder,
       });
 
       let resolvedSessionKey = requestedSessionKey;
@@ -2322,9 +2370,14 @@ export default function App() {
   };
 
   const ensureConnectedClient = async (client: AgentBackendClient) => {
+    if (client.isConnected()) {
+      return;
+    }
+    const gatewayUrl = normalizeHermesEndpoint(config.gatewayUrl ?? draftHermesEndpoint);
     await client.connect({
-      gatewayUrl: draftHermesEndpoint,
-      token: draftHermesToken,
+      gatewayUrl,
+      token: config.gatewayToken ?? draftHermesToken,
+      cwd: workingFolderRef.current || workingFolder,
     });
   };
 
@@ -2379,8 +2432,17 @@ export default function App() {
         client.getSessionModel(sessionKey).catch(() => null),
       ]);
 
-      setChatModels(choices.map((model) => ({ value: model.value, label: model.label })));
-      setSelectedModel(currentModel ?? '');
+      const mappedChoices = choices.map((model) => ({ value: model.value, label: model.label }));
+      setChatModels((prev) => {
+        if ((config.transport ?? 'hermes_http') !== 'hermes_acp_stdio') {
+          return mappedChoices;
+        }
+        if (mappedChoices.length >= prev.length) {
+          return mappedChoices;
+        }
+        return prev;
+      });
+      setSelectedModel(resolveSelectedModelValue(mappedChoices, currentModel));
     } catch {
       setChatModels([]);
       setSelectedModel('');
@@ -2392,20 +2454,30 @@ export default function App() {
   const loadCoworkModels = async (client: AgentBackendClient, sessionKey?: string) => {
     setModelsLoading(true);
     try {
+      let effectiveSessionKey = sessionKey || normalizeSessionKey(coworkSessionKeyRef.current) || '';
+      if (!effectiveSessionKey) {
+        effectiveSessionKey = normalizeSessionKey(await client.getActiveSessionKey().catch(() => ''));
+      }
       const [choices, currentModel] = await Promise.all([
         client.listModels(),
-        sessionKey ? client.getSessionModel(sessionKey).catch(() => null) : Promise.resolve(null),
+        effectiveSessionKey ? client.getSessionModel(effectiveSessionKey).catch(() => null) : Promise.resolve(null),
       ]);
 
-      setCoworkModels(choices.map((model) => ({ value: model.value, label: model.label })));
-      if (sessionKey) {
-        setCoworkModel(currentModel ?? '');
+      const mappedChoices = choices.map((model) => ({ value: model.value, label: model.label }));
+      setCoworkModels((prev) => {
+        if ((config.transport ?? 'hermes_http') !== 'hermes_acp_stdio') {
+          return mappedChoices;
+        }
+        if (mappedChoices.length >= prev.length) {
+          return mappedChoices;
+        }
+        return prev;
+      });
+      if (effectiveSessionKey) {
+        setCoworkModel(resolveSelectedModelValue(mappedChoices, currentModel));
       }
     } catch (error) {
       setCoworkModels([]);
-      if (sessionKey) {
-        setCoworkModel('');
-      }
       const message = error instanceof Error ? error.message : 'Unable to load Hermes models.';
       setStatus(message);
     } finally {
@@ -4096,6 +4168,7 @@ export default function App() {
         client.connect({
           gatewayUrl: connectGatewayUrl,
           token: nextConfig.gatewayToken,
+          cwd: workingFolderRef.current || workingFolder,
         }),
         new Promise<never>((_, reject) => {
           window.setTimeout(() => {
@@ -4179,7 +4252,7 @@ export default function App() {
         }
         const timeoutMs = 12_000;
         await Promise.race([
-          window.relay.acpConnect({ gatewayUrl: normalizedGatewayUrl }),
+          window.relay.acpConnect({ gatewayUrl: normalizedGatewayUrl, cwd: workingFolderRef.current || workingFolder }),
           new Promise<never>((_, reject) => {
             window.setTimeout(() => {
               reject(new Error(`ACP test timed out after ${Math.round(timeoutMs / 1000)}s.`));
@@ -5796,19 +5869,12 @@ export default function App() {
       const sessionKey = await ensureActiveChatSession(client, { createIfMissing: true });
       await client.setSessionModel(sessionKey, nextModelValue || null);
       if (nextModelValue) {
-        setStatus(`Model updated in Hermes: ${nextModelValue}. Starting a new chat session so the change takes effect.`);
+        setStatus(`Model updated in Hermes: ${nextModelValue}.`);
       } else {
-        setStatus('Model reset to server default. Starting a new chat session so the change takes effect.');
+        setStatus('Model reset.');
       }
-      setActiveSessionKey('');
-      setChatMessages([]);
-      setChatDraftPrompt('');
-      const freshSessionKey = normalizeSessionKey(await client.createChatSession());
-      if (freshSessionKey) {
-        commitActiveSessionKey(freshSessionKey);
-        await loadRecentChatsFromBackend(client);
-        void loadModelsForSession(client, freshSessionKey);
-      }
+      await loadRecentChatsFromBackend(client);
+      void loadModelsForSession(client, sessionKey);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update model.';
       setStatus(message);
@@ -5842,14 +5908,8 @@ export default function App() {
       }
 
       await client.setSessionModel(sessionKey, nextModelValue || null);
-      setStatus(
-        nextModelValue
-          ? `Cowork model applied: ${nextModelValue}.`
-          : 'Cowork model reset to server default.',
-      );
-      commitCoworkSessionKey('');
-      setCoworkMessages([]);
-      void loadCoworkModels(client);
+      setStatus(`Cowork model applied: ${nextModelValue}.`);
+      void loadCoworkModels(client, sessionKey);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update cowork model.';
       setStatus(message);
@@ -6054,12 +6114,16 @@ export default function App() {
       return;
     }
 
+    if ((config.transport ?? 'hermes_http') === 'hermes_acp_stdio') {
+      // ACP mode does not support cron APIs in this client implementation.
+      setScheduledJobs([]);
+      setScheduledLoading(false);
+      return;
+    }
+
     setScheduledLoading(true);
     try {
-      await client.connect({
-        gatewayUrl: draftHermesEndpoint,
-        token: draftHermesToken,
-      });
+      await ensureConnectedClient(client);
       const rows = await client.listCronJobs();
       setScheduledJobs(rows);
     } catch (error) {
@@ -6069,7 +6133,7 @@ export default function App() {
     } finally {
       setScheduledLoading(false);
     }
-  }, [draftHermesToken, draftHermesEndpoint]);
+  }, [config.transport]);
 
   useEffect(() => {
     if (activePage !== 'cowork') {
