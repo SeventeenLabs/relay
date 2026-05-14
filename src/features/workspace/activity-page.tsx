@@ -27,7 +27,7 @@ type ActivityPageProps = {
   coworkMessages: ChatMessage[];
   activeSessionKey: string;
   coworkSessionKey: string;
-  gatewayConnected: boolean;
+  hermesConnected: boolean;
 };
 
 type ActivityEntry = {
@@ -69,7 +69,7 @@ export function ActivityPage({
   coworkMessages,
   activeSessionKey,
   coworkSessionKey,
-  gatewayConnected,
+  hermesConnected,
 }: ActivityPageProps) {
   const [filterQuery, setFilterQuery] = useState('');
   const [toneFilter, setToneFilter] = useState<ToneFilter>('all');
@@ -149,7 +149,7 @@ export function ActivityPage({
           <Zap className="size-5 text-amber-600" />
           <h1 className="text-xl font-semibold tracking-tight">Activity</h1>
           <Badge variant="outline" className="ml-2 font-sans text-[11px]">
-            {gatewayConnected ? 'Live' : 'Offline'}
+            {hermesConnected ? 'Live' : 'Offline'}
           </Badge>
         </div>
         <p className="mt-1 font-sans text-sm text-muted-foreground">
@@ -332,3 +332,4 @@ export function ActivityPage({
     </section>
   );
 }
+

@@ -10,12 +10,12 @@ import relayLogo from '@/assets/relay-logo.png';
 type OnboardingStep = 'welcome' | 'connect' | 'ready';
 
 type OnboardingPageProps = {
-  draftGatewayUrl: string;
-  draftGatewayToken: string;
+  draftHermesEndpoint: string;
+  draftHermesToken: string;
   health: HealthCheckResult | null;
   saving: boolean;
-  onDraftGatewayUrlChange: (value: string) => void;
-  onDraftGatewayTokenChange: (value: string) => void;
+  ondraftHermesEndpointChange: (value: string) => void;
+  ondraftHermesTokenChange: (value: string) => void;
   onSave: (event: FormEvent) => void;
   onQuickConnectHermes: () => void | Promise<void>;
   onComplete: () => void;
@@ -66,12 +66,12 @@ function PrimaryButton({ children, disabled, className, ...props }: ComponentPro
 }
 
 export function OnboardingPage({
-  draftGatewayUrl,
-  draftGatewayToken,
+  draftHermesEndpoint,
+  draftHermesToken,
   health,
   saving,
-  onDraftGatewayUrlChange,
-  onDraftGatewayTokenChange,
+  ondraftHermesEndpointChange,
+  ondraftHermesTokenChange,
   onSave,
   onQuickConnectHermes,
   onComplete,
@@ -135,12 +135,12 @@ export function OnboardingPage({
             <form className="grid gap-4" onSubmit={handleConnect}>
               <div>
                 <label className="mb-1.5 flex items-center gap-1.5 font-sans text-[12px] font-medium text-foreground">Hermes endpoint</label>
-                <Input value={draftGatewayUrl} onChange={(event) => onDraftGatewayUrlChange(event.target.value)} placeholder="http://127.0.0.1:8642/v1" className="h-10 font-mono text-[13px]" />
+                <Input value={draftHermesEndpoint} onChange={(event) => ondraftHermesEndpointChange(event.target.value)} placeholder="http://127.0.0.1:8642/v1" className="h-10 font-mono text-[13px]" />
               </div>
               <div>
                 <label className="mb-1.5 flex items-center gap-1.5 font-sans text-[12px] font-medium text-foreground">Access token <span className="font-normal text-muted-foreground">(optional)</span></label>
                 <div className="relative">
-                  <Input type={showToken ? 'text' : 'password'} value={draftGatewayToken} onChange={(event) => onDraftGatewayTokenChange(event.target.value)} placeholder="Paste your access token" className="h-10 pr-10 font-mono text-[13px]" />
+                  <Input type={showToken ? 'text' : 'password'} value={draftHermesToken} onChange={(event) => ondraftHermesTokenChange(event.target.value)} placeholder="Paste your access token" className="h-10 pr-10 font-mono text-[13px]" />
                   <button type="button" tabIndex={-1} onClick={() => setShowToken((v) => !v)} className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground" aria-label={showToken ? 'Hide token' : 'Show token'}>
                     {showToken ? 'Hide' : 'Show'}
                   </button>
@@ -172,3 +172,4 @@ export function OnboardingPage({
     </main>
   );
 }
+

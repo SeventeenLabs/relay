@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CoworkProject, MessageUsage } from '@/app-types';
 import { formatCostUsd, formatTokenCount } from '@/lib/token-usage';
@@ -30,7 +30,6 @@ import {
   Shield,
   Trash2,
   User,
-  Wifi,
   Zap,
 } from 'lucide-react';
 
@@ -97,7 +96,7 @@ type AppSidebarProps = {
   scheduledItems: ScheduledSidebarItem[];
   scheduledLoading: boolean;
   sessionUsage?: MessageUsage;
-  gatewayConnected: boolean;
+  hermesConnected: boolean;
   onSelectRecentItem: (item: RecentSidebarItem) => void;
   onRenameRecentItem: (item: RecentSidebarItem) => void;
   onDeleteRecentItem: (item: RecentSidebarItem) => void;
@@ -121,7 +120,6 @@ const settingsNavItems: { label: SettingsSection; icon: typeof User }[] = [
   { label: 'Profile', icon: User },
   { label: 'Appearance', icon: Palette },
   { label: 'System Prompt', icon: MessageSquareText },
-  { label: 'Gateway', icon: Wifi },
   { label: 'Connectors', icon: Link2 },
   { label: 'Account', icon: KeyRound },
   { label: 'Privacy', icon: Shield },
@@ -132,7 +130,7 @@ const sectionLabels: Record<SettingsSection, { en: string; de: string }> = {
   Profile: { en: 'Profile', de: 'Profil' },
   Appearance: { en: 'Appearance', de: 'Darstellung' },
   'System Prompt': { en: 'System Prompt', de: 'System-Prompt' },
-  Gateway: { en: 'Gateway', de: 'Gateway' },
+  Gateway: { en: 'Connection', de: 'Verbindung' },
   Connectors: { en: 'Connectors', de: 'Konnektoren' },
   Account: { en: 'Account', de: 'Konto' },
   Privacy: { en: 'Privacy', de: 'Datenschutz' },
@@ -157,7 +155,7 @@ export function AppSidebar({
   scheduledItems,
   scheduledLoading,
   sessionUsage,
-  gatewayConnected,
+  hermesConnected,
   onSelectRecentItem,
   onRenameRecentItem,
   onDeleteRecentItem,
@@ -1157,3 +1155,4 @@ export function AppSidebar({
     </Sidebar>
   );
 }
+

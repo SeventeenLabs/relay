@@ -57,13 +57,13 @@ type CoworkPageProps = {
   runPhase: CoworkRunPhase;
   progressSteps: CoworkProgressStep[];
   sending: boolean;
-  gatewayConnected: boolean;
+  hermesConnected: boolean;
   webSearchEnabled: boolean;
   approvalMode: 'standard' | 'project' | 'none';
   projectPathReferences: ProjectPathReference[];
   contextWindowUsedTokens: number;
   contextWindowTotalTokens: number;
-  onOpenGatewaySettings: () => void;
+  onOpenConnectionSettings: () => void;
   onTaskPromptChange: (value: string) => void;
   onModelChange: (value: string) => void;
   onWebSearchEnabledChange: (enabled: boolean) => void;
@@ -112,12 +112,12 @@ export function CoworkPage(props: CoworkPageProps) {
     runPhase,
     progressSteps,
     sending,
-    gatewayConnected,
+    hermesConnected,
     approvalMode,
     projectPathReferences,
     contextWindowUsedTokens,
     contextWindowTotalTokens,
-    onOpenGatewaySettings,
+    onOpenConnectionSettings,
     onTaskPromptChange,
     onModelChange,
     onApprovalModeChange,
@@ -223,7 +223,7 @@ export function CoworkPage(props: CoworkPageProps) {
     return () => window.clearInterval(timer);
   }, [activeWorkStartedAt]);
 
-  if (!gatewayConnected) {
+  if (!hermesConnected) {
     return (
       <section className="grid h-full w-full place-items-center p-6">
         <div className="w-full max-w-xl rounded-2xl border border-border bg-card p-6 text-center">
@@ -232,10 +232,10 @@ export function CoworkPage(props: CoworkPageProps) {
           </div>
           <h2 className="text-lg font-semibold">Cowork is offline</h2>
           <p className="mt-2 font-sans text-sm text-muted-foreground">
-            Connect the gateway to run cowork tasks and access project context.
+            Connect Hermes to run cowork tasks and access project context.
           </p>
-          <Button type="button" className="mt-4" onClick={onOpenGatewaySettings}>
-            Open Gateway Settings
+          <Button type="button" className="mt-4" onClick={onOpenConnectionSettings}>
+            Open Connection Settings
           </Button>
         </div>
       </section>
@@ -331,7 +331,7 @@ export function CoworkPage(props: CoworkPageProps) {
                       modelsLoading={modelsLoading}
                       changingModel={changingModel}
                       sending={sending}
-                      gatewayConnected={gatewayConnected}
+                      hermesConnected={hermesConnected}
                       approvalMode={approvalMode}
                       contextWindowUsedTokens={contextWindowUsedTokens}
                       contextWindowTotalTokens={contextWindowTotalTokens}
@@ -393,7 +393,7 @@ export function CoworkPage(props: CoworkPageProps) {
                 modelsLoading={modelsLoading}
                 changingModel={changingModel}
                 sending={sending}
-                gatewayConnected={gatewayConnected}
+                hermesConnected={hermesConnected}
                 approvalMode={approvalMode}
                 contextWindowUsedTokens={contextWindowUsedTokens}
                 contextWindowTotalTokens={contextWindowTotalTokens}
@@ -409,3 +409,4 @@ export function CoworkPage(props: CoworkPageProps) {
     </section>
   );
 }
+

@@ -1,5 +1,5 @@
 export type BackendType = 'hermes';
-export type HermesTransport = 'hermes_http' | 'hermes_acp';
+export type HermesTransport = 'hermes_http';
 
 export type AppConfig = {
   backendType: BackendType;

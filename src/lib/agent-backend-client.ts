@@ -1,17 +1,16 @@
 import type { AppConfig } from '../app-types';
 import {
-  HermesGatewayClient,
-  type GatewayChatMessage,
-  type GatewayConnectOptions,
-  type GatewayCreateCronJobInput,
-  type GatewayCronJob,
-  type GatewayModelChoice,
-  type GatewaySessionSummary,
-  type GatewayToolEntry,
-  type GatewayToolsCatalog,
-  type GatewayUpdateCronJobInput,
-} from './hermes-gateway-client';
-import { HermesAcpClient } from './hermes-acp-client';
+  HermesHttpClient,
+  type HermesChatMessage,
+  type HermesConnectOptions,
+  type HermesCreateCronJobInput,
+  type HermesCronJob,
+  type HermesModelChoice,
+  type HermesSessionSummary,
+  type HermesToolEntry,
+  type HermesToolsCatalog,
+  type HermesUpdateCronJobInput,
+} from './hermes-http-client';
 
 export type LegacyAgentBackendEvent = {
   type: 'res' | 'event';
@@ -47,7 +46,7 @@ export interface AgentBackendClient {
   setConnectionHandler(handler: (connected: boolean, message: string) => void): void;
   isConnected(): boolean;
 
-  connect(options: GatewayConnectOptions): Promise<void>;
+  connect(options: HermesConnectOptions): Promise<void>;
   disconnect(): void;
   resetDeviceIdentity?(): void;
 
@@ -59,21 +58,21 @@ export interface AgentBackendClient {
   sendChat(sessionKey: string, text: string): Promise<{ sessionKey: string }>;
   cancelChat?(sessionKey: string): void;
   resolveSessionKey(preferredKey?: string): Promise<string>;
-  getHistory(sessionKey: string, limit?: number): Promise<GatewayChatMessage[]>;
+  getHistory(sessionKey: string, limit?: number): Promise<HermesChatMessage[]>;
 
-  listModels(): Promise<GatewayModelChoice[]>;
+  listModels(): Promise<HermesModelChoice[]>;
   getSessionModel(sessionKey: string): Promise<string | null>;
-  listSessions(limit?: number): Promise<GatewaySessionSummary[]>;
+  listSessions(limit?: number): Promise<HermesSessionSummary[]>;
   setSessionModel(sessionKey: string, modelValue: string | null): Promise<void>;
   setSessionTitle(sessionKey: string, title: string | null): Promise<void>;
   deleteSession(sessionKey: string): Promise<void>;
 
-  listCronJobs(): Promise<GatewayCronJob[]>;
-  createCronJob(input: GatewayCreateCronJobInput): Promise<string | null>;
-  updateCronJob(input: GatewayUpdateCronJobInput): Promise<void>;
+  listCronJobs(): Promise<HermesCronJob[]>;
+  createCronJob(input: HermesCreateCronJobInput): Promise<string | null>;
+  updateCronJob(input: HermesUpdateCronJobInput): Promise<void>;
   deleteCronJob(idInput: string): Promise<void>;
 
-  fetchToolsCatalog(): Promise<GatewayToolsCatalog>;
+  fetchToolsCatalog(): Promise<HermesToolsCatalog>;
   listWorkspaceFiles(relativePath?: string): Promise<{
     items: Array<{ path: string; kind: 'file' | 'directory'; size?: number; modifiedMs?: number }>;
     truncated: boolean;
@@ -90,12 +89,11 @@ export interface AgentBackendClient {
   writeWorkspaceFile(path: string, content: string): Promise<void>;
 }
 
-export type { GatewayToolEntry };
+export type { HermesToolEntry };
 
 export function createDefaultBackendClient(config?: Pick<AppConfig, 'transport'>): AgentBackendClient {
-  const transport = config?.transport ?? 'hermes_acp';
-  if (transport === 'hermes_acp') {
-    return new HermesAcpClient();
-  }
-  return new HermesGatewayClient();
+  const transport = config?.transport ?? 'hermes_http';
+  void transport;
+  return new HermesHttpClient();
 }
+

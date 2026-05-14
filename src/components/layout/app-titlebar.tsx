@@ -1,5 +1,5 @@
 import type { CSSProperties, MouseEvent } from 'react';
-import { AlertCircle, ArrowLeft, Copy, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Square, X } from 'lucide-react';
+import { ArrowLeft, Copy, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Square, X } from 'lucide-react';
 
 import type { CoworkProgressStep, CoworkRunPhase } from '@/app-types';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,8 @@ type AppTitlebarProps = {
   coworkRightPanelOpen?: boolean;
   isMaximized: boolean;
   usageModeLabel: string;
-  gatewayConnected?: boolean;
-  showGatewayError?: boolean;
+  hermesConnected?: boolean;
+  showConnectionError?: boolean;
   coworkRunPhase?: CoworkRunPhase;
   coworkRunStatus?: string;
   coworkProgressSteps?: CoworkProgressStep[];
@@ -29,7 +29,7 @@ type AppTitlebarProps = {
   onToggleMaximize: () => void | Promise<void>;
   onClose: () => void | Promise<void>;
   onShowSystemMenu: (x: number, y: number) => void | Promise<void>;
-  onOpenGatewaySettings?: () => void;
+  onOpenConnectionSettings?: () => void;
 };
 
 export function AppTitlebar({
@@ -37,8 +37,8 @@ export function AppTitlebar({
   activePage,
   coworkRightPanelOpen = true,
   isMaximized,
-  gatewayConnected = false,
-  showGatewayError = false,
+  hermesConnected = false,
+  showConnectionError = false,
   minimal,
   onToggleSidebar,
   onToggleCoworkRightPanel,
@@ -47,8 +47,11 @@ export function AppTitlebar({
   onToggleMaximize,
   onClose,
   onShowSystemMenu,
-  onOpenGatewaySettings,
+  onOpenConnectionSettings,
 }: AppTitlebarProps) {
+  void hermesConnected;
+  void showConnectionError;
+  void onOpenConnectionSettings;
   const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties;
   const noDragStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties;
   const showBackButton = activePage === 'settings';
@@ -99,18 +102,6 @@ export function AppTitlebar({
           >
             {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
           </Button>
-          {showGatewayError ? (
-            <button
-              type="button"
-              className="inline-flex h-6 w-6 min-h-6 min-w-6 shrink-0 items-center justify-center border border-blue-500/45 bg-blue-500 p-0 text-white transition hover:bg-blue-500/90"
-              style={{ ...noDragStyle, borderRadius: '9999px' }}
-              onClick={() => onOpenGatewaySettings?.()}
-              title="Connection error. Open gateway settings."
-              aria-label="Connection error. Open gateway settings."
-            >
-              <AlertCircle className="size-3.5" />
-            </button>
-          ) : null}
           {showBackButton ? (
             <Button
               type="button"
@@ -193,3 +184,4 @@ export function AppTitlebar({
     </header>
   );
 }
+

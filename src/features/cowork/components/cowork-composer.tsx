@@ -25,7 +25,7 @@ type CoworkComposerProps = {
   modelsLoading: boolean;
   changingModel: boolean;
   sending: boolean;
-  gatewayConnected: boolean;
+  hermesConnected: boolean;
   approvalMode: 'standard' | 'project' | 'none';
   contextWindowUsedTokens: number;
   contextWindowTotalTokens: number;
@@ -46,7 +46,7 @@ export function CoworkComposer({
   modelsLoading,
   changingModel,
   sending,
-  gatewayConnected,
+  hermesConnected,
   approvalMode,
   contextWindowUsedTokens,
   contextWindowTotalTokens,
@@ -65,7 +65,7 @@ export function CoworkComposer({
   const [mentionMenuIndex, setMentionMenuIndex] = useState(0);
   const [effortLevel, setEffortLevel] = useState<'low' | 'medium' | 'high'>('medium');
 
-  const canSend = composerText.trim().length > 0 && !sending && gatewayConnected;
+  const canSend = composerText.trim().length > 0 && !sending && hermesConnected;
   const hasModelChoices = models.length > 0;
   const modelDropdownDisabled = modelsLoading || changingModel || !hasModelChoices;
 
@@ -566,7 +566,7 @@ export function CoworkComposer({
             <button
               type="button"
               className={`inline-flex h-5 w-5 items-center justify-center rounded-full transition hover:bg-muted/70 ${
-                gatewayConnected ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-300'
+                hermesConnected ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-300'
               }`}
               aria-label="Context window usage"
             >
@@ -601,3 +601,4 @@ export function CoworkComposer({
     </div>
   );
 }
+

@@ -1,11 +1,10 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Code2, Folder, Globe, KeyRound, Link2, Shield, Terminal } from 'lucide-react';
 
-import type { HealthCheckResult, UserPreferences } from '@/app-types';
+import type { UserPreferences } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { listConnectors, persistConnectorConfig } from '@/lib/connectors';
 import { loadAllowedDomains, saveAllowedDomains } from '@/lib/connectors/web-fetch';
@@ -20,15 +19,7 @@ type ThemeOption = UserPreferences['theme'];
 
 type SettingsPageProps = {
   activeSection: SettingsSection;
-  draftGatewayUrl: string;
-  draftGatewayToken: string;
-  health: HealthCheckResult | null;
-  status: string;
-  saving: boolean;
   preferences: UserPreferences;
-  onDraftGatewayUrlChange: (value: string) => void;
-  onDraftGatewayTokenChange: (value: string) => void;
-  onSave: (event: FormEvent) => void;
   onUpdatePreferences: (patch: Partial<UserPreferences>) => void;
 };
 
@@ -46,8 +37,8 @@ const sectionDescriptions: Record<SettingsSection, { en: string; de: string }> =
     de: 'Standardanweisungen fuer jede Konversation.',
   },
   Gateway: {
-    en: 'Hermes connection and device authorization.',
-    de: 'Hermes-Verbindung und Geraeteautorisierung.',
+    en: 'Connection settings.',
+    de: 'Verbindungseinstellungen.',
   },
   Connectors: {
     en: 'Connect external services to Relay.',
@@ -206,15 +197,7 @@ function ThemePreview({ mode, style }: { mode: ThemeOption; style: StyleOption }
 
 export function SettingsPage({
   activeSection,
-  draftGatewayUrl,
-  draftGatewayToken,
-  health,
-  status,
-  saving,
   preferences,
-  onDraftGatewayUrlChange,
-  onDraftGatewayTokenChange,
-  onSave,
   onUpdatePreferences,
 }: SettingsPageProps) {
   const [prefersDarkSystem, setPrefersDarkSystem] = useState(false);
@@ -236,7 +219,6 @@ export function SettingsPage({
 
   const useDarkPreview =
     preferences.theme === 'dark' || (preferences.theme === 'auto' && prefersDarkSystem);
-
   const renderPlaceholder = (icon: ReactNode, hint: string) => (
     <div className="max-w-[980px] flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/60 py-12 text-center">
       <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
@@ -258,7 +240,7 @@ export function SettingsPage({
                 Profile: 'Profil',
                 Appearance: 'Darstellung',
                 'System Prompt': 'System-Prompt',
-                Gateway: 'Gateway',
+                Gateway: 'Connection',
                 Connectors: 'Konnektoren',
                 Account: 'Konto',
                 Privacy: 'Datenschutz',
@@ -464,61 +446,14 @@ export function SettingsPage({
 
       {activeSection === 'Gateway' && (
         <section className={settingsCardClass}>
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-base font-medium">{t('Hermes connection', 'Hermes-Verbindung')}</h2>
-            <Badge
-              variant="outline"
-              className={
-                health?.ok
-                  ? 'rounded-full border border-primary/35 bg-primary/10 font-sans text-[11px] text-primary'
-                  : 'rounded-full font-sans text-[11px]'
-              }
-            >
-              {health?.ok ? t('Connected', 'Verbunden') : t('Not connected', 'Nicht verbunden')}
-            </Badge>
+          <div className="rounded-lg border border-border/60 bg-muted/40 p-3">
+            <p className="font-sans text-sm text-muted-foreground">
+              {t(
+                'Connection management has been removed from Settings.',
+                'Die Verbindungsverwaltung wurde aus den Einstellungen entfernt.',
+              )}
+            </p>
           </div>
-
-          <form className="grid gap-3" onSubmit={onSave}>
-            <label className="grid gap-1">
-              <span className="font-sans text-xs text-muted-foreground">Hermes endpoint</span>
-              <Input
-                value={draftGatewayUrl}
-                onChange={(event) => onDraftGatewayUrlChange(event.target.value)}
-                placeholder="http://127.0.0.1:8642/v1"
-                className="font-sans"
-              />
-            </label>
-
-            <label className="grid gap-1">
-              <span className="font-sans text-xs text-muted-foreground">Hermes token</span>
-              <Input
-                type="password"
-                value={draftGatewayToken}
-                onChange={(event) => onDraftGatewayTokenChange(event.target.value)}
-                placeholder={t('Optional auth token for Hermes endpoint', 'Optionaler Auth-Token fuer Hermes-Endpunkt')}
-                className="font-sans"
-              />
-            </label>
-
-            <Button
-              className="w-full border-0 bg-primary text-primary-foreground hover:bg-primary/90"
-              type="submit"
-              disabled={saving}
-            >
-              {saving ? t('Connecting...', 'Verbinde...') : t('Connect', 'Verbinden')}
-            </Button>
-          </form>
-
-          {health && !health.ok ? (
-            <div className="mt-3 rounded-lg border border-destructive/25 bg-destructive/10 p-3">
-              <p className="font-sans text-xs font-medium text-destructive">{t('Connection failed', 'Verbindung fehlgeschlagen')}</p>
-              <p className="mt-1 font-sans text-xs text-destructive/85">{health.message}</p>
-            </div>
-          ) : health?.ok ? (
-            <p className="mt-3 font-sans text-xs text-primary">{status}</p>
-          ) : status ? (
-            <p className="mt-3 font-sans text-xs text-muted-foreground">{status}</p>
-          ) : null}
         </section>
       )}
 

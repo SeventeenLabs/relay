@@ -13,7 +13,7 @@
  * UI can show what the agent *can* do and guide the user.
  */
 
-import type { AgentBackendClient, GatewayToolEntry } from './agent-backend-client';
+import type { AgentBackendClient, HermesToolEntry } from './agent-backend-client';
 import type { LocalFileListItem } from '@/app-types';
 
 /* ═══════════════════════════════════════════ Types ═══════════════════════════════════════════ */
@@ -47,7 +47,7 @@ export interface FileService {
   deleteFile(rootPathOrEmpty: string, relativePath: string): Promise<void>;
   createFile(rootPathOrEmpty: string, relativePath: string, content: string): Promise<void>;
   /** Returns the agent's available tools from `tools.catalog`, or null if not applicable. */
-  fetchToolsCatalog(): Promise<GatewayToolEntry[] | null>;
+  fetchToolsCatalog(): Promise<HermesToolEntry[] | null>;
   /** Checks if the agent has filesystem tools (group:fs). */
   hasFileTools(): Promise<boolean>;
 }
@@ -98,7 +98,7 @@ export class LocalFileService implements FileService {
     await bridge.createFileInFolder(rootPath, relativePath, content);
   }
 
-  async fetchToolsCatalog(): Promise<GatewayToolEntry[] | null> {
+  async fetchToolsCatalog(): Promise<HermesToolEntry[] | null> {
     return null; // Local mode — not applicable
   }
 
@@ -173,9 +173,9 @@ export class RemoteFileService implements FileService {
     await guardedCall('workspace.write', () => this.gateway.writeWorkspaceFile(relativePath, content));
   }
 
-  private _cachedTools: GatewayToolEntry[] | null = null;
+  private _cachedTools: HermesToolEntry[] | null = null;
 
-  async fetchToolsCatalog(): Promise<GatewayToolEntry[] | null> {
+  async fetchToolsCatalog(): Promise<HermesToolEntry[] | null> {
     if (this._cachedTools) return this._cachedTools;
     try {
       const catalog = await this.gateway.fetchToolsCatalog();
@@ -243,3 +243,4 @@ function isRemoteUrl(url: string): boolean {
     return false;
   }
 }
+

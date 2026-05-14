@@ -23,43 +23,6 @@ const api = {
     ipcRenderer.invoke('backend:health-check', baseUrl) as Promise<HealthCheckResult>,
   backendHttpRequest: (payload: { baseUrl: string; path: string; method?: string; token?: string; body?: string }) =>
     ipcRenderer.invoke('backend:http-request', payload) as Promise<{ ok: boolean; status: number; statusText: string; body: string }>,
-  acpEnsureAgent: () =>
-    ipcRenderer.invoke('acp:ensure-agent') as Promise<{ ok: boolean }>,
-  acpNewSession: (payload: { cwd: string }) =>
-    ipcRenderer.invoke('acp:new-session', payload) as Promise<{ sessionId: string }>,
-  acpPrompt: (payload: { sessionId: string; text: string }) =>
-    ipcRenderer.invoke('acp:prompt', payload) as Promise<{
-      text: string;
-      stopReason?: string;
-      activityItems?: Array<{ id: string; label: string; details: string; tone: 'neutral' | 'success' | 'danger' }>;
-      contextWindowUsed?: number;
-      contextWindowSize?: number;
-    }>,
-  acpCancel: (payload: { sessionId: string }) =>
-    ipcRenderer.invoke('acp:cancel', payload) as Promise<{ ok: boolean }>,
-  acpCloseSession: (payload: { sessionId: string }) =>
-    ipcRenderer.invoke('acp:close-session', payload) as Promise<{ ok: boolean }>,
-  acpListSessions: (payload?: { limit?: number }) =>
-    ipcRenderer.invoke('acp:list-sessions', payload) as Promise<Array<{ key: string; kind: string; title?: string }>>,
-  acpGetHistory: (payload: { sessionId: string; limit?: number }) =>
-    ipcRenderer.invoke('acp:get-history', payload) as Promise<Array<{ id: string; role: 'user' | 'assistant' | 'system'; text: string }>>,
-  acpSetSessionModel: (payload: { sessionId: string; modelValue: string | null }) =>
-    ipcRenderer.invoke('acp:set-session-model', payload) as Promise<{ applied: boolean; reason?: string }>,
-  acpGetSessionModel: (payload: { sessionId: string }) =>
-    ipcRenderer.invoke('acp:get-session-model', payload) as Promise<{ model: string | null }>,
-  acpListModels: () =>
-    ipcRenderer.invoke('acp:list-models') as Promise<Array<{ value: string; label: string }>>,
-  acpOnLiveActivity: (
-    handler: (event: { sessionId: string; item: { id: string; label: string; details: string; tone: 'neutral' | 'success' | 'danger' } }) => void,
-  ) => {
-    const listener = (_event: unknown, payload: { sessionId: string; item: { id: string; label: string; details: string; tone: 'neutral' | 'success' | 'danger' } }) => {
-      handler(payload);
-    };
-    ipcRenderer.on('acp:live-activity', listener);
-    return () => {
-      ipcRenderer.removeListener('acp:live-activity', listener);
-    };
-  },
   hermesModelOptions: (payload?: { gatewayUrl?: string }) =>
     ipcRenderer.invoke('hermes:model-options', payload) as Promise<{ providers: Array<{ slug: string; name: string; is_current?: boolean; models: string[] }>; model?: string; provider?: string }>,
   hermesSetMainModel: (payload: { gatewayUrl?: string; provider: string; model: string }) =>

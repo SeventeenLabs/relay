@@ -20,25 +20,6 @@ type RelayApi = {
   saveConfig: (config: AppConfig) => Promise<AppConfig>;
   healthCheck: (baseUrl: string) => Promise<HealthCheckResult>;
   backendHttpRequest: (payload: { baseUrl: string; path: string; method?: string; token?: string; body?: string }) => Promise<{ ok: boolean; status: number; statusText: string; body: string }>;
-  acpEnsureAgent: () => Promise<{ ok: boolean }>;
-  acpNewSession: (payload: { cwd: string }) => Promise<{ sessionId: string }>;
-  acpPrompt: (payload: { sessionId: string; text: string }) => Promise<{
-    text: string;
-    stopReason?: string;
-    activityItems?: Array<{ id: string; label: string; details: string; tone: 'neutral' | 'success' | 'danger' }>;
-    contextWindowUsed?: number;
-    contextWindowSize?: number;
-  }>;
-  acpCancel: (payload: { sessionId: string }) => Promise<{ ok: boolean }>;
-  acpCloseSession: (payload: { sessionId: string }) => Promise<{ ok: boolean }>;
-  acpListSessions: (payload?: { limit?: number }) => Promise<Array<{ key: string; kind: string; title?: string }>>;
-  acpGetHistory: (payload: { sessionId: string; limit?: number }) => Promise<Array<{ id: string; role: 'user' | 'assistant' | 'system'; text: string }>>;
-  acpSetSessionModel: (payload: { sessionId: string; modelValue: string | null }) => Promise<{ applied: boolean; reason?: string }>;
-  acpGetSessionModel: (payload: { sessionId: string }) => Promise<{ model: string | null }>;
-  acpListModels: () => Promise<Array<{ value: string; label: string }>>;
-  acpOnLiveActivity: (
-    handler: (event: { sessionId: string; item: { id: string; label: string; details: string; tone: 'neutral' | 'success' | 'danger' } }) => void,
-  ) => () => void;
   hermesModelOptions: (payload?: { gatewayUrl?: string }) => Promise<{ providers: Array<{ slug: string; name: string; is_current?: boolean; models: string[] }>; model?: string; provider?: string }>;
   hermesSetMainModel: (payload: { gatewayUrl?: string; provider: string; model: string }) => Promise<{ ok: boolean; provider: string; model: string; confirmedProvider?: string; confirmedModel?: string }>;
   hermesServiceStatus: () => Promise<{ gateway: boolean; apiServer: boolean; dashboard: boolean }>;

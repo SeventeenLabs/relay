@@ -3,12 +3,12 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { exec, spawn } from 'node:child_process';
+import { exec, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
-import { HermesAcpManager } from './hermes-acp-manager.js';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 import type {
   AppConfig,
   HealthCheckResult,
@@ -101,14 +101,6 @@ const BLOCKED_BASENAMES = new Set(['desktop.ini', 'thumbs.db']);
 const HERMES_MAIN_LOG_PREFIX = '[Relay:HermesMain]';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const hermesAcpManager = new HermesAcpManager();
-hermesAcpManager.onLiveActivity((event) => {
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) {
-      window.webContents.send('acp:live-activity', event);
-    }
-  }
-});
 
 function logHermesMain(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) {
   if (level === 'error') {
@@ -123,6 +115,101 @@ function logHermesMain(level: 'info' | 'warn' | 'error', message: string, meta?:
 }
 
 const isLoopbackHost = (host: string) => host === 'localhost' || host === '127.0.0.1' || host === '::1';
+
+const normalizeGatewayHttpBase = (value: string) => {
+  const trimmed = value.trim();
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  const withoutTrailing = withProtocol.replace(/\/+$/, '');
+  return withoutTrailing.endsWith('/v1') ? withoutTrailing : `${withoutTrailing}/v1`;
+};
+
+const resolveGatewayBaseForMain = async (baseUrl: string): Promise<string> => {
+  return normalizeGatewayHttpBase(baseUrl.trim());
+};
+
+type GatewayMode = 'local' | 'remote';
+
+const resolveGatewayMode = (gatewayUrl: string): GatewayMode => {
+  const trimmed = gatewayUrl.trim();
+  const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  const parsed = new URL(normalized);
+  return isLoopbackHost(parsed.hostname) ? 'local' : 'remote';
+};
+
+const spawnDetached = (command: string, args: string[]) =>
+  new Promise<boolean>((resolve) => {
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (ok) child.unref();
+      resolve(ok);
+    };
+    child.once('error', () => finish(false));
+    child.once('spawn', () => finish(true));
+  });
+
+async function startHermesDashboardProcess(port: number): Promise<'wsl' | 'windows' | null> {
+  const wslCmd = `nohup hermes dashboard --no-open --host 127.0.0.1 --port ${port} >/tmp/hermes-dashboard.log 2>&1 &`;
+  if (await spawnDetached('wsl', ['bash', '-lc', wslCmd])) {
+    return 'wsl';
+  }
+  const windowsCmd = `start "" /b hermes dashboard --no-open --host 127.0.0.1 --port ${port}`;
+  if (await spawnDetached('cmd.exe', ['/d', '/s', '/c', windowsCmd])) {
+    return 'windows';
+  }
+  return null;
+}
+
+async function startHermesGatewayAndDashboardProcesses(dashboardPort: number): Promise<'wsl' | 'windows' | null> {
+  const wslCmd = `nohup hermes gateway > /tmp/hermes-gateway.log 2>&1 & nohup hermes dashboard --no-open --host 127.0.0.1 --port ${dashboardPort} > /tmp/hermes-dashboard.log 2>&1 &`;
+  if (await spawnDetached('wsl', ['bash', '-lc', wslCmd])) {
+    return 'wsl';
+  }
+  const windowsCmd = `start "" /b hermes gateway && start "" /b hermes dashboard --no-open --host 127.0.0.1 --port ${dashboardPort}`;
+  if (await spawnDetached('cmd.exe', ['/d', '/s', '/c', windowsCmd])) {
+    return 'windows';
+  }
+  return null;
+}
+
+const runWslPython = async (script: string): Promise<{ stdout: string; stderr: string }> => {
+  return execFileAsync('wsl', ['python3', '-c', script]);
+};
+
+async function fetchHermesModelOptionsViaWsl(dashboardPort: number): Promise<{
+  providers?: Array<{ slug?: string; name?: string; is_current?: boolean; models?: string[] }>;
+  model?: string;
+  provider?: string;
+}> {
+  const script = [
+    'import json',
+    'import re',
+    'import sys',
+    'import urllib.request',
+    `port = ${dashboardPort}`,
+    'base = f"http://127.0.0.1:{port}"',
+    'html = urllib.request.urlopen(f"{base}/", timeout=5).read().decode("utf-8", errors="replace")',
+    'm = re.search(r\'__HERMES_SESSION_TOKEN__="([^"]+)"\', html)',
+    'if not m:',
+    '    raise RuntimeError("Hermes dashboard token missing")',
+    'token = m.group(1).strip()',
+    'req = urllib.request.Request(f"{base}/api/model/options", headers={"Content-Type": "application/json", "X-Hermes-Session-Token": token})',
+    'body = urllib.request.urlopen(req, timeout=5).read().decode("utf-8", errors="replace")',
+    'sys.stdout.write(body)',
+  ].join('\n');
+  const { stdout } = await runWslPython(script);
+  return JSON.parse(stdout) as {
+    providers?: Array<{ slug?: string; name?: string; is_current?: boolean; models?: string[] }>;
+    model?: string;
+    provider?: string;
+  };
+}
 
 function registerDevContentSecurityPolicy() {
   if (!isDev) {
@@ -798,11 +885,13 @@ async function readConfig(): Promise<AppConfig> {
       (parsed.baseUrl ? parsed.baseUrl : defaultConfig.gatewayUrl);
 
     const backendType: AppConfig['backendType'] = 'hermes';
+    const transport = 'hermes_http';
     const normalizedStoredGatewayUrl = inferredGatewayUrl.trim();
     const fallbackGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
     const gatewayUrl = normalizedStoredGatewayUrl || fallbackGatewayUrl;
     return {
       backendType,
+      transport,
       gatewayUrl,
       gatewayToken: parsed.gatewayToken ?? defaultConfig.gatewayToken,
     };
@@ -813,12 +902,14 @@ async function readConfig(): Promise<AppConfig> {
 
 async function writeConfig(config: AppConfig): Promise<AppConfig> {
   const normalizedBackendType: AppConfig['backendType'] = 'hermes';
+  const normalizedTransport = 'hermes_http';
   const normalizedGatewayUrlInput = config.gatewayUrl.trim();
   const fallbackGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
   const normalizedGatewayUrl = normalizedGatewayUrlInput || fallbackGatewayUrl;
 
   const normalized: AppConfig = {
     backendType: normalizedBackendType,
+    transport: normalizedTransport,
     gatewayUrl: normalizedGatewayUrl,
     gatewayToken: config.gatewayToken.trim(),
   };
@@ -829,10 +920,11 @@ async function writeConfig(config: AppConfig): Promise<AppConfig> {
 }
 
 async function runHealthCheck(gatewayUrl: string): Promise<HealthCheckResult> {
-  const normalizedBaseUrl = gatewayUrl
-    .trim()
-    .replace(/^wss?:\/\//, (value) => (value === 'wss://' ? 'https://' : 'http://'))
-    .replace(/\/$/, '');
+  const normalizedBaseUrl = await resolveGatewayBaseForMain(
+    gatewayUrl
+      .trim()
+      .replace(/^wss?:\/\//, (value) => (value === 'wss://' ? 'https://' : 'http://')),
+  );
   const candidates = ['/health', '/api/health', '/'];
 
   for (const candidate of candidates) {
@@ -947,7 +1039,8 @@ app.whenReady().then(async () => {
         headers.Authorization = `Bearer ${payload.token.trim()}`;
       }
 
-      const response = await fetch(`${baseUrl}${path}`, {
+      const resolvedBaseUrl = await resolveGatewayBaseForMain(baseUrl);
+      const response = await fetch(`${resolvedBaseUrl}${path}`, {
         method,
         headers,
         body: typeof payload?.body === 'string' ? payload.body : undefined,
@@ -962,36 +1055,6 @@ app.whenReady().then(async () => {
       };
     },
   );
-  ipcMain.handle('acp:ensure-agent', async () => {
-    return hermesAcpManager.ensureAgent();
-  });
-  ipcMain.handle('acp:new-session', async (_event, payload: { cwd: string }) => {
-    return hermesAcpManager.newSession(payload);
-  });
-  ipcMain.handle('acp:prompt', async (_event, payload: { sessionId: string; text: string }) => {
-    return hermesAcpManager.prompt(payload);
-  });
-  ipcMain.handle('acp:cancel', async (_event, payload: { sessionId: string }) => {
-    return hermesAcpManager.cancel(payload);
-  });
-  ipcMain.handle('acp:close-session', async (_event, payload: { sessionId: string }) => {
-    return hermesAcpManager.closeSession(payload);
-  });
-  ipcMain.handle('acp:list-sessions', async (_event, payload?: { limit?: number }) => {
-    return hermesAcpManager.listSessions(typeof payload?.limit === 'number' ? payload.limit : 200);
-  });
-  ipcMain.handle('acp:get-history', async (_event, payload: { sessionId: string; limit?: number }) => {
-    return hermesAcpManager.getHistory(payload.sessionId, typeof payload?.limit === 'number' ? payload.limit : 50);
-  });
-  ipcMain.handle('acp:set-session-model', async (_event, payload: { sessionId: string; modelValue: string | null }) => {
-    return hermesAcpManager.setSessionModel(payload);
-  });
-  ipcMain.handle('acp:get-session-model', async (_event, payload: { sessionId: string }) => {
-    return { model: hermesAcpManager.getSessionModel(payload.sessionId) };
-  });
-  ipcMain.handle('acp:list-models', async () => {
-    return hermesAcpManager.listModels();
-  });
   ipcMain.handle(
     'hermes:model-options',
     async (
@@ -1002,10 +1065,18 @@ app.whenReady().then(async () => {
     ) => {
       logHermesMain('info', 'IPC hermes:model-options called', { hasGatewayUrl: Boolean(payload?.gatewayUrl) });
       const rawGatewayUrl = typeof payload?.gatewayUrl === 'string' ? payload.gatewayUrl.trim() : '';
-      const parsedGatewayUrl = rawGatewayUrl || defaultConfig.gatewayUrl;
+      if (!rawGatewayUrl) {
+        throw new Error('hermes:model-options requires explicit gatewayUrl. Refusing implicit local/default fallback.');
+      }
+      const parsedGatewayUrl = rawGatewayUrl;
+      const mode = resolveGatewayMode(parsedGatewayUrl);
       const normalized = /^https?:\/\//i.test(parsedGatewayUrl) ? parsedGatewayUrl : `http://${parsedGatewayUrl}`;
       const gateway = new URL(normalized);
+      const gatewayApiBase = `${gateway.protocol}//${gateway.host}${gateway.pathname.replace(/\/+$/, '')}`;
       const dashboardBaseUrl = `${gateway.protocol}//${gateway.hostname}:${HERMES_DEFAULT_DASHBOARD_PORT}`;
+      const isLocalGateway = mode === 'local';
+      const storedConfig = await readConfig();
+      const gatewayToken = storedConfig.gatewayToken?.trim() || '';
 
       const normalizeModelOptionsResponse = (data: {
         providers?: Array<{ slug?: string; name?: string; is_current?: boolean; models?: string[] }>;
@@ -1061,30 +1132,88 @@ app.whenReady().then(async () => {
         return normalizeModelOptionsResponse(data);
       };
 
+      const fetchRemoteGatewayModelOptions = async () => {
+        const response = await fetch(`${gatewayApiBase}/models`, {
+          method: 'GET',
+          headers: gatewayToken ? { Authorization: `Bearer ${gatewayToken}` } : undefined,
+        });
+        if (!response.ok) {
+          const body = await response.text();
+          throw new Error(`Hermes gateway /models failed (${response.status}): ${body || response.statusText}`);
+        }
+        const data = await response.json() as { data?: Array<{ id?: string }> };
+        const models = Array.isArray(data.data)
+          ? data.data.map((entry) => (typeof entry?.id === 'string' ? entry.id.trim() : '')).filter(Boolean)
+          : [];
+        const grouped = new Map<string, string[]>();
+        for (const modelId of models) {
+          const [providerMaybe, modelMaybe] = modelId.includes('::') ? modelId.split('::', 2) : ['remote', modelId];
+          const provider = providerMaybe.trim() || 'remote';
+          const model = modelMaybe.trim();
+          if (!model) continue;
+          const next = grouped.get(provider) ?? [];
+          if (!next.includes(model)) {
+            next.push(model);
+          }
+          grouped.set(provider, next);
+        }
+        return normalizeModelOptionsResponse({
+          providers: Array.from(grouped.entries()).map(([provider, providerModels]) => ({
+            slug: provider,
+            name: provider,
+            models: providerModels,
+          })),
+        });
+      };
+
+      const fetchModelOptionsWithFallback = async () => {
+        if (!isLocalGateway) {
+          return fetchRemoteGatewayModelOptions();
+        }
+        try {
+          return await fetchModelOptions();
+        } catch (error) {
+          logHermesMain('warn', 'Dashboard HTTP model-options fetch failed; trying WSL-local API', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          const data = await fetchHermesModelOptionsViaWsl(HERMES_DEFAULT_DASHBOARD_PORT);
+          return normalizeModelOptionsResponse(data);
+        }
+      };
+
       try {
-        const result = await fetchModelOptions();
+        const result = await fetchModelOptionsWithFallback();
         logHermesMain('info', 'Model options fetched', { providers: result.providers.length });
         return result;
-      } catch {
+      } catch (initialError) {
+        if (!isLocalGateway) {
+          const detail = initialError instanceof Error ? initialError.message : String(initialError);
+          logHermesMain('error', 'Unable to read remote gateway model options', { detail, gatewayApiBase });
+          throw new Error(`Unable to read remote Hermes model options from ${gatewayApiBase}. ${detail}`);
+        }
+        let lastError: unknown = initialError;
         logHermesMain('warn', 'Model options fetch failed; attempting dashboard auto-start');
-        spawn('wsl', ['bash', '-lc', `nohup hermes dashboard --no-open --host 127.0.0.1 --port ${HERMES_DEFAULT_DASHBOARD_PORT} >/tmp/hermes-dashboard.log 2>&1 &`], {
-          detached: true,
-          stdio: 'ignore',
-        }).unref();
+        const launcher = await startHermesDashboardProcess(HERMES_DEFAULT_DASHBOARD_PORT);
+        logHermesMain('info', 'Dashboard startup attempt completed', { launcher: launcher ?? 'none' });
 
         for (let attempt = 0; attempt < 12; attempt += 1) {
           await delay(500);
           try {
-            const result = await fetchModelOptions();
+            const result = await fetchModelOptionsWithFallback();
             logHermesMain('info', 'Model options fetched after retry', { attempt: attempt + 1, providers: result.providers.length });
             return result;
-          } catch {
-            // Retry until timeout.
+          } catch (attemptError) {
+            lastError = attemptError;
+            logHermesMain('warn', 'Model options retry failed', {
+              attempt: attempt + 1,
+              error: attemptError instanceof Error ? attemptError.message : String(attemptError),
+            });
           }
         }
 
-        logHermesMain('error', 'Unable to read model options after retries');
-        throw new Error('Unable to read Hermes model options. Make sure `hermes dashboard` can run locally.');
+        const detail = lastError instanceof Error ? lastError.message : String(lastError);
+        logHermesMain('error', 'Unable to read model options after retries', { detail });
+        throw new Error(`Unable to read Hermes model options. ${detail}`);
       }
     },
   );
@@ -1106,10 +1235,19 @@ app.whenReady().then(async () => {
       logHermesMain('info', 'IPC hermes:model-set-main called', { provider, model, hasGatewayUrl: Boolean(payload?.gatewayUrl) });
 
       const rawGatewayUrl = typeof payload?.gatewayUrl === 'string' ? payload.gatewayUrl.trim() : '';
-      const parsedGatewayUrl = rawGatewayUrl || defaultConfig.gatewayUrl;
+      if (!rawGatewayUrl) {
+        throw new Error('hermes:model-set-main requires explicit gatewayUrl. Refusing implicit local/default fallback.');
+      }
+      const parsedGatewayUrl = rawGatewayUrl;
+      const mode = resolveGatewayMode(parsedGatewayUrl);
       const normalized = /^https?:\/\//i.test(parsedGatewayUrl) ? parsedGatewayUrl : `http://${parsedGatewayUrl}`;
       const gateway = new URL(normalized);
+      const isLocalGateway = mode === 'local';
       const dashboardBaseUrl = `${gateway.protocol}//${gateway.hostname}:${HERMES_DEFAULT_DASHBOARD_PORT}`;
+
+      if (!isLocalGateway) {
+        throw new Error('Remote model switching is not available via Relay dashboard bridge. Change the model on your VPS Hermes instance (`hermes model`) or use ACP session model switching.');
+      }
 
       const ensureToken = async () => {
         const dashboardHtml = await fetch(`${dashboardBaseUrl}/`).then(async (response) => {
@@ -1167,10 +1305,8 @@ app.whenReady().then(async () => {
         return { ok: true, provider, model, ...confirmed };
       } catch {
         logHermesMain('warn', 'Model set failed; attempting dashboard auto-start', { provider, model });
-        spawn('wsl', ['bash', '-lc', `nohup hermes dashboard --no-open --host 127.0.0.1 --port ${HERMES_DEFAULT_DASHBOARD_PORT} >/tmp/hermes-dashboard.log 2>&1 &`], {
-          detached: true,
-          stdio: 'ignore',
-        }).unref();
+        const launcher = await startHermesDashboardProcess(HERMES_DEFAULT_DASHBOARD_PORT);
+        logHermesMain('info', 'Dashboard startup attempt completed', { launcher: launcher ?? 'none', provider, model });
         for (let attempt = 0; attempt < 12; attempt += 1) {
           await delay(500);
           try {
@@ -1182,11 +1318,17 @@ app.whenReady().then(async () => {
           }
         }
         logHermesMain('error', 'Unable to set main model after retries', { provider, model });
-        throw new Error('Unable to set Hermes main model. Make sure `hermes dashboard` can run locally.');
+        throw new Error('Unable to set Hermes main model. Install/configure WSL or ensure `hermes` is available in your Windows PATH.');
       }
     },
   );
   ipcMain.handle('hermes:service-status', async () => {
+    const currentConfig = await readConfig();
+    const mode = resolveGatewayMode(currentConfig.gatewayUrl);
+    if (mode !== 'local') {
+      return { gateway: false, apiServer: false, dashboard: false };
+    }
+
     const checkApi = async () => {
       try {
         const response = await fetch(`http://127.0.0.1:${HERMES_DEFAULT_GATEWAY_PORT}/v1/models`);
@@ -1212,9 +1354,15 @@ app.whenReady().then(async () => {
     };
   });
   ipcMain.handle('hermes:start-all-services', async () => {
+    const currentConfig = await readConfig();
+    const mode = resolveGatewayMode(currentConfig.gatewayUrl);
+    if (mode !== 'local') {
+      return { ok: false, gateway: false, apiServer: false, dashboard: false, message: 'Local Hermes services are disabled while using a remote gateway URL.' };
+    }
+
     logHermesMain('info', 'Starting Hermes services');
-    const startCmd = `nohup hermes gateway > /tmp/hermes-gateway.log 2>&1 & nohup hermes dashboard --no-open --host 127.0.0.1 --port ${HERMES_DEFAULT_DASHBOARD_PORT} > /tmp/hermes-dashboard.log 2>&1 &`;
-    spawn('wsl', ['bash', '-lc', startCmd], { detached: true, stdio: 'ignore' }).unref();
+    const launcher = await startHermesGatewayAndDashboardProcesses(HERMES_DEFAULT_DASHBOARD_PORT);
+    logHermesMain('info', 'Hermes services launch attempt completed', { launcher: launcher ?? 'none' });
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await delay(500);
       try {

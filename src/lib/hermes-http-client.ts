@@ -3,25 +3,26 @@ import type {
   BackendTypedEventName,
   LegacyAgentBackendEvent,
 } from './agent-backend-client';
+import { ensureGatewayApiBase } from './gateway-endpoint';
 
-export type GatewayConnectOptions = {
+export type HermesConnectOptions = {
   gatewayUrl: string;
   token?: string;
   password?: string;
 };
 
-export type GatewayChatMessage = {
+export type HermesChatMessage = {
   id: string;
   role: 'user' | 'assistant' | 'system';
   text: string;
 };
 
-export type GatewayModelChoice = {
+export type HermesModelChoice = {
   value: string;
   label: string;
 };
 
-export type GatewayCronJob = {
+export type HermesCronJob = {
   id: string;
   name: string;
   schedule: string;
@@ -31,7 +32,7 @@ export type GatewayCronJob = {
   lastRunAt: string | null;
 };
 
-export type GatewayCreateCronJobInput = {
+export type HermesCreateCronJobInput = {
   name: string;
   schedule: string;
   prompt: string;
@@ -40,7 +41,7 @@ export type GatewayCreateCronJobInput = {
   enabled?: boolean;
 };
 
-export type GatewayUpdateCronJobInput = {
+export type HermesUpdateCronJobInput = {
   id: string;
   name?: string;
   schedule?: string;
@@ -48,13 +49,13 @@ export type GatewayUpdateCronJobInput = {
   enabled?: boolean;
 };
 
-export type GatewaySessionSummary = {
+export type HermesSessionSummary = {
   key: string;
   kind: string;
   title?: string;
 };
 
-export type GatewayToolEntry = {
+export type HermesToolEntry = {
   name: string;
   group?: string;
   source: 'core' | 'plugin';
@@ -62,24 +63,24 @@ export type GatewayToolEntry = {
   optional?: boolean;
 };
 
-export type GatewayToolsCatalog = {
-  tools: GatewayToolEntry[];
+export type HermesToolsCatalog = {
+  tools: HermesToolEntry[];
 };
 
-export type GatewayErrorDetails = {
+export type HermesErrorDetails = {
   code?: string;
   requestId?: string;
   reason?: string;
   [key: string]: unknown;
 };
 
-export class GatewayRequestError extends Error {
+export class HermesRequestError extends Error {
   code?: string;
-  details?: GatewayErrorDetails;
+  details?: HermesErrorDetails;
 
-  constructor(message: string, code?: string, details?: GatewayErrorDetails) {
+  constructor(message: string, code?: string, details?: HermesErrorDetails) {
     super(message);
-    this.name = 'GatewayRequestError';
+    this.name = 'HermesRequestError';
     this.code = code;
     this.details = details;
   }
@@ -90,14 +91,14 @@ type StoredSession = {
   kind: 'chat' | 'cowork' | 'main';
   title?: string;
   model?: string | null;
-  history: GatewayChatMessage[];
+  history: HermesChatMessage[];
 };
 
 type OpenAIMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 const MODEL_VALUE_SEPARATOR = '::';
 const HERMES_CLIENT_LOG_PREFIX = '[Relay:HermesClient]';
 
-export class HermesGatewayClient {
+export class HermesHttpClient {
   private connected = false;
   private apiBaseUrl: string | null = null;
   private token: string | null = null;
@@ -134,17 +135,11 @@ export class HermesGatewayClient {
   }
 
   private normalizeBaseUrl(input: string): string {
-    const trimmed = (input ?? '').trim();
-    if (!trimmed) {
+    const normalized = ensureGatewayApiBase(input ?? '');
+    if (!normalized) {
       throw new Error('Hermes endpoint is required.');
     }
-
-    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
-    const normalized = withProtocol.replace(/\/+$/, '');
-    if (normalized.endsWith('/v1')) {
-      return normalized;
-    }
-    return `${normalized}/v1`;
+    return normalized;
   }
 
   private async request(path: string, init?: RequestInit): Promise<Response> {
@@ -185,7 +180,7 @@ export class HermesGatewayClient {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.log('error', 'HTTP request failed before response', { requestId, method, path, durationMs: Date.now() - startedAt, error: message });
-      throw new GatewayRequestError(`Unable to reach Hermes endpoint (${this.apiBaseUrl}): ${message}`, 'network_error');
+      throw new HermesRequestError(`Unable to reach Hermes endpoint (${this.apiBaseUrl}): ${message}`, 'network_error');
     }
 
     this.log('info', 'HTTP response received', { requestId, method, path, status: response.status, durationMs: Date.now() - startedAt });
@@ -206,7 +201,7 @@ export class HermesGatewayClient {
         message = `${message} Check endpoint URL includes /v1.`;
       }
       this.log('warn', 'HTTP request returned non-ok status', { requestId, method, path, status: response.status, message });
-      throw new GatewayRequestError(message, String(response.status), { status: response.status, path });
+      throw new HermesRequestError(message, String(response.status), { status: response.status, path });
     }
 
     return response;
@@ -223,7 +218,7 @@ export class HermesGatewayClient {
     return created;
   }
 
-  private toOpenAIMessages(history: GatewayChatMessage[]): OpenAIMessage[] {
+  private toOpenAIMessages(history: HermesChatMessage[]): OpenAIMessage[] {
     return history
       .filter((m) => m.text.trim().length > 0)
       .map((m) => ({ role: m.role, content: m.text }));
@@ -310,7 +305,7 @@ export class HermesGatewayClient {
     });
   }
 
-  async connect(options: GatewayConnectOptions): Promise<void> {
+  async connect(options: HermesConnectOptions): Promise<void> {
     const base = this.normalizeBaseUrl(options.gatewayUrl);
     const nextToken = options.token?.trim() || null;
 
@@ -468,22 +463,24 @@ export class HermesGatewayClient {
     return key;
   }
 
-  async getHistory(sessionKey: string, limit = 50): Promise<GatewayChatMessage[]> {
+  async getHistory(sessionKey: string, limit = 50): Promise<HermesChatMessage[]> {
     const key = sessionKey.trim();
     const session = this.sessions.get(key);
     if (!session) return [];
     return session.history.slice(-Math.max(1, limit));
   }
 
-  async listModels(): Promise<GatewayModelChoice[]> {
+  async listModels(): Promise<HermesModelChoice[]> {
     this.log('info', 'Listing models');
     if (window.relay?.hermesModelOptions) {
       try {
-        const options = await window.relay.hermesModelOptions({ gatewayUrl: this.apiBaseUrl ?? undefined });
+        const options = await window.relay.hermesModelOptions({
+          gatewayUrl: this.apiBaseUrl ?? undefined,
+        });
         const providers = Array.isArray(options.providers) ? options.providers : [];
         const orderedProviders = [...providers].sort((a, b) => Number(Boolean(b.is_current)) - Number(Boolean(a.is_current)));
         const seen = new Set<string>();
-        const mapped: GatewayModelChoice[] = [];
+        const mapped: HermesModelChoice[] = [];
 
         for (const provider of orderedProviders) {
           for (const modelIdRaw of provider.models ?? []) {
@@ -514,15 +511,17 @@ export class HermesGatewayClient {
     const models = Array.isArray(json.data) ? json.data : [];
     const mapped = models
       .map((m) => (typeof m.id === 'string' && m.id.trim() ? { value: m.id.trim(), label: m.id.trim() } : null))
-      .filter((m): m is GatewayModelChoice => Boolean(m));
-    this.log('info', 'Model list loaded from gateway /models', { count: mapped.length });
+      .filter((m): m is HermesModelChoice => Boolean(m));
+    this.log('info', 'Model list loaded from Hermes /models', { count: mapped.length });
     return mapped;
   }
 
   async getSessionModel(sessionKey: string): Promise<string | null> {
     if (window.relay?.hermesModelOptions) {
       try {
-        const options = await window.relay.hermesModelOptions({ gatewayUrl: this.apiBaseUrl ?? undefined });
+        const options = await window.relay.hermesModelOptions({
+          gatewayUrl: this.apiBaseUrl ?? undefined,
+        });
         const provider = typeof options.provider === 'string' ? options.provider.trim() : '';
         const model = typeof options.model === 'string' ? options.model.trim() : '';
         if (provider && model) {
@@ -536,7 +535,7 @@ export class HermesGatewayClient {
     return session?.model ?? null;
   }
 
-  async listSessions(limit = 200): Promise<GatewaySessionSummary[]> {
+  async listSessions(limit = 200): Promise<HermesSessionSummary[]> {
     return Array.from(this.sessions.values())
       .slice(-Math.max(1, limit))
       .map((s) => ({ key: s.key, kind: s.kind, title: s.title }));
@@ -573,7 +572,7 @@ export class HermesGatewayClient {
     const confirmedModel = result.confirmedModel?.trim() || '';
     if (confirmedProvider && confirmedModel && (confirmedProvider !== provider || confirmedModel !== model)) {
       throw new Error(
-        `Hermes kept ${confirmedProvider}/${confirmedModel} instead of requested ${provider}/${model}. Start a new session or restart gateway.`,
+        `Hermes kept ${confirmedProvider}/${confirmedModel} instead of requested ${provider}/${model}. Start a new session or restart Hermes.`,
       );
     }
   }
@@ -587,47 +586,48 @@ export class HermesGatewayClient {
     this.sessions.delete(sessionKey.trim());
   }
 
-  async listCronJobs(): Promise<GatewayCronJob[]> {
+  async listCronJobs(): Promise<HermesCronJob[]> {
     return [];
   }
 
-  async createCronJob(_input: GatewayCreateCronJobInput): Promise<string | null> {
-    throw new GatewayRequestError('Hermes API cron endpoints are not configured in this client.', 'not_supported');
+  async createCronJob(_input: HermesCreateCronJobInput): Promise<string | null> {
+    throw new HermesRequestError('Hermes API cron endpoints are not configured in this client.', 'not_supported');
   }
 
-  async updateCronJob(_input: GatewayUpdateCronJobInput): Promise<void> {
-    throw new GatewayRequestError('Hermes API cron endpoints are not configured in this client.', 'not_supported');
+  async updateCronJob(_input: HermesUpdateCronJobInput): Promise<void> {
+    throw new HermesRequestError('Hermes API cron endpoints are not configured in this client.', 'not_supported');
   }
 
   async deleteCronJob(_idInput: string): Promise<void> {
-    throw new GatewayRequestError('Hermes API cron endpoints are not configured in this client.', 'not_supported');
+    throw new HermesRequestError('Hermes API cron endpoints are not configured in this client.', 'not_supported');
   }
 
-  async fetchToolsCatalog(): Promise<GatewayToolsCatalog> {
+  async fetchToolsCatalog(): Promise<HermesToolsCatalog> {
     return { tools: [] };
   }
 
   async listWorkspaceFiles(_relativePath?: string): Promise<{ items: Array<{ path: string; kind: 'file' | 'directory'; size?: number; modifiedMs?: number }>; truncated: boolean; }> {
-    throw new GatewayRequestError('workspace.list is not supported by Hermes OpenAI API mode.', 'method_not_found');
+    throw new HermesRequestError('workspace.list is not supported by Hermes OpenAI API mode.', 'method_not_found');
   }
 
   async readWorkspaceFile(_relativePath: string): Promise<{ content: string }> {
-    throw new GatewayRequestError('workspace.read is not supported by Hermes OpenAI API mode.', 'method_not_found');
+    throw new HermesRequestError('workspace.read is not supported by Hermes OpenAI API mode.', 'method_not_found');
   }
 
   async statWorkspaceFile(_relativePath: string): Promise<{ kind: 'file' | 'directory'; size: number; createdMs: number; modifiedMs: number; }> {
-    throw new GatewayRequestError('workspace.stat is not supported by Hermes OpenAI API mode.', 'method_not_found');
+    throw new HermesRequestError('workspace.stat is not supported by Hermes OpenAI API mode.', 'method_not_found');
   }
 
   async renameWorkspaceFile(_oldPath: string, _newPath: string): Promise<void> {
-    throw new GatewayRequestError('workspace.rename is not supported by Hermes OpenAI API mode.', 'method_not_found');
+    throw new HermesRequestError('workspace.rename is not supported by Hermes OpenAI API mode.', 'method_not_found');
   }
 
   async deleteWorkspaceFile(_path: string): Promise<void> {
-    throw new GatewayRequestError('workspace.delete is not supported by Hermes OpenAI API mode.', 'method_not_found');
+    throw new HermesRequestError('workspace.delete is not supported by Hermes OpenAI API mode.', 'method_not_found');
   }
 
   async writeWorkspaceFile(_path: string, _content: string): Promise<void> {
-    throw new GatewayRequestError('workspace.write is not supported by Hermes OpenAI API mode.', 'method_not_found');
+    throw new HermesRequestError('workspace.write is not supported by Hermes OpenAI API mode.', 'method_not_found');
   }
 }
+

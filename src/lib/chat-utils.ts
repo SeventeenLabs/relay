@@ -3,7 +3,7 @@
  * No React imports — safe to use anywhere.
  */
 import type { ChatActivityItem, ChatMessage } from '@/app-types';
-import { GatewayRequestError } from './hermes-gateway-client';
+import { HermesRequestError } from './hermes-http-client';
 
 /* ── Exported types ──────────────────────────────────────────────────────── */
 
@@ -427,13 +427,13 @@ function extractUuidFromMessage(msg?: string): string | undefined {
   return match?.[0];
 }
 
-export function readGatewayError(error: unknown): { message: string; code?: string; requestId?: string } {
+export function readHermesError(error: unknown): { message: string; code?: string; requestId?: string } {
   if (!(error instanceof Error)) {
-    return { message: 'Gateway connection failed.' };
+    return { message: 'Hermes connection failed.' };
   }
 
-  if (error instanceof GatewayRequestError) {
-    console.log('[Relay] GatewayRequestError details:', JSON.stringify(error.details));
+  if (error instanceof HermesRequestError) {
+    console.log('[Relay] HermesRequestError details:', JSON.stringify(error.details));
     const d = error.details as Record<string, unknown> | undefined;
     const requestId =
       (typeof d?.requestId === 'string' && d.requestId) ||
@@ -449,7 +449,7 @@ export function readGatewayError(error: unknown): { message: string; code?: stri
   }
 
   return {
-    message: error.message || 'Gateway connection failed.',
+    message: error.message || 'Hermes connection failed.',
     requestId: extractUuidFromMessage(error.message),
   };
 }
@@ -854,3 +854,4 @@ export function normalizeCoworkMessage(message: ChatMessage): ChatMessage {
     },
   };
 }
+

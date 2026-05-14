@@ -202,8 +202,7 @@ export function loadGatewayConnectionProfiles(): GatewayConnectionProfile[] {
         const name = typeof record.name === 'string' ? record.name.trim() : '';
         const rawGatewayUrl = typeof record.gatewayUrl === 'string' ? record.gatewayUrl.trim() : '';
         const backendType: AppConfig['backendType'] = 'hermes';
-        const transportRaw = typeof record.transport === 'string' ? record.transport.trim() : '';
-        const transport: HermesTransport = transportRaw === 'hermes_acp' ? 'hermes_acp' : DEFAULT_TRANSPORT;
+        const transport: HermesTransport = DEFAULT_TRANSPORT;
         const gatewayUrl = rawGatewayUrl || DEFAULT_HERMES_GATEWAY_URL;
         const gatewayToken = typeof record.gatewayToken === 'string' ? record.gatewayToken : '';
         const createdAt = typeof record.createdAt === 'number' ? record.createdAt : Date.now();
@@ -509,4 +508,3 @@ export function loadOperatorRuns(): OperatorRun[] {
     return [];
   }
 }
-
