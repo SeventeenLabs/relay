@@ -4,7 +4,7 @@ import { ArrowLeft, Copy, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose,
 import type { CoworkProgressStep, CoworkRunPhase } from '@/app-types';
 import { Button } from '@/components/ui/button';
 
-type AppPage = 'chat' | 'cowork' | 'project' | 'settings';
+type AppPage = 'chat' | 'cowork' | 'project' | 'kanban' | 'settings';
 
 type AppTitlebarProps = {
   sidebarOpen: boolean;

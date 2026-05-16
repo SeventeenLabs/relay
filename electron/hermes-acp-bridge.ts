@@ -81,17 +81,31 @@ export class HermesAcpBridge {
 
   private resolveSessionRoot(sessionId: string): string {
     const session = this.knownSessions.get(sessionId);
-    return session?.cwd?.trim() || process.cwd();
+    const root = session?.cwd?.trim() || '';
+    if (!root) {
+      throw new Error(`ACP session is unknown or missing cwd: ${sessionId}`);
+    }
+    return root;
   }
 
   private resolveAllowedPath(sessionId: string, requestedPath: string): string {
     const root = this.resolveSessionRoot(sessionId);
     const normalizedRequest = requestedPath.trim();
-    const resolved = path.isAbsolute(normalizedRequest)
-      ? path.resolve(normalizedRequest)
-      : path.resolve(root, normalizedRequest);
-    // Allow absolute local filesystem paths (Codex-style local access).
-    // Relative paths remain anchored to the ACP session root.
+    if (!normalizedRequest) {
+      throw new Error('Path is required.');
+    }
+
+    if (path.isAbsolute(normalizedRequest)) {
+      // ACP fs/read_text_file + fs/write_text_file expect absolute paths.
+      // We also allow absolute paths for workspace extension methods.
+      return path.resolve(normalizedRequest);
+    }
+
+    // Back-compat for callers that still send relative paths.
+    const resolved = path.resolve(root, normalizedRequest);
+    if (!isPathInside(root, resolved)) {
+      throw new Error(`Relative path escapes session root: ${normalizedRequest}`);
+    }
     return resolved;
   }
 
@@ -111,27 +125,30 @@ export class HermesAcpBridge {
     return rawPath.trim().replace(/\\/g, '/');
   }
 
-  private async workspaceListLocal(sessionId: string, relativePath: string) {
-    const resolvedDir = this.resolveAllowedPath(sessionId, relativePath || '.');
+  private async workspaceListLocal(sessionId: string, requestedPath: string) {
+    const root = this.resolveSessionRoot(sessionId);
+    const normalizedRequest = this.normalizeRelPath(requestedPath || '.');
+    const resolvedDir = this.resolveAllowedPath(sessionId, normalizedRequest);
     const stat = await fs.stat(resolvedDir);
     if (!stat.isDirectory()) {
-      throw new Error(`Not a directory: ${relativePath || '.'}`);
+      throw new Error(`Not a directory: ${normalizedRequest || '.'}`);
     }
-    const root = this.resolveSessionRoot(sessionId);
     const entries = await fs.readdir(resolvedDir, { withFileTypes: true });
     const items: Array<{ path: string; kind: 'file' | 'directory'; size?: number; modifiedMs?: number }> = [];
     for (const entry of entries) {
       if (items.length >= ACP_MAX_LIST_ITEMS) break;
       const absolute = path.join(resolvedDir, entry.name);
-      const relative = path.relative(root, absolute).replace(/\\/g, '/');
+      const displayPath = path.isAbsolute(normalizedRequest)
+        ? absolute
+        : path.relative(root, absolute).replace(/\\/g, '/');
       if (entry.isDirectory()) {
-        items.push({ path: relative, kind: 'directory' });
+        items.push({ path: displayPath, kind: 'directory' });
         continue;
       }
       if (entry.isFile()) {
         const entryStat = await fs.stat(absolute);
         items.push({
-          path: relative,
+          path: displayPath,
           kind: 'file',
           size: entryStat.size,
           modifiedMs: entryStat.mtimeMs,
@@ -141,9 +158,11 @@ export class HermesAcpBridge {
     return { items, truncated: entries.length > items.length };
   }
 
-  private async workspaceSearchLocal(sessionId: string, query: string, relativePath: string) {
+  private async workspaceSearchLocal(sessionId: string, query: string, requestedPath: string) {
     const root = this.resolveSessionRoot(sessionId);
-    const searchRoot = this.resolveAllowedPath(sessionId, relativePath || '.');
+    const normalizedRequest = this.normalizeRelPath(requestedPath || '.');
+    const searchRoot = this.resolveAllowedPath(sessionId, normalizedRequest);
+    const returnAbsolute = path.isAbsolute(normalizedRequest);
     const normalizedQuery = query.trim().toLowerCase();
     const results: Array<{ path: string; kind: 'file' | 'directory'; size?: number; modifiedMs?: number }> = [];
     const walk = async (dir: string) => {
@@ -152,15 +171,17 @@ export class HermesAcpBridge {
       for (const entry of entries) {
         if (results.length >= ACP_MAX_SEARCH_RESULTS) break;
         const absolute = path.join(dir, entry.name);
-        const relative = path.relative(root, absolute).replace(/\\/g, '/');
+        const displayPath = returnAbsolute
+          ? absolute
+          : path.relative(root, absolute).replace(/\\/g, '/');
         const nameLower = entry.name.toLowerCase();
-        if (nameLower.includes(normalizedQuery)) {
+        if (!normalizedQuery || nameLower.includes(normalizedQuery)) {
           if (entry.isDirectory()) {
-            results.push({ path: relative, kind: 'directory' });
+            results.push({ path: displayPath, kind: 'directory' });
           } else if (entry.isFile()) {
             const entryStat = await fs.stat(absolute);
             results.push({
-              path: relative,
+              path: displayPath,
               kind: 'file',
               size: entryStat.size,
               modifiedMs: entryStat.mtimeMs,
@@ -287,9 +308,8 @@ export class HermesAcpBridge {
   }
 
   private makeClientHandler(): Client {
-    const bridge = this;
     return {
-      async requestPermission(params) {
+      requestPermission: async (params) => {
         const first = params.options?.[0];
         if (!first) {
           return { outcome: { outcome: 'cancelled' } };
@@ -301,13 +321,13 @@ export class HermesAcpBridge {
           },
         };
       },
-      async sessionUpdate(params: SessionNotification) {
+      sessionUpdate: async (params: SessionNotification) => {
         // filled by closure in connect()
         void params;
       },
-      async readTextFile(params) {
+      readTextFile: async (params) => {
         const requestedPath = typeof params.path === 'string' ? params.path : '';
-        const resolvedPath = bridge.resolveAllowedPath(params.sessionId, requestedPath);
+        const resolvedPath = this.resolveAllowedPath(params.sessionId, requestedPath);
         logAcp('info', 'ACP fs.read_text_file request', {
           sessionId: params.sessionId,
           requestedPath,
@@ -317,12 +337,12 @@ export class HermesAcpBridge {
         });
         const content = await fs.readFile(resolvedPath, 'utf8');
         return {
-          content: bridge.buildReadSlice(content, params.line ?? null, params.limit ?? null),
+          content: this.buildReadSlice(content, params.line ?? null, params.limit ?? null),
         };
       },
-      async writeTextFile(params) {
+      writeTextFile: async (params) => {
         const requestedPath = typeof params.path === 'string' ? params.path : '';
-        const resolvedPath = bridge.resolveAllowedPath(params.sessionId, requestedPath);
+        const resolvedPath = this.resolveAllowedPath(params.sessionId, requestedPath);
         const content = typeof params.content === 'string' ? params.content : '';
         logAcp('info', 'ACP fs.write_text_file request', {
           sessionId: params.sessionId,
@@ -334,27 +354,27 @@ export class HermesAcpBridge {
         await fs.writeFile(resolvedPath, content, 'utf8');
         return {};
       },
-      async extMethod(method, params) {
+      extMethod: async (method, params) => {
         const sessionId =
           (typeof params?.sessionId === 'string' && params.sessionId.trim())
             ? params.sessionId.trim()
-            : ((bridge.knownSessions.keys().next().value as string | undefined) ?? '');
+            : ((this.knownSessions.keys().next().value as string | undefined) ?? '');
         if (!sessionId) throw new Error(`ext method "${method}" requires sessionId`);
         if (method === 'workspace.list') {
-          const relPath = bridge.normalizeRelPath(params?.path);
+          const relPath = this.normalizeRelPath(params?.path);
           logAcp('info', 'ACP ext workspace.list request', { sessionId, path: relPath || '(root)' });
-          return bridge.workspaceListLocal(sessionId, relPath) as unknown as Record<string, unknown>;
+          return this.workspaceListLocal(sessionId, relPath) as unknown as Record<string, unknown>;
         }
         if (method === 'workspace.read') {
-          const relPath = bridge.normalizeRelPath(params?.path);
-          const resolvedPath = bridge.resolveAllowedPath(sessionId, relPath);
+          const relPath = this.normalizeRelPath(params?.path);
+          const resolvedPath = this.resolveAllowedPath(sessionId, relPath);
           logAcp('info', 'ACP ext workspace.read request', { sessionId, path: relPath });
           const content = await fs.readFile(resolvedPath, 'utf8');
           return { content };
         }
         if (method === 'workspace.stat') {
-          const relPath = bridge.normalizeRelPath(params?.path);
-          const resolvedPath = bridge.resolveAllowedPath(sessionId, relPath);
+          const relPath = this.normalizeRelPath(params?.path);
+          const resolvedPath = this.resolveAllowedPath(sessionId, relPath);
           logAcp('info', 'ACP ext workspace.stat request', { sessionId, path: relPath });
           const fileStat = await fs.stat(resolvedPath);
           return {
@@ -365,8 +385,8 @@ export class HermesAcpBridge {
           };
         }
         if (method === 'workspace.write') {
-          const relPath = bridge.normalizeRelPath(params?.path);
-          const resolvedPath = bridge.resolveAllowedPath(sessionId, relPath);
+          const relPath = this.normalizeRelPath(params?.path);
+          const resolvedPath = this.resolveAllowedPath(sessionId, relPath);
           const content = typeof params?.content === 'string' ? params.content : '';
           logAcp('info', 'ACP ext workspace.write request', { sessionId, path: relPath, chars: content.length });
           await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
@@ -374,18 +394,18 @@ export class HermesAcpBridge {
           return { ok: true };
         }
         if (method === 'workspace.rename') {
-          const oldPath = bridge.normalizeRelPath(params?.oldPath);
-          const newPath = bridge.normalizeRelPath(params?.newPath);
-          const oldAbs = bridge.resolveAllowedPath(sessionId, oldPath);
-          const newAbs = bridge.resolveAllowedPath(sessionId, newPath);
+          const oldPath = this.normalizeRelPath(params?.oldPath);
+          const newPath = this.normalizeRelPath(params?.newPath);
+          const oldAbs = this.resolveAllowedPath(sessionId, oldPath);
+          const newAbs = this.resolveAllowedPath(sessionId, newPath);
           logAcp('info', 'ACP ext workspace.rename request', { sessionId, oldPath, newPath });
           await fs.mkdir(path.dirname(newAbs), { recursive: true });
           await fs.rename(oldAbs, newAbs);
           return { ok: true };
         }
         if (method === 'workspace.delete') {
-          const relPath = bridge.normalizeRelPath(params?.path);
-          const resolvedPath = bridge.resolveAllowedPath(sessionId, relPath);
+          const relPath = this.normalizeRelPath(params?.path);
+          const resolvedPath = this.resolveAllowedPath(sessionId, relPath);
           logAcp('info', 'ACP ext workspace.delete request', { sessionId, path: relPath });
           const fileStat = await fs.stat(resolvedPath);
           if (fileStat.isDirectory()) {
@@ -397,9 +417,9 @@ export class HermesAcpBridge {
         }
         if (method === 'workspace.search' || method === 'search_files') {
           const query = typeof params?.query === 'string' ? params.query : typeof params?.pattern === 'string' ? params.pattern : '';
-          const relPath = bridge.normalizeRelPath(params?.path);
+          const relPath = this.normalizeRelPath(params?.path);
           logAcp('info', 'ACP ext workspace.search request', { sessionId, query, path: relPath || '(root)' });
-          return bridge.workspaceSearchLocal(sessionId, query, relPath) as unknown as Record<string, unknown>;
+          return this.workspaceSearchLocal(sessionId, query, relPath) as unknown as Record<string, unknown>;
         }
         throw new Error(`Unsupported ACP ext method: ${method}`);
       },
@@ -614,9 +634,12 @@ export class HermesAcpBridge {
     const models = Array.from(this.globalModelCatalog.values());
     const targetState = targetSessionId ? this.modelStateBySession.get(targetSessionId) : null;
     const effectiveModels = models.length > 0 ? models : targetState?.availableModels ?? [];
+    const fallbackCurrentModelId =
+      Array.from(this.modelStateBySession.values()).find((state) => typeof state.currentModelId === 'string' && state.currentModelId.trim())
+        ?.currentModelId ?? null;
     const currentModelId = targetSessionId
-      ? targetState?.currentModelId ?? null
-      : null;
+      ? targetState?.currentModelId ?? fallbackCurrentModelId
+      : fallbackCurrentModelId;
     logAcp('info', 'ACP models read (global catalog)', {
       targetSessionId: targetSessionId || '(none)',
       count: effectiveModels.length,
@@ -695,6 +718,97 @@ export class HermesAcpBridge {
     await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
     await fs.writeFile(resolvedPath, input.content, 'utf8');
     return { ok: true };
+  }
+
+  async kanbanExec(input: { sessionId?: string; args: string[]; timeoutMs?: number; requireJsonOutput?: boolean }) {
+    const rawArgs = Array.isArray(input.args) ? input.args : [];
+    const args = rawArgs
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+      .filter((entry) => entry.length > 0);
+    if (args.length === 0) {
+      throw new Error('Kanban command arguments are required.');
+    }
+
+    const commandArgs = args[0] === 'kanban' ? args : ['kanban', ...args];
+    const timeoutMs = Number.isFinite(input.timeoutMs as number) && (input.timeoutMs as number) > 0
+      ? Math.round(input.timeoutMs as number)
+      : 30_000;
+
+    const requestedSessionId = typeof input.sessionId === 'string' ? input.sessionId.trim() : '';
+    const fallbackSessionId = this.knownSessions.keys().next().value as string | undefined;
+    const resolvedSessionId = requestedSessionId || fallbackSessionId || '';
+
+    let cwd = process.cwd();
+    if (resolvedSessionId) {
+      try {
+        cwd = this.resolveSessionRoot(resolvedSessionId);
+      } catch {
+        cwd = process.cwd();
+      }
+    }
+
+    logAcp('info', 'ACP kanban exec via local Hermes CLI', {
+      sessionId: resolvedSessionId || '(none)',
+      cwd,
+      args: commandArgs,
+      timeoutMs,
+    });
+
+    const runResult = await new Promise<{ stdout: string; stderr: string; exitCode: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+      const proc = spawn('hermes', commandArgs, {
+        cwd,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stdout = '';
+      let stderr = '';
+      let timedOut = false;
+
+      const timer = setTimeout(() => {
+        timedOut = true;
+        proc.kill('SIGKILL');
+      }, timeoutMs);
+
+      proc.stdout.setEncoding('utf8');
+      proc.stderr.setEncoding('utf8');
+      proc.stdout.on('data', (chunk: string) => {
+        stdout += chunk;
+      });
+      proc.stderr.on('data', (chunk: string) => {
+        stderr += chunk;
+      });
+
+      proc.once('error', (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+
+      proc.once('close', (exitCode, signal) => {
+        clearTimeout(timer);
+        if (timedOut) {
+          reject(new Error(`Kanban command timed out after ${timeoutMs}ms.`));
+          return;
+        }
+        resolve({ stdout, stderr, exitCode, signal });
+      });
+    });
+
+    if (runResult.exitCode !== 0) {
+      const detail = runResult.stderr.trim() || runResult.stdout.trim() || 'Unknown error';
+      throw new Error(
+        `Kanban command failed (exit=${runResult.exitCode ?? 'null'}, signal=${runResult.signal ?? 'none'}): ${detail}`,
+      );
+    }
+
+    if (input.requireJsonOutput && !runResult.stdout.trim()) {
+      throw new Error('Kanban command returned no data.');
+    }
+
+    return {
+      stdout: runResult.stdout,
+      exitCode: runResult.exitCode,
+      signal: runResult.signal,
+    };
   }
 
   async disconnect() {

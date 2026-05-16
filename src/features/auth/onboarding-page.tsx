@@ -153,8 +153,9 @@ export function OnboardingPage({
                   value={transport}
                   onChange={(event) => onTransportChange(event.target.value as HermesTransport)}
                 >
-                  <option value="hermes_http">HTTP API</option>
-                  <option value="hermes_acp_stdio">ACP (stdio)</option>
+                  <option value="relay_daemon">Relay daemon (recommended)</option>
+                  <option value="hermes_http">Hermes API server (OpenAI HTTP)</option>
+                  <option value="hermes_acp_stdio">ACP over SSH (stdio)</option>
                 </select>
               </div>
               <div>
@@ -162,7 +163,13 @@ export function OnboardingPage({
                 <Input
                   value={draftHermesEndpoint}
                   onChange={(event) => ondraftHermesEndpointChange(event.target.value)}
-                  placeholder={transport === 'hermes_acp_stdio' ? 'acp://local or ssh://user@host:22' : 'http://127.0.0.1:8642/v1'}
+                  placeholder={
+                    transport === 'hermes_acp_stdio'
+                      ? 'ssh://user@host:22'
+                      : transport === 'relay_daemon'
+                        ? 'http://127.0.0.1:8787'
+                        : 'http://127.0.0.1:8642/v1'
+                  }
                   className="h-10 font-mono text-[13px]"
                 />
               </div>

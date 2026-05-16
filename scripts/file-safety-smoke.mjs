@@ -3,8 +3,8 @@ import path from 'node:path';
 
 const repoRoot = process.cwd();
 const electronMainPath = path.join(repoRoot, 'electron', 'main.ts');
-const appPath = path.join(repoRoot, 'src', 'App.tsx');
 const chatUtilsPath = path.join(repoRoot, 'src', 'lib', 'chat-utils.ts');
+const appStateHelpersPath = path.join(repoRoot, 'src', 'app', 'app-state-helpers.ts');
 const safetyPolicyPath = path.join(repoRoot, 'src', 'lib', 'safety-policy.ts');
 const filesystemConnectorPath = path.join(repoRoot, 'src', 'lib', 'connectors', 'filesystem.ts');
 
@@ -51,22 +51,22 @@ function assertFunctionContains(source, functionName, snippets) {
 }
 
 async function run() {
-  const [electronMain, appFile, chatUtils, safetyPolicy, filesystemConnector] = await Promise.all([
+  const [electronMain, chatUtils, appStateHelpers, safetyPolicy, filesystemConnector] = await Promise.all([
     readText(electronMainPath),
-    readText(appPath),
     readText(chatUtilsPath),
+    readText(appStateHelpersPath),
     readText(safetyPolicyPath),
     readText(filesystemConnectorPath),
   ]);
 
-  // App-side project-relative path validation.
-  assertIncludesAll(appFile, [
+  // Project-relative path validation utility is centralized in app-state-helpers.
+  assertIncludesAll(appStateHelpers, [
     'function validateProjectRelativePath(inputPath: string',
     "return options?.allowEmpty ? { ok: true } : { ok: false, reason: 'Path is required.' };",
     "return { ok: false, reason: 'Path contains invalid control characters.' };",
     "return { ok: false, reason: 'Absolute paths are not allowed for project-bound actions.' };",
     "return { ok: false, reason: 'Parent directory traversal is not allowed.' };",
-  ], 'src/App.tsx');
+  ], 'src/app/app-state-helpers.ts');
 
   // Parsing-side guardrails for relay file actions.
   assertFunctionContains(chatUtils, 'parseRelayFileActions', [
@@ -78,9 +78,9 @@ async function run() {
     "type !== 'rename'",
     "type !== 'delete'",
     'hasUnsafePathChars(filePath)',
-    "typeof record.new_path === 'string'",
-    "typeof record.toPath === 'string'",
-    "typeof record.to === 'string'",
+    'mergedRecord.new_path',
+    'mergedRecord.toPath',
+    'mergedRecord.to',
   ]);
 
   // Safety policy includes all file handling scopes + action mapping.

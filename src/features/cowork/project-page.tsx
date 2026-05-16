@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronRight, Clock3, FileText, FolderOpen, Lock, Pencil, Play, Search, Sparkles } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronRight, Clock3, FileText, FolderKanban, FolderOpen, Lock, Pencil, Play, Search, Sparkles } from 'lucide-react';
 
 import type { CoworkArtifact, CoworkProject, CoworkProjectTask, OperatorDefinition, OperatorRun, OutcomePipeline, ProjectKnowledgeItem } from '@/app-types';
 import { Badge } from '@/components/ui/badge';
@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
-type ProjectPageTarget = 'cowork' | 'project' | 'settings';
+type ProjectPageTarget = 'cowork' | 'project' | 'kanban' | 'settings';
 
 type ProjectPageProps = {
   project: CoworkProject | null;
@@ -72,6 +72,7 @@ type ProjectPageProps = {
 const navItems: Array<{ label: string; page: ProjectPageTarget; icon: typeof FolderOpen }> = [
   { label: 'Cowork', page: 'cowork', icon: Play },
   { label: 'Project Home', page: 'project', icon: FolderOpen },
+  { label: 'Kanban', page: 'kanban', icon: FolderKanban },
   { label: 'Settings', page: 'settings', icon: Search },
 ];
 
@@ -196,6 +197,10 @@ export function ProjectPage(props: ProjectPageProps) {
             <Button type="button" variant="outline" className="gap-2" onClick={() => props.onSelectPage('project')}>
               <FolderOpen className="size-3.5" />
               Project Home
+            </Button>
+            <Button type="button" variant="outline" className="gap-2" onClick={() => props.onSelectPage('kanban')}>
+              <FolderKanban className="size-3.5" />
+              Kanban
             </Button>
             <Button type="button" variant="outline" className="gap-2" onClick={() => props.onSelectPage('settings')}>
               <Search className="size-3.5" />

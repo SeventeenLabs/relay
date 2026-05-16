@@ -27,7 +27,6 @@ import type {
 } from '../src/app-types.js';
 import {
   DEFAULT_HERMES_GATEWAY_URL,
-  DEFAULT_HERMES_TRANSPORT,
   HERMES_DEFAULT_DASHBOARD_PORT,
   HERMES_DEFAULT_GATEWAY_PORT,
 } from '../src/lib/hermes-constants.js';
@@ -35,8 +34,8 @@ import { HermesAcpBridge } from './hermes-acp-bridge.js';
 
 const defaultConfig: AppConfig = {
   backendType: 'hermes',
-  transport: DEFAULT_HERMES_TRANSPORT,
-  gatewayUrl: DEFAULT_HERMES_GATEWAY_URL,
+  transport: 'relay_daemon',
+  gatewayUrl: 'http://127.0.0.1:8787',
   gatewayToken: '',
 };
 
@@ -157,11 +156,16 @@ const normalizeStoredTransport = (
   transport: unknown,
   gatewayUrl: string,
 ): AppConfig['transport'] => {
+  if (transport === 'hermes_http' || transport === 'hermes_acp_stdio' || transport === 'relay_daemon') {
+    return transport;
+  }
+
+  // Backward compatibility: older configs may not have an explicit transport.
   const normalizedGateway = gatewayUrl.trim().toLowerCase();
   if (normalizedGateway.startsWith('ssh://') || normalizedGateway.startsWith('acp://')) {
     return 'hermes_acp_stdio';
   }
-  return transport === 'hermes_acp_stdio' ? 'hermes_acp_stdio' : 'hermes_http';
+  return 'relay_daemon';
 };
 
 type GatewayMode = 'local' | 'remote';
@@ -927,6 +931,12 @@ async function readConfig(): Promise<AppConfig> {
 
     const fallbackGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
     const gatewayUrl = normalizedStoredGatewayUrl || fallbackGatewayUrl;
+    console.info('[Relay][Main][Config] readConfig', {
+      requestedTransport: typeof parsed.transport === 'string' ? parsed.transport : '(none)',
+      resolvedTransport: transport,
+      gatewayUrl,
+      path: configPath(),
+    });
     return {
       backendType,
       transport,
@@ -934,6 +944,11 @@ async function readConfig(): Promise<AppConfig> {
       gatewayToken: parsed.gatewayToken ?? defaultConfig.gatewayToken,
     };
   } catch {
+    console.info('[Relay][Main][Config] readConfig fallback default', {
+      transport: defaultConfig.transport,
+      gatewayUrl: defaultConfig.gatewayUrl,
+      path: configPath(),
+    });
     return defaultConfig;
   }
 }
@@ -952,6 +967,12 @@ async function writeConfig(config: AppConfig): Promise<AppConfig> {
     gatewayToken: config.gatewayToken.trim(),
   };
 
+  console.info('[Relay][Main][Config] writeConfig', {
+    requestedTransport: config.transport ?? '(none)',
+    resolvedTransport: normalizedTransport,
+    gatewayUrl: normalizedGatewayUrl,
+    path: configPath(),
+  });
   await fs.mkdir(path.dirname(configPath()), { recursive: true });
   await fs.writeFile(configPath(), JSON.stringify(normalized, null, 2), 'utf8');
   return normalized;
@@ -1144,6 +1165,24 @@ app.whenReady().then(async () => {
       content: payload.content,
     }),
   );
+  ipcMain.handle(
+    'acp:kanban-exec',
+    async (
+      _event,
+      payload: {
+        sessionId?: string;
+        args: string[];
+        timeoutMs?: number;
+        requireJsonOutput?: boolean;
+      },
+    ) =>
+      acpBridge.kanbanExec({
+        sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : undefined,
+        args: Array.isArray(payload?.args) ? payload.args : [],
+        timeoutMs: typeof payload?.timeoutMs === 'number' ? payload.timeoutMs : undefined,
+        requireJsonOutput: Boolean(payload?.requireJsonOutput),
+      }),
+  );
   ipcMain.handle('backend:health-check', async (_event, baseUrl: string) => runHealthCheck(baseUrl));
   ipcMain.handle(
     'backend:http-request',
@@ -1174,8 +1213,11 @@ app.whenReady().then(async () => {
         headers.Authorization = `Bearer ${payload.token.trim()}`;
       }
 
-      const resolvedBaseUrl = await resolveGatewayBaseForMain(baseUrl);
-      const requestUrl = `${resolvedBaseUrl}${path}`;
+      const normalizedBaseUrl = baseUrl
+        .replace(/^wss:\/\//i, 'https://')
+        .replace(/^ws:\/\//i, 'http://')
+        .replace(/\/+$/, '');
+      const requestUrl = `${normalizedBaseUrl}${path}`;
       let response: Response;
       try {
         response = await fetch(requestUrl, {

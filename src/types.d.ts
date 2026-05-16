@@ -38,6 +38,7 @@ type RelayApi = {
   acpWorkspaceRename: (payload: { oldPath: string; newPath: string }) => Promise<{ ok?: boolean }>;
   acpWorkspaceDelete: (payload: { path: string }) => Promise<{ ok?: boolean }>;
   acpWorkspaceWrite: (payload: { path: string; content: string }) => Promise<{ ok?: boolean }>;
+  acpKanbanExec: (payload: { sessionId?: string; args: string[]; timeoutMs?: number; requireJsonOutput?: boolean }) => Promise<{ stdout: string; exitCode: number | null; signal?: string | null }>;
   onAcpEvent: (handler: (event: { sessionId: string; update: unknown }) => void) => (() => void);
   minimizeWindow: () => Promise<void>;
   toggleMaximizeWindow: () => Promise<boolean>;

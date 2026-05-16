@@ -48,7 +48,7 @@ export const defaultConfig: AppConfig = {
   gatewayToken: '',
 };
 
-export type AppPage = 'chat' | 'cowork' | 'project' | 'settings';
+export type AppPage = 'chat' | 'cowork' | 'project' | 'kanban' | 'settings';
 export type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Connection' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 
 export const COWORK_SEND_SPINNER_MS = 300;
@@ -202,8 +202,15 @@ export function loadGatewayConnectionProfiles(): GatewayConnectionProfile[] {
         const name = typeof record.name === 'string' ? record.name.trim() : '';
         const rawGatewayUrl = typeof record.gatewayUrl === 'string' ? record.gatewayUrl.trim() : '';
         const backendType: AppConfig['backendType'] = 'hermes';
+        const normalizedGatewayUrl = rawGatewayUrl.toLowerCase();
         const transport: HermesTransport =
-          record.transport === 'hermes_acp_stdio' ? 'hermes_acp_stdio' : DEFAULT_TRANSPORT;
+          record.transport === 'hermes_http' || record.transport === 'hermes_acp_stdio' || record.transport === 'relay_daemon'
+            ? record.transport
+            : normalizedGatewayUrl.startsWith('ssh://') || normalizedGatewayUrl.startsWith('acp://')
+              ? 'hermes_acp_stdio'
+              : normalizedGatewayUrl.startsWith('http://') || normalizedGatewayUrl.startsWith('https://')
+                ? 'relay_daemon'
+                : DEFAULT_TRANSPORT;
         const gatewayUrl = rawGatewayUrl || DEFAULT_HERMES_GATEWAY_URL;
         const gatewayToken = typeof record.gatewayToken === 'string' ? record.gatewayToken : '';
         const createdAt = typeof record.createdAt === 'number' ? record.createdAt : Date.now();

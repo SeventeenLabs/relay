@@ -13,6 +13,8 @@ const MODEL_VALUE_SEPARATOR = '::';
 const composerDropdownItemClass =
   'h-8 rounded-lg px-2.5 text-[11px] leading-none text-foreground/85 hover:bg-muted/80 hover:text-foreground data-[active=true]:bg-primary/12 data-[active=true]:text-foreground data-[active=true]:ring-1 data-[active=true]:ring-primary/30';
 
+type ReasoningEffort = 'low' | 'medium' | 'high';
+
 type CoworkComposerProps = {
   taskPromptId: string;
   taskPrompt: string;
@@ -26,10 +28,12 @@ type CoworkComposerProps = {
   sending: boolean;
   hermesConnected: boolean;
   approvalMode: 'standard' | 'project' | 'none';
+  reasoningEffort: ReasoningEffort;
   contextWindowUsedTokens: number;
   contextWindowTotalTokens: number;
   onTaskPromptChange: (value: string) => void;
   onModelChange: (value: string) => void;
+  onReasoningEffortChange: (value: ReasoningEffort) => void;
   onApprovalModeChange: (mode: 'standard' | 'project' | 'none') => void;
   onSubmit: (event: FormEvent) => void | Promise<void>;
 };
@@ -47,10 +51,12 @@ export function CoworkComposer({
   sending,
   hermesConnected,
   approvalMode,
+  reasoningEffort,
   contextWindowUsedTokens,
   contextWindowTotalTokens,
   onTaskPromptChange,
   onModelChange,
+  onReasoningEffortChange,
   onApprovalModeChange,
   onSubmit,
 }: CoworkComposerProps) {
@@ -62,7 +68,6 @@ export function CoworkComposer({
   const [modelSearchQuery, setModelSearchQuery] = useState('');
   const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
   const [mentionMenuIndex, setMentionMenuIndex] = useState(0);
-  const [effortLevel, setEffortLevel] = useState<'low' | 'medium' | 'high'>('medium');
 
   const canSend = composerText.trim().length > 0 && !sending && hermesConnected;
   const hasModelChoices = models.length > 0;
@@ -113,7 +118,7 @@ export function CoworkComposer({
     ? `${selectedModelOption.modelId} (${selectedModelOption.provider})`
     : selectedModel.trim()
       ? selectedModel.trim()
-      : 'Loading models...';
+      : 'Loading current model...';
 
   const modelProviderBuckets = useMemo(() => {
     const buckets = new Map<string, typeof parsedModels>();
@@ -385,7 +390,7 @@ export function CoworkComposer({
                 } disabled:cursor-not-allowed disabled:opacity-60`}
                 onClick={() => setOpenDropdown((current) => (current === 'model' ? null : 'model'))}
               >
-                <span className="truncate">{`Model: ${selectedModelLabel}`}</span>
+                <span data-testid="cowork-model-label" className="truncate">{`Model: ${selectedModelLabel}`}</span>
                 <ChevronDown className="h-3 w-3 opacity-80" />
               </button>
 
@@ -456,7 +461,7 @@ export function CoworkComposer({
                 onClick={() => setOpenDropdown((current) => (current === 'effort' ? null : 'effort'))}
               >
                 <span className="text-[10px] uppercase tracking-wide text-muted-foreground/80">Reasoning</span>
-                <span>{effortLevel === 'low' ? 'Low' : effortLevel === 'medium' ? 'Mittel' : 'High'}</span>
+                <span data-testid="cowork-reasoning-value">{reasoningEffort === 'low' ? 'Low' : reasoningEffort === 'medium' ? 'Medium' : 'High'}</span>
                 <ChevronDown className="h-3 w-3 opacity-80" />
               </button>
               {openDropdown === 'effort' ? (
@@ -467,13 +472,17 @@ export function CoworkComposer({
                         <MenuItem
                           key={value}
                           className={composerDropdownItemClass}
-                          active={effortLevel === value}
+                          active={reasoningEffort === value}
                           onClick={() => {
-                            setEffortLevel(value);
+                            console.info('[Relay][CoworkComposer] reasoning effort changed', {
+                              previous: reasoningEffort,
+                              next: value,
+                            });
+                            onReasoningEffortChange(value);
                             setOpenDropdown(null);
                           }}
                         >
-                          {value === 'low' ? 'Low' : value === 'medium' ? 'Mittel' : 'High'}
+                          {value === 'low' ? 'Low' : value === 'medium' ? 'Medium' : 'High'}
                         </MenuItem>
                       ))}
                     </MenuGroup>
@@ -593,12 +602,11 @@ export function CoworkComposer({
         </div>
       </div>
 
-      {(modelsLoading || changingModel || !hasModelChoices) && (
+      {(modelsLoading || changingModel) && (
         <div className="space-y-1 px-1">
           <p className="font-sans text-[11px] text-muted-foreground">
-            {modelsLoading ? 'Loading models...' : changingModel ? 'Switching model...' : 'No models available from Hermes'}
+            {modelsLoading ? 'Loading models...' : 'Switching model...'}
           </p>
-          {!modelsLoading && !changingModel ? <p className="font-sans text-[11px] text-muted-foreground/80">Check Hermes provider setup in WSL (`hermes model list`).</p> : null}
         </div>
       )}
     </div>

@@ -59,6 +59,8 @@ const api = {
     ipcRenderer.invoke('acp:workspace-delete', payload) as Promise<{ ok?: boolean }>,
   acpWorkspaceWrite: (payload: { path: string; content: string }) =>
     ipcRenderer.invoke('acp:workspace-write', payload) as Promise<{ ok?: boolean }>,
+  acpKanbanExec: (payload: { sessionId?: string; args: string[]; timeoutMs?: number; requireJsonOutput?: boolean }) =>
+    ipcRenderer.invoke('acp:kanban-exec', payload) as Promise<{ stdout: string; exitCode: number | null; signal?: string | null }>,
   onAcpEvent: (handler: (event: { sessionId: string; update: unknown }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: { sessionId: string; update: unknown }) => {
       handler(payload);

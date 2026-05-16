@@ -53,7 +53,12 @@ import {
 import { Input } from './components/ui/input';
 import { SidebarInset, SidebarProvider } from './components/ui/sidebar';
 import { ScrollArea } from './components/ui/scroll-area';
-import { createDefaultBackendClient, type AgentBackendClient } from './lib/agent-backend-client';
+import {
+  createDefaultBackendClient,
+  type AgentBackendClient,
+  type HermesKanbanTask,
+  type HermesKanbanTaskDetail,
+} from './lib/agent-backend-client';
 import { ensureGatewayApiBase, inferGatewayMode, normalizeGatewayInput } from './lib/gateway-endpoint';
 import { createFileService, LocalFileService } from './lib/file-service';
 import { buildMemoryContext, loadMemoryEntries } from './lib/memory-context';
@@ -101,12 +106,26 @@ import {
   stripRelayActionPayloadFromText,
   normalizeCoworkMessage,
 } from './lib/chat-utils';
+import { buildCoworkResponseInstruction } from './lib/cowork-action-instructions';
 
 const CoworkPage = lazy(() => import('./features/cowork/cowork-page').then((module) => ({ default: module.CoworkPage })));
 const ProjectPage = lazy(() => import('./features/cowork/project-page').then((module) => ({ default: module.ProjectPage })));
+const KanbanPage = lazy(() => import('./features/cowork/kanban-page').then((module) => ({ default: module.KanbanPage })));
 const SettingsPage = lazy(() => import('./features/settings/settings-page').then((module) => ({ default: module.SettingsPage })));
 
-const DEFAULT_HERMES_GATEWAY_URL = 'http://127.0.0.1:8642/v1';
+const DEFAULT_HERMES_HTTP_GATEWAY_URL = 'http://127.0.0.1:8642/v1';
+const DEFAULT_RELAY_DAEMON_GATEWAY_URL = 'http://127.0.0.1:8787';
+const DEFAULT_HERMES_ACP_GATEWAY_URL = 'ssh://user@host:22';
+
+function defaultGatewayUrlForTransport(transport: HermesTransport): string {
+  if (transport === 'relay_daemon') {
+    return DEFAULT_RELAY_DAEMON_GATEWAY_URL;
+  }
+  if (transport === 'hermes_acp_stdio') {
+    return DEFAULT_HERMES_ACP_GATEWAY_URL;
+  }
+  return DEFAULT_HERMES_HTTP_GATEWAY_URL;
+}
 
 const LOCAL_CONFIG_KEY = 'relay.config';
 const GATEWAY_CONNECTIONS_STORAGE_KEY = 'relay.gateway.connections.v1';
@@ -117,6 +136,7 @@ const COWORK_TASKS_STORAGE_KEY = 'relay.cowork.tasks.v1';
 const COWORK_PROJECT_KNOWLEDGE_STORAGE_KEY = 'relay.cowork.project.knowledge.v1';
 const COWORK_WEB_SEARCH_MODE_STORAGE_KEY = 'relay.cowork.websearch.v1';
 const CHAT_DRAFT_STORAGE_KEY = 'relay.chat.draft.v1';
+const LAST_USED_CHAT_SESSION_STORAGE_KEY = 'relay.chat.last-session.v1';
 const COWORK_DRAFT_STORAGE_KEY = 'relay.cowork.draft.v1';
 const SCHEDULED_JOB_PROJECT_LINKS_STORAGE_KEY = 'relay.scheduled.project-links.v1';
 const OUTCOME_PIPELINES_STORAGE_KEY = 'relay.outcome-pipelines.v1';
@@ -126,17 +146,20 @@ const OPERATOR_RUNS_STORAGE_KEY = 'relay.operators.runs.v1';
 
 const defaultConfig: AppConfig = {
   backendType: 'hermes',
-  transport: 'hermes_http',
-  gatewayUrl: DEFAULT_HERMES_GATEWAY_URL,
+  transport: 'relay_daemon',
+  gatewayUrl: defaultGatewayUrlForTransport('relay_daemon'),
   gatewayToken: '',
 };
 
-function inferTransportFromEndpoint(endpoint: string, fallback: HermesTransport = 'hermes_http'): HermesTransport {
-  const normalized = endpoint.trim().toLowerCase();
-  if (normalized.startsWith('acp://') || normalized.startsWith('ssh://')) {
+function resolveRequestedTransport(configTransport: HermesTransport | undefined, endpoint: string): HermesTransport {
+  if (configTransport === 'hermes_acp_stdio' || configTransport === 'hermes_http' || configTransport === 'relay_daemon') {
+    return configTransport;
+  }
+  const normalized = (endpoint ?? '').trim().toLowerCase();
+  if (normalized.startsWith('ssh://') || normalized.startsWith('acp://')) {
     return 'hermes_acp_stdio';
   }
-  return fallback;
+  return 'relay_daemon';
 }
 
 function resolveSelectedModelValue(choices: ChatModelOption[], currentModel: string | null): string {
@@ -185,7 +208,7 @@ function resolveSelectedModelValue(choices: ChatModelOption[], currentModel: str
   return bySuffix?.value ?? normalizedCurrent;
 }
 
-type AppPage = 'chat' | 'cowork' | 'project' | 'settings';
+type AppPage = 'chat' | 'cowork' | 'project' | 'kanban' | 'settings';
 type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Connection' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 
 const COWORK_SEND_SPINNER_MS = 300;
@@ -351,9 +374,14 @@ function loadGatewayConnectionProfiles(): GatewayConnectionProfile[] {
         const name = typeof record.name === 'string' ? record.name.trim() : '';
         const rawGatewayUrl = typeof record.gatewayUrl === 'string' ? record.gatewayUrl.trim() : '';
         const backendType: AppConfig['backendType'] = 'hermes';
+        const normalizedGatewayUrl = rawGatewayUrl.toLowerCase();
         const transport: HermesTransport =
-          record.transport === 'hermes_acp_stdio' ? 'hermes_acp_stdio' : 'hermes_http';
-        const fallbackGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
+          record.transport === 'hermes_http' || record.transport === 'hermes_acp_stdio' || record.transport === 'relay_daemon'
+            ? record.transport
+            : normalizedGatewayUrl.startsWith('ssh://') || normalizedGatewayUrl.startsWith('acp://')
+              ? 'hermes_acp_stdio'
+              : 'relay_daemon';
+        const fallbackGatewayUrl = defaultGatewayUrlForTransport(transport);
         const gatewayUrl = rawGatewayUrl || fallbackGatewayUrl;
         const gatewayToken = typeof record.gatewayToken === 'string' ? record.gatewayToken : '';
         const createdAt = typeof record.createdAt === 'number' ? record.createdAt : Date.now();
@@ -884,7 +912,7 @@ export default function App() {
 
   const [config, setConfig] = useState<AppConfig>(defaultConfig);
   const [configReady, setConfigReady] = useState(false);
-  const [draftHermesEndpoint, setDraftHermesEndpoint] = useState(DEFAULT_HERMES_GATEWAY_URL);
+  const [draftHermesEndpoint, setDraftHermesEndpoint] = useState(defaultGatewayUrlForTransport('relay_daemon'));
   const [draftHermesToken, setDraftHermesToken] = useState('');
   const [gatewayConnections, setGatewayConnections] = useState<GatewayConnectionProfile[]>(() => loadGatewayConnectionProfiles());
   const [defaultGatewayConnectionId, setDefaultGatewayConnectionId] = useState(() => loadDefaultGatewayConnectionId());
@@ -917,7 +945,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [activeMenuItem, setActiveMenuItem] = useState('');
-  const [activePage, setActivePage] = useState<AppPage>('cowork');
+  const [activePage, setActivePage] = useState<AppPage>('chat');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('Profile');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chatDraftPrompt, setChatDraftPrompt] = useState(() => loadDraft(CHAT_DRAFT_STORAGE_KEY));
@@ -946,6 +974,11 @@ export default function App() {
   const [changingCoworkModel, setChangingCoworkModel] = useState(false);
   const [scheduledJobs, setScheduledJobs] = useState<ScheduledJob[]>([]);
   const [scheduledLoading, setScheduledLoading] = useState(false);
+  const [kanbanTasks, setKanbanTasks] = useState<HermesKanbanTask[]>([]);
+  const [kanbanTaskDetail, setKanbanTaskDetail] = useState<HermesKanbanTaskDetail | null>(null);
+  const [kanbanLoading, setKanbanLoading] = useState(false);
+  const [kanbanCreating, setKanbanCreating] = useState(false);
+  const [kanbanCommenting, setKanbanCommenting] = useState(false);
   const [scheduledJobProjectLinks, setScheduledJobProjectLinks] = useState<Record<string, string>>(() => loadScheduledJobProjectLinks());
   const [outcomePipelines, setOutcomePipelines] = useState<OutcomePipeline[]>(() => loadOutcomePipelines());
   const [outcomePipelineRuns, setOutcomePipelineRuns] = useState<OutcomePipelineRun[]>(() => loadOutcomePipelineRuns());
@@ -963,6 +996,7 @@ export default function App() {
   const [coworkAwaitingStream, setCoworkAwaitingStream] = useState(false);
   const [coworkStreamingText, setCoworkStreamingText] = useState('');
   const [coworkModel, setCoworkModel] = useState('');
+  const [coworkReasoningEffort, setCoworkReasoningEffort] = useState<'low' | 'medium' | 'high'>('medium');
   const [coworkRunPhase, setCoworkRunPhase] = useState<CoworkRunPhase>('idle');
   const [coworkRunStatus, setCoworkRunStatus] = useState('Ready for a new task.');
   const [coworkWebSearchEnabled, setCoworkWebSearchEnabled] = useState<boolean>(() => {
@@ -1102,7 +1136,7 @@ export default function App() {
     return coworkArtifacts.filter((artifact) => !artifact.runId || runIds.has(artifact.runId)).slice(0, 40);
   }, [coworkArtifacts, visibleCoworkTasks]);
   const selectedGatewayConnectionId = useMemo(() => {
-    const normalizedUrl = draftHermesEndpoint.trim() || DEFAULT_HERMES_GATEWAY_URL;
+    const normalizedUrl = draftHermesEndpoint.trim() || defaultGatewayUrlForTransport(config.transport ?? 'relay_daemon');
     const normalizedToken = draftHermesToken ?? '';
     return gatewayConnections.find((profile) => (
       profile.backendType === config.backendType
@@ -1918,6 +1952,19 @@ export default function App() {
   }, [chatDraftPrompt]);
 
   useEffect(() => {
+    const normalized = normalizeSessionKey(activeSessionKey);
+    try {
+      if (normalized) {
+        localStorage.setItem(LAST_USED_CHAT_SESSION_STORAGE_KEY, normalized);
+      } else {
+        localStorage.removeItem(LAST_USED_CHAT_SESSION_STORAGE_KEY);
+      }
+    } catch {
+      // ignore persistence failures
+    }
+  }, [activeSessionKey]);
+
+  useEffect(() => {
     try {
       localStorage.setItem(COWORK_DRAFT_STORAGE_KEY, coworkDraftPrompt);
     } catch {
@@ -1999,6 +2046,25 @@ export default function App() {
     const validProjectIds = new Set(coworkProjects.map((project) => project.id));
     setCoworkTasks((current) => current.filter((task) => validProjectIds.has(task.projectId)));
   }, [coworkProjects]);
+
+  useEffect(() => {
+    const validProjectIds = new Set(coworkProjects.map((project) => project.id));
+    setCoworkThreads((current) => {
+      if (current.length === 0) {
+        return current;
+      }
+      const bySession = new Map(coworkTasks.map((task) => [normalizeSessionKey(task.sessionKey), task.projectId]));
+      const filtered = current.filter((thread) => {
+        const sessionKey = normalizeSessionKey(thread.sessionKey);
+        if (!sessionKey) {
+          return false;
+        }
+        const projectId = bySession.get(sessionKey);
+        return !!projectId && validProjectIds.has(projectId);
+      });
+      return filtered.length === current.length ? current : filtered;
+    });
+  }, [coworkProjects, coworkTasks]);
 
   useEffect(() => {
     if (coworkProjects.length === 0) {
@@ -2433,15 +2499,7 @@ export default function App() {
       ]);
 
       const mappedChoices = choices.map((model) => ({ value: model.value, label: model.label }));
-      setChatModels((prev) => {
-        if ((config.transport ?? 'hermes_http') !== 'hermes_acp_stdio') {
-          return mappedChoices;
-        }
-        if (mappedChoices.length >= prev.length) {
-          return mappedChoices;
-        }
-        return prev;
-      });
+      setChatModels(mappedChoices);
       setSelectedModel(resolveSelectedModelValue(mappedChoices, currentModel));
     } catch {
       setChatModels([]);
@@ -2454,31 +2512,33 @@ export default function App() {
   const loadCoworkModels = async (client: AgentBackendClient, sessionKey?: string) => {
     setModelsLoading(true);
     try {
-      let effectiveSessionKey = sessionKey || normalizeSessionKey(coworkSessionKeyRef.current) || '';
-      if (!effectiveSessionKey) {
-        effectiveSessionKey = normalizeSessionKey(await client.getActiveSessionKey().catch(() => ''));
-      }
+      const effectiveSessionKey =
+        normalizeSessionKey(sessionKey ?? '')
+        || normalizeSessionKey(coworkSessionKeyRef.current)
+        || normalizeSessionKey(await client.getActiveSessionKey().catch(() => ''));
       const [choices, currentModel] = await Promise.all([
         client.listModels(),
         effectiveSessionKey ? client.getSessionModel(effectiveSessionKey).catch(() => null) : Promise.resolve(null),
       ]);
 
       const mappedChoices = choices.map((model) => ({ value: model.value, label: model.label }));
-      setCoworkModels((prev) => {
-        if ((config.transport ?? 'hermes_http') !== 'hermes_acp_stdio') {
-          return mappedChoices;
-        }
-        if (mappedChoices.length >= prev.length) {
-          return mappedChoices;
-        }
-        return prev;
+      const resolvedModel = resolveSelectedModelValue(mappedChoices, currentModel);
+      console.info('[Relay][Cowork] model catalog loaded', {
+        requestedSessionKey: sessionKey ?? '(none)',
+        effectiveSessionKey: effectiveSessionKey || '(none)',
+        modelCount: mappedChoices.length,
+        currentModelFromServer: currentModel,
+        resolvedModel,
       });
-      if (effectiveSessionKey) {
-        setCoworkModel(resolveSelectedModelValue(mappedChoices, currentModel));
-      }
+      setCoworkModels(mappedChoices);
+      setCoworkModel(resolvedModel);
     } catch (error) {
       setCoworkModels([]);
       const message = error instanceof Error ? error.message : 'Unable to load Hermes models.';
+      console.error('[Relay][Cowork] model catalog load failed', {
+        requestedSessionKey: sessionKey ?? '(none)',
+        error: message,
+      });
       setStatus(message);
     } finally {
       setModelsLoading(false);
@@ -2494,14 +2554,16 @@ export default function App() {
 
       const parsed = JSON.parse(raw) as Partial<AppConfig>;
       const backendType: AppConfig['backendType'] = 'hermes';
-      const fallbackGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
+      const transport: HermesTransport = resolveRequestedTransport(parsed.transport, parsed.gatewayUrl ?? '');
+      const fallbackGatewayUrl = defaultGatewayUrlForTransport(transport);
       const parsedGatewayUrl = parsed.gatewayUrl?.trim();
       const gatewayUrl = parsedGatewayUrl || fallbackGatewayUrl;
-
+      const gatewayToken = parsed.gatewayToken ?? '';
       return {
         backendType,
+        transport,
         gatewayUrl,
-        gatewayToken: parsed.gatewayToken ?? '',
+        gatewayToken,
       } satisfies AppConfig;
     } catch {
       return null;
@@ -2528,8 +2590,8 @@ export default function App() {
 
   const markGatewayConnectionLastUsed = useCallback((connectedConfig: AppConfig) => {
     const backendType: AppConfig['backendType'] = 'hermes';
-    const transport: HermesTransport = config.transport ?? 'hermes_http';
-    const gatewayUrl = connectedConfig.gatewayUrl.trim() || DEFAULT_HERMES_GATEWAY_URL;
+    const transport: HermesTransport = connectedConfig.transport ?? config.transport ?? 'relay_daemon';
+    const gatewayUrl = connectedConfig.gatewayUrl.trim() || defaultGatewayUrlForTransport(transport);
     const gatewayToken = connectedConfig.gatewayToken ?? '';
     const now = Date.now();
     let matchedConnectionId = '';
@@ -2578,7 +2640,7 @@ export default function App() {
     setConfig((prev) => ({
       ...prev,
       backendType: 'hermes',
-      transport: profile.transport ?? prev.transport ?? 'hermes_http',
+      transport: profile.transport ?? prev.transport ?? 'relay_daemon',
     }));
     setDraftHermesEndpoint(normalizedUrl);
     setDraftHermesToken(profile.gatewayToken);
@@ -2593,7 +2655,7 @@ export default function App() {
     }
 
     const backendType: AppConfig['backendType'] = 'hermes';
-    const transport: HermesTransport = config.transport ?? 'hermes_http';
+    const transport: HermesTransport = config.transport ?? 'relay_daemon';
     const normalizedUrl = normalizeHermesEndpoint(draftHermesEndpoint);
     const now = Date.now();
     let savedConnectionId = '';
@@ -2649,7 +2711,7 @@ export default function App() {
 
   const handleOverwriteGatewayConnection = useCallback((connectionId: string) => {
     const backendType: AppConfig['backendType'] = 'hermes';
-    const transport: HermesTransport = config.transport ?? 'hermes_http';
+    const transport: HermesTransport = config.transport ?? 'relay_daemon';
     const normalizedUrl = normalizeHermesEndpoint(draftHermesEndpoint);
     const now = Date.now();
 
@@ -2746,17 +2808,27 @@ export default function App() {
 
 
   useEffect(() => {
+    if (configReady) {
+      return;
+    }
+
     const defaultProfile =
       defaultGatewayConnectionId.trim()
         ? gatewayConnections.find((profile) => profile.id === defaultGatewayConnectionId.trim())
         : undefined;
+    console.info('[Relay][Config] initial-load begin', {
+      hasBridge: Boolean(bridge),
+      defaultGatewayConnectionId: defaultGatewayConnectionId.trim() || '(none)',
+      defaultProfileTransport: defaultProfile?.transport ?? '(none)',
+      defaultProfileGateway: defaultProfile?.gatewayUrl ?? '(none)',
+    });
 
     if (!bridge) {
       const localConfig = loadLocalConfig();
       const normalizedDefaultProfile = defaultProfile
         ? {
             backendType: 'hermes' as const,
-            transport: defaultProfile.transport ?? 'hermes_http',
+            transport: defaultProfile.transport ?? 'relay_daemon',
             gatewayUrl: normalizeHermesEndpoint(defaultProfile.gatewayUrl),
             gatewayToken: defaultProfile.gatewayToken,
           }
@@ -2766,6 +2838,11 @@ export default function App() {
           ? localConfig
           : normalizedDefaultProfile ?? localConfig;
       if (resolvedConfig) {
+        console.info('[Relay][Config] initial-load resolved (no bridge)', {
+          source: localConfig?.gatewayUrl?.trim() ? 'local-config' : normalizedDefaultProfile ? 'default-profile' : 'none',
+          transport: resolvedConfig.transport ?? '(none)',
+          gatewayUrl: resolvedConfig.gatewayUrl,
+        });
         setConfig(resolvedConfig);
         setDraftHermesEndpoint(resolvedConfig.gatewayUrl);
         setDraftHermesToken(resolvedConfig.gatewayToken);
@@ -2789,7 +2866,7 @@ export default function App() {
         const normalizedDefaultProfile = defaultProfile
           ? {
               backendType: 'hermes' as const,
-              transport: defaultProfile.transport ?? 'hermes_http',
+              transport: defaultProfile.transport ?? 'relay_daemon',
               gatewayUrl: normalizeHermesEndpoint(defaultProfile.gatewayUrl),
               gatewayToken: defaultProfile.gatewayToken,
             }
@@ -2798,11 +2875,20 @@ export default function App() {
           storedConfig?.gatewayUrl?.trim()
             ? ({
                 backendType: 'hermes' as const,
-                transport: storedConfig.transport ?? 'hermes_http',
+                transport: storedConfig.transport ?? 'relay_daemon',
                 gatewayUrl: normalizeHermesEndpoint(storedConfig.gatewayUrl),
                 gatewayToken: storedConfig.gatewayToken,
               } satisfies AppConfig)
             : normalizedDefaultProfile ?? storedConfig;
+        console.info('[Relay][Config] initial-load bridge payload', {
+          transport: storedConfig?.transport ?? '(none)',
+          gatewayUrl: storedConfig?.gatewayUrl ?? '(none)',
+        });
+        console.info('[Relay][Config] initial-load resolved (bridge)', {
+          source: storedConfig?.gatewayUrl?.trim() ? 'bridge-config' : normalizedDefaultProfile ? 'default-profile' : 'bridge-fallback',
+          transport: resolvedConfig.transport ?? '(none)',
+          gatewayUrl: resolvedConfig.gatewayUrl,
+        });
 
         setConfig(resolvedConfig);
         setDraftHermesEndpoint(resolvedConfig.gatewayUrl);
@@ -2819,7 +2905,7 @@ export default function App() {
         const normalizedDefaultProfile = defaultProfile
           ? {
               backendType: 'hermes' as const,
-              transport: defaultProfile.transport ?? 'hermes_http',
+              transport: defaultProfile.transport ?? 'relay_daemon',
               gatewayUrl: normalizeHermesEndpoint(defaultProfile.gatewayUrl),
               gatewayToken: defaultProfile.gatewayToken,
             }
@@ -2844,6 +2930,7 @@ export default function App() {
     };
   }, [
     bridge,
+    configReady,
     defaultGatewayConnectionId,
     gatewayConnections,
     normalizeHermesEndpoint,
@@ -2897,7 +2984,7 @@ export default function App() {
   }, [workingFolder]);
 
   useEffect(() => {
-    const effectiveTransport: HermesTransport = config.transport ?? 'hermes_http';
+    const effectiveTransport: HermesTransport = config.transport ?? 'relay_daemon';
     const client = createDefaultBackendClient({ transport: effectiveTransport });
     const generation = backendClientGenerationRef.current + 1;
     backendClientGenerationRef.current = generation;
@@ -2988,7 +3075,7 @@ export default function App() {
         const message = payload.message ?? payload;
         const text = extractChatText(message);
         const sanitizedText = stripRelayActionPayloadFromText(text);
-        const visibleText = sanitizedText || text;
+        const visibleText = sanitizedText;
         const role = extractChatRole(message);
 
         if (isCoworkEvent) {
@@ -3360,20 +3447,6 @@ export default function App() {
                   const policy = resolveLocalActionPolicy(action.type, safetyScopes);
                   let createFileOverwriteApproved = false;
                   let approvedByOperator = false;
-
-                  if ((action.type === 'create_file' || action.type === 'append_file' || action.type === 'replace_in_file' || action.type === 'rename' || action.type === 'delete') && !runContext.projectId) {
-                    const message = 'Blocked: write actions require an active project context.';
-                    errors.push(`${actionPath}: ${message}`);
-                    actionReceipts.push({
-                      id: actionId,
-                      type: action.type,
-                      path: actionPath,
-                      status: 'error',
-                      errorCode: 'PROJECT_REQUIRED',
-                      message,
-                    });
-                    continue;
-                  }
 
                   if (!policy.enabled) {
                     const message = `Blocked by safety policy: ${policy.scopeName} is disabled.`;
@@ -4050,13 +4123,13 @@ export default function App() {
 
     const gatewayUrl = normalizeHermesEndpoint(config.gatewayUrl ?? '');
     const gatewayToken = config.gatewayToken ?? '';
-    const transport = config.transport ?? 'hermes_http';
+    const transport = config.transport ?? 'relay_daemon';
     if (transport === 'hermes_acp_stdio' && !gatewayUrl.toLowerCase().startsWith('ssh://')) {
       setHermesConnected(false);
       setStatus('ACP selected. Set a saved ssh://user@host[:port] endpoint, then click Connect.');
       return;
     }
-    const connectKey = `${config.transport ?? 'hermes_http'}::${gatewayUrl}::${gatewayToken}`;
+    const connectKey = `${transport}::${gatewayUrl}::${gatewayToken}`;
     const lastAttempt = backendConnectAttemptRef.current;
     if (lastAttempt.client === client && lastAttempt.key === connectKey && client.isConnected()) {
       return;
@@ -4114,17 +4187,58 @@ export default function App() {
     }
 
     const normalized = normalizeSessionKey(activeSessionKey);
-    if (!normalized) {
+    if (normalized) {
+      if (skipNextChatEffectLoadRef.current) {
+        skipNextChatEffectLoadRef.current = false;
+        return;
+      }
+
+      void loadChatSession(normalized, undefined);
       return;
     }
 
-    if (skipNextChatEffectLoadRef.current) {
-      skipNextChatEffectLoadRef.current = false;
+    const client = backendClientRef.current;
+    if (!client || !configReady) {
       return;
     }
 
-    void loadChatSession(normalized, undefined);
-  }, [activePage, activeSessionKey]);
+    let cancelled = false;
+
+    const restoreInitialChat = async () => {
+      let storedSessionKey = '';
+      try {
+        const raw = localStorage.getItem(LAST_USED_CHAT_SESSION_STORAGE_KEY);
+        storedSessionKey = typeof raw === 'string' ? normalizeSessionKey(raw) : '';
+      } catch {
+        storedSessionKey = '';
+      }
+
+      if (storedSessionKey) {
+        skipNextChatEffectLoadRef.current = true;
+        commitActiveSessionKey(storedSessionKey);
+        setStatus('Restoring last used chat...');
+        await loadChatSession(storedSessionKey, undefined);
+        return;
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      // No previous chat exists: keep a clean initial chat window.
+      setChatMessages([]);
+      setAwaitingChatStream(false);
+      handleChatPromptChange('');
+      setChatLiveActivityItems([]);
+      setStatus('Ready for a new chat.');
+    };
+
+    void restoreInitialChat();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePage, activeSessionKey, configReady]);
 
   const connectWithConfig = useCallback(async (nextConfig: AppConfig, options?: { skipPersist?: boolean; statusPrefix?: string }) => {
     setSaving(true);
@@ -4134,7 +4248,15 @@ export default function App() {
     if (!options?.skipPersist) {
       if (bridge) {
         try {
+          console.info('[Relay][Config] save request', {
+            transport: nextConfig.transport ?? '(none)',
+            gatewayUrl: nextConfig.gatewayUrl,
+          });
           const savedConfig = await bridge.saveConfig(nextConfig);
+          console.info('[Relay][Config] save response', {
+            transport: savedConfig.transport ?? '(none)',
+            gatewayUrl: savedConfig.gatewayUrl,
+          });
           setConfig(savedConfig);
           setDraftHermesEndpoint(savedConfig.gatewayUrl);
           setDraftHermesToken(savedConfig.gatewayToken);
@@ -4157,7 +4279,7 @@ export default function App() {
         throw new Error('Gateway client not initialized.');
       }
 
-      let connectGatewayUrl = normalizeHermesEndpoint(nextConfig.gatewayUrl);
+      const connectGatewayUrl = normalizeHermesEndpoint(nextConfig.gatewayUrl);
       if (!connectGatewayUrl) {
         throw new Error('Hermes endpoint is required.');
       }
@@ -4202,6 +4324,19 @@ export default function App() {
     }
   }, [appendGatewayDiscoveryHint, bridge, loadModelsForSession, loadRecentChatsFromBackend, markGatewayConnectionLastUsed]);
 
+  const handleTransportChange = useCallback((value: HermesTransport) => {
+    setConfig((prev) => {
+      const next = { ...prev, transport: value };
+      console.info('[Relay][Config] transport change', {
+        previousTransport: prev.transport ?? '(none)',
+        nextTransport: value,
+      });
+      return next;
+    });
+    setDraftHermesEndpoint(defaultGatewayUrlForTransport(value));
+    setHealth(null);
+  }, []);
+
   const handleQuickConnectHermes = useCallback(async () => {
     const normalizedGatewayUrl = normalizeHermesEndpoint(draftHermesEndpoint);
     if (!normalizedGatewayUrl) {
@@ -4209,7 +4344,7 @@ export default function App() {
       setStatus('Hermes endpoint is required.');
       return;
     }
-    const inferredTransport: HermesTransport = inferTransportFromEndpoint(normalizedGatewayUrl, config.transport ?? 'hermes_http');
+    const inferredTransport: HermesTransport = resolveRequestedTransport(config.transport, normalizedGatewayUrl);
     if (inferredTransport === 'hermes_acp_stdio' && !normalizedGatewayUrl.toLowerCase().startsWith('ssh://')) {
       const message = 'ACP requires ssh://user@host[:port]. Local ACP is disabled.';
       setHealth({ ok: false, message });
@@ -4242,7 +4377,7 @@ export default function App() {
     setTestingConnection(true);
     setStatus('Testing Hermes connection...');
     try {
-      const testTransport = inferTransportFromEndpoint(normalizedGatewayUrl, config.transport ?? 'hermes_http');
+      const testTransport = resolveRequestedTransport(config.transport, normalizedGatewayUrl);
       if (testTransport === 'hermes_acp_stdio') {
         if (!normalizedGatewayUrl.toLowerCase().startsWith('ssh://')) {
           throw new Error('ACP requires ssh://user@host[:port]. Local ACP is disabled.');
@@ -4266,15 +4401,19 @@ export default function App() {
         return;
       }
 
+      const healthPath = testTransport === 'relay_daemon' ? '/health' : '/models';
+      const testBaseUrl = testTransport === 'relay_daemon'
+        ? normalizedGatewayUrl.replace(/\/v1\/?$/i, '')
+        : normalizedGatewayUrl;
       const payload = {
-        baseUrl: normalizedGatewayUrl,
-        path: '/models',
+        baseUrl: testBaseUrl,
+        path: healthPath,
         method: 'GET',
         token: draftHermesToken || undefined,
       };
       const result = window.relay?.backendHttpRequest
         ? await window.relay.backendHttpRequest(payload)
-        : await fetch(`${normalizedGatewayUrl}/models`, {
+        : await fetch(`${testBaseUrl}${healthPath}`, {
             method: 'GET',
             headers: {
               'Content-Type': 'application/json',
@@ -4299,6 +4438,13 @@ export default function App() {
         }
         setHealth({ ok: false, message: `Connection test failed: ${detail}` });
         setStatus(`Connection test failed: ${detail}`);
+        return;
+      }
+
+      if (testTransport === 'relay_daemon') {
+        const message = `Relay daemon connection test passed for ${normalizedGatewayUrl}.`;
+        setHealth({ ok: true, message });
+        setStatus(message);
         return;
       }
 
@@ -4335,7 +4481,7 @@ export default function App() {
       setStatus('Hermes endpoint is required.');
       return;
     }
-    const inferredTransport: HermesTransport = inferTransportFromEndpoint(normalizedGatewayUrl, config.transport ?? 'hermes_http');
+    const inferredTransport: HermesTransport = resolveRequestedTransport(config.transport, normalizedGatewayUrl);
 
     const nextConfig: AppConfig = {
       backendType: 'hermes',
@@ -4354,6 +4500,11 @@ export default function App() {
 
   const handlePlanTask = async (event: FormEvent) => {
     event.preventDefault();
+    console.info('[Relay][Cowork] submit', {
+      reasoningEffort: coworkReasoningEffort,
+      selectedModel: coworkModel || '(server-managed)',
+      hasDraft: coworkDraftPrompt.trim().length > 0,
+    });
     clearCoworkStreamWatchdog();
     if (!hermesConnected) {
       setStatus('Gateway disconnected. Connect in Settings > Connection to run cowork tasks.');
@@ -4519,8 +4670,7 @@ export default function App() {
         rootFolder: folderContext,
         startedAt: Date.now(),
       });
-      const responseStyleInstruction =
-        'Respond in normal assistant prose. Do not output relay_actions JSON or any machine-action envelopes.';
+      const responseStyleInstruction = buildCoworkResponseInstruction(text, folderContext);
       const projectKnowledgeContext = activeCoworkProject
         ? projectKnowledgeItems
             .filter((item) => item.projectId === activeCoworkProject.id)
@@ -4538,6 +4688,17 @@ export default function App() {
       const coworkMemoryContext = preferences.injectMemory
         ? buildMemoryContext(loadMemoryEntries(), preferences.systemPrompt)
         : preferences.systemPrompt.trim();
+      const reasoningInstruction =
+        coworkReasoningEffort === 'low'
+          ? 'Reasoning effort: low. Prefer concise direct execution and avoid over-analysis.'
+          : coworkReasoningEffort === 'high'
+            ? 'Reasoning effort: high. Spend extra effort on planning, edge cases, and verification before final output.'
+            : 'Reasoning effort: medium. Balance speed with clear, structured reasoning.';
+      console.info('[Relay][Cowork] reasoning', {
+        effort: coworkReasoningEffort,
+        instruction: reasoningInstruction,
+      });
+
       const outboundMessage = [
         coworkMemoryContext,
         activeCoworkProject ? `Project context: ${activeCoworkProject.name}` : '',
@@ -4545,6 +4706,7 @@ export default function App() {
         folderContext ? `Working folder context: ${folderContext}` : '',
         referencedProjectFilesContext,
         webSearchInstruction,
+        reasoningInstruction,
         responseStyleInstruction,
         '',
         text,
@@ -4879,8 +5041,131 @@ export default function App() {
         setStatus(message);
       }
     },
-    [handleAssignScheduledJobToProject],
+    [ensureConnectedClient, handleAssignScheduledJobToProject],
   );
+
+  const refreshKanbanTasks = useCallback(
+    async (taskIdToSelect?: string) => {
+      const client = backendClientRef.current;
+      if (!client) {
+        setStatus('Gateway client not initialized.');
+        return;
+      }
+      const projectRoot = activeCoworkProject?.workspaceFolder?.trim() ?? '';
+      if (!projectRoot) {
+        setKanbanTasks([]);
+        setKanbanTaskDetail(null);
+        return;
+      }
+      setKanbanLoading(true);
+      try {
+        await ensureConnectedClient(client);
+        const tasks = await client.listKanbanTasks({ rootPath: projectRoot });
+        setKanbanTasks(tasks);
+        const selectedTaskId = (taskIdToSelect ?? kanbanTaskDetail?.id ?? '').trim();
+        if (selectedTaskId) {
+          const detail = await client.getKanbanTask(selectedTaskId, { rootPath: projectRoot });
+          setKanbanTaskDetail(detail);
+        } else {
+          setKanbanTaskDetail(null);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to load Kanban tasks.';
+        setStatus(message);
+      } finally {
+        setKanbanLoading(false);
+      }
+    },
+    [activeCoworkProject?.workspaceFolder, ensureConnectedClient, kanbanTaskDetail?.id],
+  );
+
+  const handleKanbanCreateTask = useCallback(
+    async (input: { title: string; body?: string; assignee?: string }) => {
+      const client = backendClientRef.current;
+      if (!client) {
+        setStatus('Gateway client not initialized.');
+        return;
+      }
+      const projectRoot = activeCoworkProject?.workspaceFolder?.trim() ?? '';
+      if (!projectRoot) {
+        setStatus('Select a project before creating Kanban tasks.');
+        return;
+      }
+      setKanbanCreating(true);
+      try {
+        await ensureConnectedClient(client);
+        const taskId = await client.createKanbanTask({
+          title: input.title,
+          body: input.body,
+          assignee: input.assignee,
+          rootPath: projectRoot,
+        });
+        await refreshKanbanTasks(taskId);
+        setStatus(`Created Kanban task ${taskId}.`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to create Kanban task.';
+        setStatus(message);
+      } finally {
+        setKanbanCreating(false);
+      }
+    },
+    [activeCoworkProject?.workspaceFolder, ensureConnectedClient, refreshKanbanTasks],
+  );
+
+  const handleKanbanSelectTask = useCallback(
+    async (taskId: string) => {
+      const client = backendClientRef.current;
+      if (!client) {
+        setStatus('Gateway client not initialized.');
+        return;
+      }
+      const projectRoot = activeCoworkProject?.workspaceFolder?.trim() ?? '';
+      if (!projectRoot) {
+        return;
+      }
+      setKanbanLoading(true);
+      try {
+        await ensureConnectedClient(client);
+        const detail = await client.getKanbanTask(taskId, { rootPath: projectRoot });
+        setKanbanTaskDetail(detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to load Kanban task detail.';
+        setStatus(message);
+      } finally {
+        setKanbanLoading(false);
+      }
+    },
+    [activeCoworkProject?.workspaceFolder, ensureConnectedClient],
+  );
+
+  const handleKanbanCommentTask = useCallback(
+    async (taskId: string, text: string) => {
+      const client = backendClientRef.current;
+      if (!client) {
+        setStatus('Gateway client not initialized.');
+        return;
+      }
+      const projectRoot = activeCoworkProject?.workspaceFolder?.trim() ?? '';
+      if (!projectRoot) {
+        setStatus('Select a project before posting Kanban comments.');
+        return;
+      }
+      setKanbanCommenting(true);
+      try {
+        await ensureConnectedClient(client);
+        await client.commentKanbanTask(taskId, text, { rootPath: projectRoot });
+        await refreshKanbanTasks(taskId);
+        setStatus(`Comment posted to ${taskId}.`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to post Kanban comment.';
+        setStatus(message);
+      } finally {
+        setKanbanCommenting(false);
+      }
+    },
+    [activeCoworkProject?.workspaceFolder, ensureConnectedClient, refreshKanbanTasks],
+  );
+
 
   const handlePickWorkingFolderForProject = async (): Promise<string | undefined> => {
     const selected = await handlePickWorkingFolder();
@@ -4950,11 +5235,58 @@ export default function App() {
       return;
     }
 
-    if (selected.workspaceFolder.trim()) {
+    const normalizedWorkspaceFolder = selected.workspaceFolder.trim();
+    if (normalizedWorkspaceFolder) {
       setWorkingFolder(selected.workspaceFolder);
-      workingFolderRef.current = selected.workspaceFolder.trim();
+      workingFolderRef.current = normalizedWorkspaceFolder;
     }
-    setStatus(`Project selected: ${selected.name}`);
+
+    setActivePage('cowork');
+
+    const latestProjectRecent = projectRecentItemsByProjectId[normalizedProjectId]?.[0];
+    const latestSessionKey = normalizeSessionKey(latestProjectRecent?.sessionKey ?? '');
+    if (latestSessionKey) {
+      const currentKey = coworkSessionKeyRef.current;
+      if (currentKey) {
+        setCoworkMessages((current) => {
+          if (current.length > 0) {
+            coworkMessageCache.current.set(currentKey, current);
+          }
+          return current;
+        });
+      }
+
+      commitCoworkSessionKey(latestSessionKey);
+      handleCoworkPromptChange('');
+      setCoworkAwaitingStream(false);
+      setCoworkRunPhase('idle');
+      setCoworkRunStatus(`Project selected: ${selected.name}`);
+
+      const cached = coworkMessageCache.current.get(latestSessionKey);
+      if (cached && cached.length > 0) {
+        setCoworkMessages(cached);
+        const titleFromCache = deriveThreadTitleFromMessages(cached);
+        setStatus(titleFromCache ? `Project selected: ${selected.name} · Opened task: ${titleFromCache}` : `Project selected: ${selected.name} · Opened task.`);
+        const client = backendClientRef.current;
+        if (client) {
+          void loadCoworkModels(client, latestSessionKey);
+        }
+        return;
+      }
+
+      setCoworkMessages([]);
+      setStatus(`Project selected: ${selected.name} · Loading recent task...`);
+      void loadCoworkSession(latestSessionKey, 'Opened task');
+      return;
+    }
+
+    commitCoworkSessionKey('');
+    setCoworkMessages([]);
+    setCoworkAwaitingStream(false);
+    setCoworkStreamingText('');
+    setCoworkRunPhase('idle');
+    setCoworkRunStatus('Ready for a new task.');
+    setStatus(`Project selected: ${selected.name}. No previous tasks yet.`);
   };
 
   const handleCreateCoworkProject = (name: string, workspaceFolder: string, description?: string, instructions?: string) => {
@@ -5886,6 +6218,10 @@ export default function App() {
 
   const handleCoworkModelChange = async (nextModelValue: string) => {
     const previousModel = coworkModel;
+    console.info('[Relay][Cowork] model change requested', {
+      previousModel: previousModel || '(empty)',
+      nextModel: nextModelValue || '(server-managed)',
+    });
     setCoworkModel(nextModelValue);
 
     const client = backendClientRef.current;
@@ -5908,10 +6244,18 @@ export default function App() {
       }
 
       await client.setSessionModel(sessionKey, nextModelValue || null);
+      console.info('[Relay][Cowork] model change applied', {
+        sessionKey,
+        appliedModel: nextModelValue || '(server-managed)',
+      });
       setStatus(`Cowork model applied: ${nextModelValue}.`);
       void loadCoworkModels(client, sessionKey);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update cowork model.';
+      console.error('[Relay][Cowork] model change failed', {
+        nextModel: nextModelValue,
+        error: message,
+      });
       setStatus(message);
       setCoworkModel(previousModel);
     } finally {
@@ -6114,7 +6458,7 @@ export default function App() {
       return;
     }
 
-    if ((config.transport ?? 'hermes_http') === 'hermes_acp_stdio') {
+    if ((config.transport ?? 'relay_daemon') === 'hermes_acp_stdio') {
       // ACP mode does not support cron APIs in this client implementation.
       setScheduledJobs([]);
       setScheduledLoading(false);
@@ -6334,14 +6678,12 @@ export default function App() {
         <OnboardingPage
           draftHermesEndpoint={draftHermesEndpoint}
           draftHermesToken={draftHermesToken}
-          transport={config.transport ?? 'hermes_http'}
+          transport={config.transport ?? 'relay_daemon'}
           health={health}
           saving={saving}
           ondraftHermesEndpointChange={setDraftHermesEndpoint}
           ondraftHermesTokenChange={setDraftHermesToken}
-          onTransportChange={(value) => {
-            setConfig((prev) => ({ ...prev, transport: value }));
-          }}
+          onTransportChange={handleTransportChange}
           onSave={handleSave}
           onTestConnection={handleTestConnection}
           testingConnection={testingConnection}
@@ -6391,7 +6733,12 @@ export default function App() {
             onStartNewChat={handleStartNewChat}
             onStartNewTask={handleStartNewTask}
             onSelectMenuItem={setActiveMenuItem}
-            onSelectPage={(page) => setActivePage(page)}
+            onSelectPage={(page) => {
+              setActivePage(page);
+              if (page === 'kanban') {
+                void refreshKanbanTasks();
+              }
+            }}
             onOpenSearch={() => handleSearchOpenChange(true)}
             onOpenSettings={() => setActivePage('settings')}
             onSettingsSectionChange={setSettingsSection}
@@ -6549,7 +6896,8 @@ export default function App() {
                           : 'idle'
                   }
                   progressSteps={activePage === 'cowork' ? coworkProgressSteps : []}
-                  approvalMode="none"
+                  approvalMode={activePage === 'cowork' ? 'project' : 'none'}
+                  reasoningEffort={coworkReasoningEffort}
                   projectPathReferences={activePage === 'cowork' ? coworkProjectPathReferences : []}
                   contextWindowUsedTokens={activePage === 'cowork' ? coworkContextWindowUsedTokens : chatContextWindowUsedTokens}
                   contextWindowTotalTokens={activePage === 'cowork' ? coworkContextWindowTotalTokens : chatContextWindowTotalTokens}
@@ -6560,6 +6908,10 @@ export default function App() {
                   onTaskPromptChange={activePage === 'cowork' ? handleCoworkPromptChange : handleChatPromptChange}
                   onModelChange={activePage === 'cowork' ? handleCoworkModelChange : handleModelChange}
                   onWebSearchEnabledChange={setCoworkWebSearchEnabled}
+                  onReasoningEffortChange={(value) => {
+                    console.info('[Relay][Cowork] reasoning selector changed', { value });
+                    setCoworkReasoningEffort(value);
+                  }}
                   onApprovalModeChange={() => {}}
                   onSubmit={activePage === 'cowork' ? handlePlanTask : handleSendChat}
                   onApprovePendingAction={handleApprovePendingAction}
@@ -6597,18 +6949,32 @@ export default function App() {
                   onWebSearchEnabledChange={setCoworkWebSearchEnabled}
                   onSelectPage={(page) => setActivePage(page)}
                 />
+              ) : activePage === 'kanban' ? (
+                <KanbanPage
+                  project={activeCoworkProject}
+                  tasks={kanbanTasks}
+                  taskDetail={kanbanTaskDetail}
+                  loading={kanbanLoading}
+                  creating={kanbanCreating}
+                  commenting={kanbanCommenting}
+                  onSelectPage={(page) => setActivePage(page)}
+                  onRefresh={() => void refreshKanbanTasks()}
+                  onCreateTask={handleKanbanCreateTask}
+                  onSelectTask={handleKanbanSelectTask}
+                  onCommentTask={handleKanbanCommentTask}
+                />
               ) : activePage === 'settings' ? (
                 <SettingsPage
                   activeSection={settingsSection}
                   preferences={preferences}
-                  transport={config.transport ?? 'hermes_http'}
+                  transport={config.transport ?? 'relay_daemon'}
                   draftHermesEndpoint={draftHermesEndpoint}
                   draftHermesToken={draftHermesToken}
                   health={health}
                   saving={saving}
                   testingConnection={testingConnection}
                   onUpdatePreferences={updatePreferences}
-                  onTransportChange={(value) => setConfig((prev) => ({ ...prev, transport: value }))}
+                  onTransportChange={handleTransportChange}
                   ondraftHermesEndpointChange={setDraftHermesEndpoint}
                   ondraftHermesTokenChange={setDraftHermesToken}
                   onTestConnection={handleTestConnection}

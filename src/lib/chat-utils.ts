@@ -469,6 +469,51 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
   const hasUnsafePathChars = (value: string): boolean =>
     Array.from(value).some((char) => char.charCodeAt(0) < 32);
 
+  const toObjectRecord = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+
+  const parseJsonObject = (value: unknown): Record<string, unknown> => {
+    if (typeof value !== 'string' || !value.trim()) {
+      return {};
+    }
+
+    try {
+      return toObjectRecord(JSON.parse(value));
+    } catch {
+      return {};
+    }
+  };
+
+  const firstString = (...values: unknown[]): string => {
+    for (const value of values) {
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return '';
+  };
+
+  const normalizeActionType = (rawType: string): string => {
+    const normalizedType = rawType.toLowerCase().replace(/-/g, '_');
+
+    if (normalizedType === 'list_files' || normalizedType === 'list_directory' || normalizedType === 'ls') {
+      return 'list_dir';
+    }
+    if (normalizedType === 'read_text_file' || normalizedType === 'view_file') {
+      return 'read_file';
+    }
+    if (normalizedType === 'write_file' || normalizedType === 'create_text_file' || normalizedType === 'create_or_update_file') {
+      return 'create_file';
+    }
+    if (normalizedType === 'edit_file' || normalizedType === 'replace_text') {
+      return 'replace_in_file';
+    }
+
+    return normalizedType;
+  };
+
   const normalizeRelayActions = (value: unknown): RelayFileAction[] => {
     let rawActions: unknown = value;
 
@@ -483,112 +528,147 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
     const actionArray = Array.isArray(rawActions) ? rawActions : rawActions ? [rawActions] : [];
 
     return actionArray.reduce<RelayFileAction[]>((acc, action) => {
-        if (!action || typeof action !== 'object') {
-          return acc;
-        }
-
-        const record = action as Record<string, unknown>;
-        const type = record.type;
-        if (
-          type !== 'create_file' &&
-          type !== 'append_file' &&
-          type !== 'replace_in_file' &&
-          type !== 'read_file' &&
-          type !== 'list_dir' &&
-          type !== 'exists' &&
-          type !== 'rename' &&
-          type !== 'delete'
-        ) {
-          return acc;
-        }
-
-        const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : undefined;
-
-        const filePath = typeof record.path === 'string' ? record.path.trim() : '';
-        if (filePath && hasUnsafePathChars(filePath)) {
-          return acc;
-        }
-        if ((type === 'create_file' || type === 'append_file' || type === 'replace_in_file' || type === 'read_file' || type === 'exists' || type === 'delete') && !filePath) {
-          return acc;
-        }
-
-        if (type === 'read_file') {
-          acc.push({ id, type: 'read_file' as const, path: filePath });
-          return acc;
-        }
-
-        if (type === 'list_dir') {
-          acc.push({ id, type: 'list_dir' as const, path: filePath || undefined });
-          return acc;
-        }
-
-        if (type === 'exists') {
-          acc.push({ id, type: 'exists' as const, path: filePath });
-          return acc;
-        }
-
-        if (type === 'rename') {
-          const newPath =
-            typeof record.newPath === 'string'
-              ? record.newPath.trim()
-              : typeof record.new_path === 'string'
-                ? record.new_path.trim()
-                : typeof record.toPath === 'string'
-                  ? record.toPath.trim()
-                  : typeof record.to === 'string'
-                    ? record.to.trim()
-                    : '';
-            if ((filePath && hasUnsafePathChars(filePath)) || (newPath && hasUnsafePathChars(newPath))) {
-              return acc;
-            }
-          if (!filePath || !newPath) {
-            return acc;
-          }
-          acc.push({ id, type: 'rename' as const, path: filePath, newPath });
-          return acc;
-        }
-
-        if (type === 'delete') {
-          acc.push({ id, type: 'delete' as const, path: filePath });
-          return acc;
-        }
-
-        const content = typeof record.content === 'string' ? record.content : '';
-        const overwrite = typeof record.overwrite === 'boolean' ? record.overwrite : undefined;
-
-        if (type === 'append_file') {
-          acc.push({ id, type: 'append_file' as const, path: filePath, content });
-          return acc;
-        }
-
-        if (type === 'replace_in_file') {
-          const oldString = typeof record.oldString === 'string'
-            ? record.oldString
-            : typeof record.old_string === 'string'
-              ? record.old_string
-              : '';
-          const newString = typeof record.newString === 'string'
-            ? record.newString
-            : typeof record.new_string === 'string'
-              ? record.new_string
-              : '';
-          const replaceAll = typeof record.replaceAll === 'boolean'
-            ? record.replaceAll
-            : typeof record.replace_all === 'boolean'
-              ? record.replace_all
-              : undefined;
-
-          if (!filePath || !oldString) {
-            return acc;
-          }
-
-          acc.push({ id, type: 'replace_in_file' as const, path: filePath, oldString, newString, replaceAll });
-          return acc;
-        }
-
-        acc.push({ id, type: 'create_file' as const, path: filePath, content, overwrite });
+      if (!action || typeof action !== 'object') {
         return acc;
-      }, []);
+      }
+
+      const record = action as Record<string, unknown>;
+      const inputRecord = toObjectRecord(record.input);
+      const paramsRecord = toObjectRecord(record.params);
+      const payloadRecord = toObjectRecord(record.payload);
+      const rawArgumentsRecord = toObjectRecord(record.arguments);
+      const argumentsRecord =
+        Object.keys(rawArgumentsRecord).length > 0
+          ? rawArgumentsRecord
+          : parseJsonObject(record.arguments);
+      const mergedRecord: Record<string, unknown> = {
+        ...inputRecord,
+        ...paramsRecord,
+        ...payloadRecord,
+        ...argumentsRecord,
+        ...record,
+      };
+
+      const rawType = firstString(mergedRecord.type, mergedRecord.action, mergedRecord.name, record.type, record.action, record.name);
+      const type = normalizeActionType(rawType);
+      if (
+        type !== 'create_file' &&
+        type !== 'append_file' &&
+        type !== 'replace_in_file' &&
+        type !== 'read_file' &&
+        type !== 'list_dir' &&
+        type !== 'exists' &&
+        type !== 'rename' &&
+        type !== 'delete'
+      ) {
+        return acc;
+      }
+
+      const id = firstString(mergedRecord.id);
+
+      const filePath = firstString(
+        mergedRecord.path,
+        mergedRecord.filePath,
+        mergedRecord.file_path,
+        mergedRecord.relativePath,
+        mergedRecord.relative_path,
+        mergedRecord.targetPath,
+        mergedRecord.target_path,
+      );
+      if (filePath && hasUnsafePathChars(filePath)) {
+        return acc;
+      }
+      if ((type === 'create_file' || type === 'append_file' || type === 'replace_in_file' || type === 'read_file' || type === 'exists' || type === 'delete') && !filePath) {
+        return acc;
+      }
+
+      if (type === 'read_file') {
+        acc.push({ id: id || undefined, type: 'read_file' as const, path: filePath });
+        return acc;
+      }
+
+      if (type === 'list_dir') {
+        acc.push({ id: id || undefined, type: 'list_dir' as const, path: filePath || undefined });
+        return acc;
+      }
+
+      if (type === 'exists') {
+        acc.push({ id: id || undefined, type: 'exists' as const, path: filePath });
+        return acc;
+      }
+
+      if (type === 'rename') {
+        const newPath = firstString(
+          mergedRecord.newPath,
+          mergedRecord.new_path,
+          mergedRecord.toPath,
+          mergedRecord.to_path,
+          mergedRecord.to,
+          mergedRecord.destinationPath,
+          mergedRecord.destination_path,
+        );
+        if ((filePath && hasUnsafePathChars(filePath)) || (newPath && hasUnsafePathChars(newPath))) {
+          return acc;
+        }
+        if (!filePath || !newPath) {
+          return acc;
+        }
+        acc.push({ id: id || undefined, type: 'rename' as const, path: filePath, newPath });
+        return acc;
+      }
+
+      if (type === 'delete') {
+        acc.push({ id: id || undefined, type: 'delete' as const, path: filePath });
+        return acc;
+      }
+
+      const content = firstString(mergedRecord.content, mergedRecord.text, mergedRecord.body, mergedRecord.newContent, mergedRecord.new_content);
+      const overwrite = typeof mergedRecord.overwrite === 'boolean' ? mergedRecord.overwrite : undefined;
+
+      if (type === 'append_file') {
+        acc.push({ id: id || undefined, type: 'append_file' as const, path: filePath, content });
+        return acc;
+      }
+
+      if (type === 'replace_in_file') {
+        const oldString = firstString(
+          mergedRecord.oldString,
+          mergedRecord.old_string,
+          mergedRecord.search,
+          mergedRecord.find,
+          mergedRecord.oldText,
+          mergedRecord.old_text,
+        );
+        const newString = firstString(
+          mergedRecord.newString,
+          mergedRecord.new_string,
+          mergedRecord.replace,
+          mergedRecord.replacement,
+          mergedRecord.newText,
+          mergedRecord.new_text,
+          mergedRecord.with,
+        );
+        const replaceAll = typeof mergedRecord.replaceAll === 'boolean'
+          ? mergedRecord.replaceAll
+          : typeof mergedRecord.replace_all === 'boolean'
+            ? mergedRecord.replace_all
+            : typeof mergedRecord.all === 'boolean'
+              ? mergedRecord.all
+              : typeof mergedRecord.global === 'boolean'
+                ? mergedRecord.global
+                : undefined;
+
+        if (!filePath || !oldString) {
+          return acc;
+        }
+
+        acc.push({ id: id || undefined, type: 'replace_in_file' as const, path: filePath, oldString, newString, replaceAll });
+        return acc;
+      }
+
+      acc.push({ id: id || undefined, type: 'create_file' as const, path: filePath, content, overwrite });
+      return acc;
+    }, []);
   };
 
   const tryParseCandidateText = (candidate: string): RelayFileAction[] => {
@@ -599,7 +679,7 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
 
     try {
       const parsed = JSON.parse(text) as Record<string, unknown>;
-      const direct = normalizeRelayActions(parsed.relay_actions ?? parsed.relayActions);
+      const direct = normalizeRelayActions(parsed.relay_actions ?? parsed.relayActions ?? parsed);
       if (direct.length > 0) {
         return direct;
       }
@@ -616,7 +696,7 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
       }
       try {
         const parsed = JSON.parse(payload) as Record<string, unknown>;
-        const direct = normalizeRelayActions(parsed.relay_actions ?? parsed.relayActions);
+        const direct = normalizeRelayActions(parsed.relay_actions ?? parsed.relayActions ?? parsed);
         if (direct.length > 0) {
           return direct;
         }
@@ -634,7 +714,7 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
       }
       try {
         const parsed = JSON.parse(payload) as Record<string, unknown>;
-        const direct = normalizeRelayActions(parsed.relay_actions ?? parsed.relayActions);
+        const direct = normalizeRelayActions(parsed.relay_actions ?? parsed.relayActions ?? parsed);
         if (direct.length > 0) {
           return direct;
         }
@@ -651,7 +731,7 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
       }
       try {
         const parsed = JSON.parse(payload) as Record<string, unknown>;
-        const direct = normalizeRelayActions(parsed.relay_actions ?? parsed.relayActions);
+        const direct = normalizeRelayActions(parsed.relay_actions ?? parsed.relayActions ?? parsed);
         if (direct.length > 0) {
           return direct;
         }
@@ -711,7 +791,12 @@ export function parseRelayFileActions(rawInput: unknown): RelayFileAction[] {
 }
 
 export function stripRelayActionPayloadFromText(rawText: string): string {
-  if (!rawText.trim()) {
+  const trimmed = rawText.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (parseRelayFileActions(trimmed).length > 0) {
     return '';
   }
 
@@ -720,6 +805,14 @@ export function stripRelayActionPayloadFromText(rawText: string): string {
   sanitized = sanitized.replace(/```json\s*[\s\S]*?"relay_actions"[\s\S]*?```/gi, '');
   sanitized = sanitized.replace(/```[\s\S]*?"relay_actions"[\s\S]*?```/gi, '');
   sanitized = sanitized.replace(/\{[\s\S]*?"relay_actions"[\s\S]*?\}/gi, '');
+
+  sanitized = sanitized.replace(/```(?:json)?\s*([\s\S]*?)```/gi, (match, payload: string) => {
+    const candidate = typeof payload === 'string' ? payload.trim() : '';
+    if (!candidate) {
+      return match;
+    }
+    return parseRelayFileActions(candidate).length > 0 ? '' : match;
+  });
 
   return sanitized.replace(/\n{3,}/g, '\n\n').trim();
 }

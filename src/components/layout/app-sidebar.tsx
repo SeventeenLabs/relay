@@ -10,6 +10,7 @@ import {
   ChevronUp,
   Code2,
   Download,
+  FolderKanban,
   FolderOpen,
   Globe,
   HelpCircle,
@@ -59,7 +60,7 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 
-type AppPage = 'chat' | 'cowork' | 'project' | 'settings';
+type AppPage = 'chat' | 'cowork' | 'project' | 'kanban' | 'settings';
 type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Connection' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 type AppLanguage = 'en' | 'de';
 
@@ -120,11 +121,19 @@ const settingsNavItems: { label: SettingsSection; icon: typeof User }[] = [
   { label: 'Profile', icon: User },
   { label: 'Appearance', icon: Palette },
   { label: 'System Prompt', icon: MessageSquareText },
+  { label: 'Connection', icon: Globe },
   { label: 'Connectors', icon: Link2 },
   { label: 'Account', icon: KeyRound },
   { label: 'Privacy', icon: Shield },
   { label: 'Developer', icon: Code2 },
 ];
+
+const primaryWorkspaceNavItems: Array<{ id: string; label: string; page: AppPage; icon: typeof FolderOpen }> = [
+  { id: 'cowork', label: 'Cowork', page: 'cowork', icon: Play },
+  { id: 'project', label: 'Project Home', page: 'project', icon: FolderOpen },
+  { id: 'kanban', label: 'Kanban', page: 'kanban', icon: FolderKanban },
+];
+
 
 const sectionLabels: Record<SettingsSection, { en: string; de: string }> = {
   Profile: { en: 'Profile', de: 'Profil' },
@@ -571,6 +580,24 @@ export function AppSidebar({
                       {!compact && <span className="min-w-0 flex-1 truncate">Neuer Chat</span>}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  {primaryWorkspaceNavItems.map((item) => {
+                    const isActive = activePage === item.page;
+                    return (
+                      <SidebarMenuItem key={item.id}>
+                        <SidebarMenuButton
+                          type="button"
+                          active={isActive}
+                          aria-current={isActive ? 'page' : undefined}
+                          className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
+                          title={item.label}
+                          onClick={() => onSelectPage(item.page)}
+                        >
+                          <item.icon data-icon="inline-start" />
+                          {!compact && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -679,9 +706,9 @@ export function AppSidebar({
                       : null}
                   </div>
                 </div>
-                <SidebarGroupContent className="min-h-0">
-                  <ScrollArea className="h-full min-h-0">
-                    <SidebarMenu className="pr-0.5">
+                <SidebarGroupContent className="min-h-0 min-w-0">
+                  <ScrollArea className="h-full min-h-0 min-w-0">
+                    <SidebarMenu className="min-w-0 pr-0.5">
                       {safeCoworkProjects.length === 0 ? (
                         <SidebarMenuItem>
                           <SidebarMenuButton type="button" className="w-full justify-start truncate font-sans text-[12px] text-muted-foreground" disabled>
@@ -870,9 +897,9 @@ export function AppSidebar({
                     </Button>
                   </div>
                 </div>
-                <SidebarGroupContent className="min-h-0">
-                  <ScrollArea className="h-full min-h-0">
-                    <SidebarMenu className="pr-0.5">
+                <SidebarGroupContent className="min-h-0 min-w-0">
+                  <ScrollArea className="h-full min-h-0 min-w-0">
+                    <SidebarMenu className="min-w-0 pr-0.5">
                       {safeChatRecentItems.length === 0 ? (
                         <SidebarMenuItem>
                           <SidebarMenuButton type="button" className="w-full justify-start truncate font-sans text-[12px] text-muted-foreground" disabled>

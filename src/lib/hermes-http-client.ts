@@ -100,6 +100,22 @@ const MODEL_VALUE_SEPARATOR = '::';
 const HERMES_CLIENT_LOG_PREFIX = '[Relay:HermesClient]';
 
 export class HermesHttpClient {
+  async listKanbanTasks(_input?: { assignee?: string; status?: string; tenant?: string; archived?: boolean; rootPath?: string }): Promise<import('./agent-backend-client').HermesKanbanTask[]> {
+    throw new HermesRequestError('kanban.list is not supported by Hermes OpenAI API mode.', 'method_not_found');
+  }
+
+  async createKanbanTask(_input: { title: string; body?: string; assignee?: string; tenant?: string; rootPath?: string }): Promise<string> {
+    throw new HermesRequestError('kanban.create is not supported by Hermes OpenAI API mode.', 'method_not_found');
+  }
+
+  async getKanbanTask(_taskId: string, _input?: { rootPath?: string }): Promise<import('./agent-backend-client').HermesKanbanTaskDetail | null> {
+    throw new HermesRequestError('kanban.show is not supported by Hermes OpenAI API mode.', 'method_not_found');
+  }
+
+  async commentKanbanTask(_taskId: string, _text: string, _input?: { rootPath?: string }): Promise<void> {
+    throw new HermesRequestError('kanban.comment is not supported by Hermes OpenAI API mode.', 'method_not_found');
+  }
+
   private connected = false;
   private apiBaseUrl: string | null = null;
   private token: string | null = null;

@@ -1,6 +1,8 @@
 import type {
   AgentBackendEvent,
   BackendTypedEventName,
+  HermesKanbanTask,
+  HermesKanbanTaskDetail,
   LegacyAgentBackendEvent,
 } from './agent-backend-client';
 import type {
@@ -28,6 +30,8 @@ type SessionRunState = {
   buffer: string;
   messageId: string | null;
   closed: boolean;
+  contextWindowUsed: number | null;
+  contextWindowSize: number | null;
 };
 
 const HERMES_CLIENT_LOG_PREFIX = '[Relay:HermesACPClient]';
@@ -47,9 +51,30 @@ export class HermesAcpClient {
   private currentCwd: string | null = null;
 
   private normalizeModelId(value: string): string {
-    const normalized = value.trim();
+    const normalized = value.trim().toLowerCase();
     if (!normalized) return '';
-    return normalized.replace('/', ':');
+    const separatorIndex = normalized.indexOf('::');
+    if (separatorIndex > 0 && separatorIndex < normalized.length - 2) {
+      const provider = normalized.slice(0, separatorIndex).trim();
+      const model = normalized.slice(separatorIndex + 2).trim();
+      return `${provider}::${model}`;
+    }
+
+    const slashIndex = normalized.indexOf('/');
+    if (slashIndex > 0 && slashIndex < normalized.length - 1) {
+      const provider = normalized.slice(0, slashIndex).trim();
+      const model = normalized.slice(slashIndex + 1).trim();
+      return `${provider}::${model}`;
+    }
+
+    const colonIndex = normalized.indexOf(':');
+    if (colonIndex > 0 && colonIndex < normalized.length - 1) {
+      const provider = normalized.slice(0, colonIndex).trim();
+      const model = normalized.slice(colonIndex + 1).trim();
+      return `${provider}::${model}`;
+    }
+
+    return normalized;
   }
 
   private log(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) {
@@ -113,7 +138,14 @@ export class HermesAcpClient {
     const getOrCreateRunState = (): SessionRunState => {
       const existing = this.runStateBySession.get(sessionKey);
       if (existing) return existing;
-      const created: SessionRunState = { runId: `acp-${Date.now()}`, buffer: '', messageId: null, closed: false };
+      const created: SessionRunState = {
+        runId: `acp-${Date.now()}`,
+        buffer: '',
+        messageId: null,
+        closed: false,
+        contextWindowUsed: null,
+        contextWindowSize: null,
+      };
       this.runStateBySession.set(sessionKey, created);
       return created;
     };
@@ -186,6 +218,29 @@ export class HermesAcpClient {
       return;
     }
 
+    if (kind === 'usage_update') {
+      const run = getOrCreateRunState();
+      const used = typeof update.used === 'number' && Number.isFinite(update.used)
+        ? Math.max(0, Math.round(update.used))
+        : null;
+      const size = typeof update.size === 'number' && Number.isFinite(update.size) && update.size > 0
+        ? Math.round(update.size)
+        : null;
+      if (used !== null) {
+        run.contextWindowUsed = used;
+      }
+      if (size !== null) {
+        run.contextWindowSize = size;
+      }
+      this.log('info', 'ACP usage update captured', {
+        sessionId: sessionKey,
+        runId: run.runId,
+        used: run.contextWindowUsed,
+        size: run.contextWindowSize,
+      });
+      return;
+    }
+
     if (kind === 'tool_call' || kind === 'tool_call_update' || kind === 'plan') {
       const label = kind === 'plan'
         ? 'Plan update'
@@ -207,6 +262,107 @@ export class HermesAcpClient {
       throw new HermesRequestError('ACP bridge is unavailable in this build.', 'not_supported');
     }
     return window.relay;
+  }
+
+  private resolveKanbanRootPath(input?: string): string {
+    const trimmed = (input ?? '').trim();
+    if (trimmed) {
+      return trimmed;
+    }
+    return (this.currentCwd ?? '').trim();
+  }
+
+  private ensureKanbanRootPath(input?: string): string {
+    const rootPath = this.resolveKanbanRootPath(input);
+    if (!rootPath) {
+      throw new HermesRequestError('Kanban actions require a project workspace path.', 'invalid_request');
+    }
+    return rootPath;
+  }
+
+  private parseKanbanTaskRecord(record: unknown): HermesKanbanTask | null {
+    if (!record || typeof record !== 'object') {
+      return null;
+    }
+    const row = record as Record<string, unknown>;
+    const id = typeof row.id === 'string' ? row.id.trim() : '';
+    const title = typeof row.title === 'string' ? row.title.trim() : '';
+    const status = typeof row.status === 'string' ? row.status.trim() : '';
+    if (!id || !title || !status) {
+      return null;
+    }
+    const assignee = typeof row.assignee === 'string' ? row.assignee.trim() : '';
+    const tenant = typeof row.tenant === 'string' ? row.tenant.trim() : '';
+    const updatedAt = typeof row.updated_at === 'string'
+      ? row.updated_at.trim()
+      : typeof row.updatedAt === 'string'
+        ? row.updatedAt.trim()
+        : '';
+    return {
+      id,
+      title,
+      status,
+      assignee: assignee || undefined,
+      tenant: tenant || undefined,
+      updatedAt: updatedAt || undefined,
+    };
+  }
+
+  private parseKanbanCommentRecord(record: unknown): { author?: string; text: string; createdAt?: string } | null {
+    if (!record || typeof record !== 'object') {
+      return null;
+    }
+    const row = record as Record<string, unknown>;
+    const text = typeof row.body === 'string'
+      ? row.body.trim()
+      : typeof row.text === 'string'
+        ? row.text.trim()
+        : '';
+    if (!text) {
+      return null;
+    }
+    const author = typeof row.author === 'string' ? row.author.trim() : '';
+    const createdAt = typeof row.created_at === 'string'
+      ? row.created_at.trim()
+      : typeof row.createdAt === 'string'
+        ? row.createdAt.trim()
+        : '';
+    return {
+      author: author || undefined,
+      text,
+      createdAt: createdAt || undefined,
+    };
+  }
+
+  private async runKanbanCommand(
+    args: string[],
+    options: { rootPath?: string; requireJsonOutput?: boolean } = {},
+  ): Promise<{ stdout: string }> {
+    const relay = this.requireRelayBridge();
+    if (!relay.acpKanbanExec) {
+      throw new HermesRequestError('ACP kanban bridge is unavailable in this build.', 'not_supported');
+    }
+    const rootPath = this.ensureKanbanRootPath(options.rootPath);
+    const sessionId = this.activeSessionId?.trim() || undefined;
+    this.log('info', 'Kanban ACP exec start', { rootPath, sessionId: sessionId ?? '(auto)', args });
+
+    try {
+      const result = await relay.acpKanbanExec({
+        sessionId,
+        args,
+        timeoutMs: 30_000,
+        requireJsonOutput: Boolean(options.requireJsonOutput),
+      });
+      const stdout = typeof result.stdout === 'string' ? result.stdout : '';
+      if (options.requireJsonOutput && !stdout.trim()) {
+        throw new HermesRequestError('Kanban command returned no data.', 'kanban_empty_response');
+      }
+      return { stdout };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.log('error', 'Kanban ACP exec failed', { rootPath, sessionId: sessionId ?? '(auto)', args, message });
+      throw new HermesRequestError(message || 'Kanban command failed.', 'kanban_command_failed');
+    }
   }
 
   async connect(options: HermesConnectOptions): Promise<void> {
@@ -280,11 +436,15 @@ export class HermesAcpClient {
   }
 
   async createChatSession(): Promise<string> {
-    return this.createSession('chat');
+    const key = await this.createSession('chat');
+    this.activeSessionId = key;
+    return key;
   }
 
   async createCoworkSession(): Promise<string> {
-    return this.createSession('cowork');
+    const key = await this.createSession('cowork');
+    this.activeSessionId = key;
+    return key;
   }
 
   async sendChat(sessionKey: string, text: string): Promise<{ sessionKey: string }> {
@@ -300,7 +460,14 @@ export class HermesAcpClient {
       text,
     });
     const runId = `acp-${Date.now()}`;
-    this.runStateBySession.set(key, { runId, buffer: '', messageId: null, closed: false });
+    this.runStateBySession.set(key, {
+      runId,
+      buffer: '',
+      messageId: null,
+      closed: false,
+      contextWindowUsed: null,
+      contextWindowSize: null,
+    });
     this.emitTypedEvent('run.started', { sessionKey: key, runId, label: 'ACP run started' });
     await relay.acpPrompt({ sessionId: key, text });
 
@@ -332,6 +499,8 @@ export class HermesAcpClient {
           sessionKey: key,
           runId: run.runId,
           state: 'final',
+          ...(run.contextWindowUsed !== null ? { contextWindowUsed: run.contextWindowUsed } : {}),
+          ...(run.contextWindowSize !== null ? { contextWindowSize: run.contextWindowSize } : {}),
           message: {
             id: `${run.runId}-final`,
             role: 'assistant',
@@ -512,6 +681,110 @@ export class HermesAcpClient {
   async fetchToolsCatalog(): Promise<HermesToolsCatalog> {
     const tools: HermesToolEntry[] = [];
     return { tools };
+  }
+
+  async listKanbanTasks(input?: { assignee?: string; status?: string; tenant?: string; archived?: boolean; rootPath?: string }): Promise<HermesKanbanTask[]> {
+    const args: string[] = ['kanban', 'list', '--json'];
+    if (typeof input?.assignee === 'string' && input.assignee.trim()) {
+      args.push('--assignee', input.assignee.trim());
+    }
+    if (typeof input?.status === 'string' && input.status.trim()) {
+      args.push('--status', input.status.trim());
+    }
+    if (typeof input?.tenant === 'string' && input.tenant.trim()) {
+      args.push('--tenant', input.tenant.trim());
+    }
+    if (input?.archived) {
+      args.push('--archived');
+    }
+    const { stdout } = await this.runKanbanCommand(args, {
+      rootPath: input?.rootPath,
+      requireJsonOutput: true,
+    });
+    const parsed = JSON.parse(stdout) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const tasks = parsed
+      .map((entry) => this.parseKanbanTaskRecord(entry))
+      .filter((entry): entry is HermesKanbanTask => entry !== null);
+    return tasks;
+  }
+
+  async createKanbanTask(input: { title: string; body?: string; assignee?: string; tenant?: string; rootPath?: string }): Promise<string> {
+    const title = (input.title ?? '').trim();
+    if (!title) {
+      throw new HermesRequestError('Kanban task title is required.', 'invalid_request');
+    }
+    const args: string[] = ['kanban', 'create', title, '--json'];
+    if (typeof input.body === 'string' && input.body.trim()) {
+      args.push('--body', input.body.trim());
+    }
+    if (typeof input.assignee === 'string' && input.assignee.trim()) {
+      args.push('--assignee', input.assignee.trim());
+    }
+    if (typeof input.tenant === 'string' && input.tenant.trim()) {
+      args.push('--tenant', input.tenant.trim());
+    }
+    const { stdout } = await this.runKanbanCommand(args, {
+      rootPath: input.rootPath,
+      requireJsonOutput: true,
+    });
+    const parsed = JSON.parse(stdout) as unknown;
+    const taskId = typeof parsed === 'object' && parsed && typeof (parsed as Record<string, unknown>).task_id === 'string'
+      ? (parsed as Record<string, unknown>).task_id as string
+      : typeof parsed === 'object' && parsed && typeof (parsed as Record<string, unknown>).id === 'string'
+        ? (parsed as Record<string, unknown>).id as string
+        : '';
+    const normalizedTaskId = taskId.trim();
+    if (!normalizedTaskId) {
+      throw new HermesRequestError('Kanban create did not return a task id.', 'kanban_invalid_response');
+    }
+    return normalizedTaskId;
+  }
+
+  async getKanbanTask(taskId: string, input?: { rootPath?: string }): Promise<HermesKanbanTaskDetail | null> {
+    const normalizedTaskId = taskId.trim();
+    if (!normalizedTaskId) {
+      return null;
+    }
+    const args = ['kanban', 'show', normalizedTaskId, '--json'];
+    const { stdout } = await this.runKanbanCommand(args, {
+      rootPath: input?.rootPath,
+      requireJsonOutput: true,
+    });
+    const parsed = JSON.parse(stdout) as unknown;
+    const task = this.parseKanbanTaskRecord(parsed);
+    if (!task) {
+      return null;
+    }
+    const record = typeof parsed === 'object' && parsed ? parsed as Record<string, unknown> : {};
+    const body = typeof record.body === 'string' ? record.body : undefined;
+    const commentsRaw = Array.isArray(record.comments) ? record.comments : [];
+    const comments = commentsRaw
+      .map((entry) => this.parseKanbanCommentRecord(entry))
+      .filter((entry): entry is { author?: string; text: string; createdAt?: string } => entry !== null);
+    return {
+      ...task,
+      body,
+      comments,
+    };
+  }
+
+  async commentKanbanTask(taskId: string, text: string, input?: { rootPath?: string }): Promise<void> {
+    const normalizedTaskId = taskId.trim();
+    const normalizedText = text.trim();
+    if (!normalizedTaskId) {
+      throw new HermesRequestError('Kanban task id is required.', 'invalid_request');
+    }
+    if (!normalizedText) {
+      throw new HermesRequestError('Kanban comment text is required.', 'invalid_request');
+    }
+    const args = ['kanban', 'comment', normalizedTaskId, normalizedText];
+    await this.runKanbanCommand(args, {
+      rootPath: input?.rootPath,
+      requireJsonOutput: false,
+    });
   }
 
   async listWorkspaceFiles(_relativePath?: string): Promise<{ items: Array<{ path: string; kind: 'file' | 'directory'; size?: number; modifiedMs?: number }>; truncated: boolean; }> {

@@ -226,6 +226,7 @@ export function SettingsPage({
   onReopenOnboarding,
 }: SettingsPageProps) {
   const [prefersDarkSystem, setPrefersDarkSystem] = useState(false);
+  const [showConnectionToken, setShowConnectionToken] = useState(false);
   const t = useCallback((en: string, de: string) => (preferences.language === 'de' ? de : en), [preferences.language]);
   const settingsCardClass = 'max-w-[980px] rounded-2xl border border-border/60 bg-card p-4';
 
@@ -475,52 +476,95 @@ export function SettingsPage({
       )}
 
       {activeSection === 'Connection' && (
-        <section className={settingsCardClass}>
+        <section className="max-w-[980px] rounded-2xl border border-border bg-card p-8 shadow-sm">
+          <div className="mb-6">
+            <h2 className="font-sans text-lg font-bold tracking-tight text-foreground">{t('Connect to your backend', 'Mit deinem Backend verbinden')}</h2>
+            <p className="mt-1 font-sans text-[13px] leading-relaxed text-muted-foreground">{t('Enter your Hermes endpoint and optional token.', 'Gib deinen Hermes-Endpunkt und optional ein Token ein.')}</p>
+          </div>
           <div className="grid gap-4">
-            <label className="grid gap-1">
-              <span className="font-sans text-xs text-muted-foreground">{t('Transport', 'Transport')}</span>
+            <div>
+              <label className="mb-1.5 flex items-center gap-1.5 font-sans text-[12px] font-medium text-foreground">{t('Transport', 'Transport')}</label>
               <select
-                className="h-9 rounded-md border border-border bg-background px-2 font-sans text-sm"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 font-sans text-[13px]"
                 value={transport}
                 onChange={(event) => onTransportChange(event.target.value as HermesTransport)}
               >
-                <option value="hermes_http">HTTP API</option>
-                <option value="hermes_acp_stdio">ACP (stdio)</option>
+                <option value="relay_daemon">Relay daemon (recommended)</option>
+                <option value="hermes_http">Hermes API server (OpenAI HTTP)</option>
+                <option value="hermes_acp_stdio">ACP over SSH (stdio)</option>
               </select>
-            </label>
-            <label className="grid gap-1">
-              <span className="font-sans text-xs text-muted-foreground">{t('Hermes endpoint', 'Hermes-Endpunkt')}</span>
+            </div>
+            <div>
+              <label className="mb-1.5 flex items-center gap-1.5 font-sans text-[12px] font-medium text-foreground">{t('Hermes endpoint', 'Hermes-Endpunkt')}</label>
               <Input
-                className="font-mono text-sm"
                 value={draftHermesEndpoint}
                 onChange={(event) => ondraftHermesEndpointChange(event.target.value)}
-                placeholder={transport === 'hermes_acp_stdio' ? 'acp://local or ssh://user@host:22' : 'http://127.0.0.1:8642/v1'}
+                placeholder={
+                  transport === 'hermes_acp_stdio'
+                    ? 'ssh://user@host:22'
+                    : transport === 'relay_daemon'
+                      ? 'http://127.0.0.1:8787'
+                      : 'http://127.0.0.1:8642/v1'
+                }
+                className="h-10 font-mono text-[13px]"
               />
-            </label>
-            <label className="grid gap-1">
-              <span className="font-sans text-xs text-muted-foreground">{t('Access token (optional)', 'Access-Token (optional)')}</span>
-              <Input
-                className="font-mono text-sm"
-                type="password"
-                value={draftHermesToken}
-                onChange={(event) => ondraftHermesTokenChange(event.target.value)}
-                placeholder={t('Bearer token for HTTP mode', 'Bearer-Token fuer HTTP-Modus')}
-              />
-            </label>
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" disabled={saving || testingConnection} onClick={() => void onTestConnection()}>
+            </div>
+            <div>
+              <label className="mb-1.5 flex items-center gap-1.5 font-sans text-[12px] font-medium text-foreground">{t('Access token', 'Access-Token')} <span className="font-normal text-muted-foreground">({t('optional', 'optional')})</span></label>
+              <div className="relative">
+                <Input
+                  type={showConnectionToken ? 'text' : 'password'}
+                  value={draftHermesToken}
+                  onChange={(event) => ondraftHermesTokenChange(event.target.value)}
+                  placeholder={t('Paste your access token', 'Fuege dein Access-Token ein')}
+                  className="h-10 pr-10 font-mono text-[13px]"
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowConnectionToken((value) => !value)}
+                  className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label={showConnectionToken ? t('Hide token', 'Token verbergen') : t('Show token', 'Token anzeigen')}
+                >
+                  {showConnectionToken ? t('Hide', 'Verbergen') : t('Show', 'Anzeigen')}
+                </button>
+              </div>
+            </div>
+
+            {health && !health.ok ? (
+              <div className="rounded-xl border border-destructive/20 bg-destructive/[0.04] px-4 py-3">
+                <p className="font-sans text-[13px] font-semibold text-destructive">{t('Connection failed', 'Verbindung fehlgeschlagen')}</p>
+                <p className="mt-1 font-sans text-[12px] leading-relaxed text-destructive/70">{health.message}</p>
+              </div>
+            ) : null}
+
+            <div className="mt-2 flex gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 flex-none px-5 font-sans text-[13px]"
+                disabled={saving || testingConnection}
+                onClick={() => void onTestConnection()}
+              >
                 {testingConnection ? t('Testing…', 'Teste…') : t('Test', 'Testen')}
               </Button>
-              <Button type="button" disabled={saving || testingConnection} onClick={() => void onConnectHermes()}>
+              <Button
+                type="button"
+                className="h-10 flex-1 w-auto font-sans text-[13px]"
+                disabled={saving || testingConnection}
+                onClick={() => void onConnectHermes()}
+              >
                 {saving ? t('Connecting…', 'Verbinde…') : t('Connect', 'Verbinden')}
               </Button>
-              <Button type="button" variant="outline" onClick={onReopenOnboarding}>
+              <Button type="button" variant="outline" className="h-10 flex-none px-5 font-sans text-[13px]" onClick={onReopenOnboarding}>
                 {t('Open onboarding', 'Onboarding oeffnen')}
               </Button>
             </div>
-            {health ? (
-              <div className={`rounded-lg border p-3 text-xs ${health.ok ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-destructive/30 bg-destructive/10 text-destructive'}`}>
-                {health.message}
+
+            {health && health.ok ? (
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+                <p className="font-sans text-[13px] font-semibold text-emerald-300">{t('Connected', 'Verbunden')}</p>
+                <p className="mt-1 font-sans text-[12px] leading-relaxed text-emerald-200">{health.message}</p>
               </div>
             ) : null}
           </div>

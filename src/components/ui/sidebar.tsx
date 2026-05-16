@@ -31,7 +31,7 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<'div'>) {
 }
 
 function SidebarContent({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div data-slot="sidebar-content" className={cn('min-h-0 flex-1 p-1.5', className)} {...props} />;
+  return <div data-slot="sidebar-content" className={cn('min-h-0 min-w-0 flex-1 p-1.5', className)} {...props} />;
 }
 
 function SidebarFooter({ className, ...props }: React.ComponentProps<'div'>) {

@@ -60,12 +60,14 @@ type CoworkPageProps = {
   hermesConnected: boolean;
   webSearchEnabled: boolean;
   approvalMode: 'standard' | 'project' | 'none';
+  reasoningEffort: 'low' | 'medium' | 'high';
   projectPathReferences: ProjectPathReference[];
   contextWindowUsedTokens: number;
   contextWindowTotalTokens: number;
   onOpenConnectionSettings: () => void;
   onTaskPromptChange: (value: string) => void;
   onModelChange: (value: string) => void;
+  onReasoningEffortChange: (value: 'low' | 'medium' | 'high') => void;
   onWebSearchEnabledChange: (enabled: boolean) => void;
   onApprovalModeChange: (mode: 'standard' | 'project' | 'none') => void;
   onSubmit: (event: FormEvent) => void | Promise<void>;
@@ -114,12 +116,14 @@ export function CoworkPage(props: CoworkPageProps) {
     sending,
     hermesConnected,
     approvalMode,
+    reasoningEffort,
     projectPathReferences,
     contextWindowUsedTokens,
     contextWindowTotalTokens,
     onOpenConnectionSettings,
     onTaskPromptChange,
     onModelChange,
+    onReasoningEffortChange,
     onApprovalModeChange,
     onSubmit,
     onApprovePendingAction,
@@ -327,10 +331,12 @@ export function CoworkPage(props: CoworkPageProps) {
                       sending={sending}
                       hermesConnected={hermesConnected}
                       approvalMode={approvalMode}
+                      reasoningEffort={reasoningEffort}
                       contextWindowUsedTokens={contextWindowUsedTokens}
                       contextWindowTotalTokens={contextWindowTotalTokens}
                       onTaskPromptChange={onTaskPromptChange}
                       onModelChange={onModelChange}
+                      onReasoningEffortChange={onReasoningEffortChange}
                       onApprovalModeChange={onApprovalModeChange}
                       onSubmit={onSubmit}
                     />
@@ -389,10 +395,12 @@ export function CoworkPage(props: CoworkPageProps) {
                 sending={sending}
                 hermesConnected={hermesConnected}
                 approvalMode={approvalMode}
+                reasoningEffort={reasoningEffort}
                 contextWindowUsedTokens={contextWindowUsedTokens}
                 contextWindowTotalTokens={contextWindowTotalTokens}
                 onTaskPromptChange={onTaskPromptChange}
                 onModelChange={onModelChange}
+                onReasoningEffortChange={onReasoningEffortChange}
                 onApprovalModeChange={onApprovalModeChange}
                 onSubmit={onSubmit}
               />
