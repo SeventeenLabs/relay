@@ -280,6 +280,14 @@ export class HermesAcpClient {
     return rootPath;
   }
 
+  private resolveWorkspaceSessionId(): string {
+    const sessionId = this.activeSessionId?.trim() || '';
+    if (!sessionId) {
+      throw new HermesRequestError('No active ACP session is available for workspace actions.', 'invalid_request');
+    }
+    return sessionId;
+  }
+
   private parseKanbanTaskRecord(record: unknown): HermesKanbanTask | null {
     if (!record || typeof record !== 'object') {
       return null;
@@ -789,9 +797,10 @@ export class HermesAcpClient {
 
   async listWorkspaceFiles(_relativePath?: string): Promise<{ items: Array<{ path: string; kind: 'file' | 'directory'; size?: number; modifiedMs?: number }>; truncated: boolean; }> {
     const relay = this.requireRelayBridge();
+    const sessionId = this.resolveWorkspaceSessionId();
     const relativePath = (_relativePath ?? '').trim();
-    this.log('info', 'ACP workspace.list start', { path: relativePath || '(root)' });
-    const raw = await relay.acpWorkspaceList({ path: relativePath });
+    this.log('info', 'ACP workspace.list start', { sessionId, path: relativePath || '(root)' });
+    const raw = await relay.acpWorkspaceList({ sessionId, path: relativePath });
     const items: Array<{ path: string; kind: 'file' | 'directory'; size?: number; modifiedMs?: number }> = [];
     if (Array.isArray(raw?.items)) {
       for (const entry of raw.items) {
@@ -807,25 +816,27 @@ export class HermesAcpClient {
       }
     }
     const truncated = Boolean(raw?.truncated);
-    this.log('info', 'ACP workspace.list done', { path: relativePath || '(root)', count: items.length, truncated });
+    this.log('info', 'ACP workspace.list done', { sessionId, path: relativePath || '(root)', count: items.length, truncated });
     return { items, truncated };
   }
 
   async readWorkspaceFile(_relativePath: string): Promise<{ content: string }> {
     const relay = this.requireRelayBridge();
+    const sessionId = this.resolveWorkspaceSessionId();
     const relativePath = _relativePath.trim();
-    this.log('info', 'ACP workspace.read start', { path: relativePath });
-    const raw = await relay.acpWorkspaceRead({ path: relativePath });
+    this.log('info', 'ACP workspace.read start', { sessionId, path: relativePath });
+    const raw = await relay.acpWorkspaceRead({ sessionId, path: relativePath });
     const content = typeof raw?.content === 'string' ? raw.content : '';
-    this.log('info', 'ACP workspace.read done', { path: relativePath, chars: content.length });
+    this.log('info', 'ACP workspace.read done', { sessionId, path: relativePath, chars: content.length });
     return { content };
   }
 
   async statWorkspaceFile(_relativePath: string): Promise<{ kind: 'file' | 'directory'; size: number; createdMs: number; modifiedMs: number; }> {
     const relay = this.requireRelayBridge();
+    const sessionId = this.resolveWorkspaceSessionId();
     const relativePath = _relativePath.trim();
-    this.log('info', 'ACP workspace.stat start', { path: relativePath });
-    const raw = await relay.acpWorkspaceStat({ path: relativePath });
+    this.log('info', 'ACP workspace.stat start', { sessionId, path: relativePath });
+    const raw = await relay.acpWorkspaceStat({ sessionId, path: relativePath });
     const rawKind = typeof raw?.kind === 'string' ? raw.kind.trim().toLowerCase() : '';
     const result = {
       kind: rawKind === 'directory' ? 'directory' : 'file',
@@ -833,32 +844,35 @@ export class HermesAcpClient {
       createdMs: typeof raw?.createdMs === 'number' ? raw.createdMs : 0,
       modifiedMs: typeof raw?.modifiedMs === 'number' ? raw.modifiedMs : 0,
     } as const;
-    this.log('info', 'ACP workspace.stat done', { path: relativePath, kind: result.kind, size: result.size });
+    this.log('info', 'ACP workspace.stat done', { sessionId, path: relativePath, kind: result.kind, size: result.size });
     return result;
   }
 
   async renameWorkspaceFile(_oldPath: string, _newPath: string): Promise<void> {
     const relay = this.requireRelayBridge();
+    const sessionId = this.resolveWorkspaceSessionId();
     const oldPath = _oldPath.trim();
     const newPath = _newPath.trim();
-    this.log('info', 'ACP workspace.rename start', { oldPath, newPath });
-    await relay.acpWorkspaceRename({ oldPath, newPath });
-    this.log('info', 'ACP workspace.rename done', { oldPath, newPath });
+    this.log('info', 'ACP workspace.rename start', { sessionId, oldPath, newPath });
+    await relay.acpWorkspaceRename({ sessionId, oldPath, newPath });
+    this.log('info', 'ACP workspace.rename done', { sessionId, oldPath, newPath });
   }
 
   async deleteWorkspaceFile(_path: string): Promise<void> {
     const relay = this.requireRelayBridge();
+    const sessionId = this.resolveWorkspaceSessionId();
     const targetPath = _path.trim();
-    this.log('info', 'ACP workspace.delete start', { path: targetPath });
-    await relay.acpWorkspaceDelete({ path: targetPath });
-    this.log('info', 'ACP workspace.delete done', { path: targetPath });
+    this.log('info', 'ACP workspace.delete start', { sessionId, path: targetPath });
+    await relay.acpWorkspaceDelete({ sessionId, path: targetPath });
+    this.log('info', 'ACP workspace.delete done', { sessionId, path: targetPath });
   }
 
   async writeWorkspaceFile(_path: string, _content: string): Promise<void> {
     const relay = this.requireRelayBridge();
+    const sessionId = this.resolveWorkspaceSessionId();
     const targetPath = _path.trim();
-    this.log('info', 'ACP workspace.write start', { path: targetPath, chars: _content.length });
-    await relay.acpWorkspaceWrite({ path: targetPath, content: _content });
-    this.log('info', 'ACP workspace.write done', { path: targetPath, chars: _content.length });
+    this.log('info', 'ACP workspace.write start', { sessionId, path: targetPath, chars: _content.length });
+    await relay.acpWorkspaceWrite({ sessionId, path: targetPath, content: _content });
+    this.log('info', 'ACP workspace.write done', { sessionId, path: targetPath, chars: _content.length });
   }
 }

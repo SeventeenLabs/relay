@@ -7,6 +7,9 @@ const chatUtilsPath = path.join(repoRoot, 'src', 'lib', 'chat-utils.ts');
 const appStateHelpersPath = path.join(repoRoot, 'src', 'app', 'app-state-helpers.ts');
 const safetyPolicyPath = path.join(repoRoot, 'src', 'lib', 'safety-policy.ts');
 const filesystemConnectorPath = path.join(repoRoot, 'src', 'lib', 'connectors', 'filesystem.ts');
+const acpClientPath = path.join(repoRoot, 'src', 'lib', 'hermes-acp-client.ts');
+const acpBridgePath = path.join(repoRoot, 'electron', 'hermes-acp-bridge.ts');
+const acpPreloadPath = path.join(repoRoot, 'electron', 'preload.cts');
 
 async function readText(filePath) {
   return readFile(filePath, 'utf8');
@@ -51,12 +54,24 @@ function assertFunctionContains(source, functionName, snippets) {
 }
 
 async function run() {
-  const [electronMain, chatUtils, appStateHelpers, safetyPolicy, filesystemConnector] = await Promise.all([
+  const [
+    electronMain,
+    chatUtils,
+    appStateHelpers,
+    safetyPolicy,
+    filesystemConnector,
+    acpClient,
+    acpBridge,
+    acpPreload,
+  ] = await Promise.all([
     readText(electronMainPath),
     readText(chatUtilsPath),
     readText(appStateHelpersPath),
     readText(safetyPolicyPath),
     readText(filesystemConnectorPath),
+    readText(acpClientPath),
+    readText(acpBridgePath),
+    readText(acpPreloadPath),
   ]);
 
   // Project-relative path validation utility is centralized in app-state-helpers.
@@ -128,7 +143,7 @@ async function run() {
   // Electron-side file operation safety checks.
   assertFunctionContains(electronMain, 'writeFileInFolder', [
     'normalizeRelativePath(relativePath)',
-    'path.isAbsolute(normalizedRelative)',
+    'isAbsoluteLikePath(normalizedRelative)',
     'isHiddenOrBlockedPath(normalizedRelative)',
     'isPathInside(root, resolvedTargetPath)',
     'assertTargetPathAllowed(root, resolvedTargetPath',
@@ -136,7 +151,7 @@ async function run() {
 
   assertFunctionContains(electronMain, 'readFileInFolder', [
     'normalizeRelativePath(relativePath)',
-    'path.isAbsolute(normalizedRelative)',
+    'isAbsoluteLikePath(normalizedRelative)',
     'isPathInside(root, resolvedTargetPath)',
     'assertTargetPathAllowed(root, resolvedTargetPath',
     'isHiddenOrBlockedPath(normalizedRelative)',
@@ -145,7 +160,7 @@ async function run() {
 
   assertFunctionContains(electronMain, 'appendFileInFolder', [
     'normalizeRelativePath(relativePath)',
-    'path.isAbsolute(normalizedRelative)',
+    'isAbsoluteLikePath(normalizedRelative)',
     'isHiddenOrBlockedPath(normalizedRelative)',
     'isPathInside(root, resolvedTargetPath)',
     'assertTargetPathAllowed(root, resolvedTargetPath',
@@ -153,7 +168,7 @@ async function run() {
 
   assertFunctionContains(electronMain, 'listDirInFolder', [
     'normalizeRelativePath(relativePath ?? \'\')',
-    'path.isAbsolute(normalizedRelative)',
+    'isAbsoluteLikePath(normalizedRelative)',
     'isHiddenOrBlockedPath(normalizedRelative)',
     'isPathInside(root, targetPath)',
     'assertRealPathInsideRoot(rootRealPath, targetPath',
@@ -162,7 +177,7 @@ async function run() {
 
   assertFunctionContains(electronMain, 'existsInFolder', [
     'normalizeRelativePath(relativePath)',
-    'path.isAbsolute(normalizedRelative)',
+    'isAbsoluteLikePath(normalizedRelative)',
     'isHiddenOrBlockedPath(normalizedRelative)',
     'isPathInside(root, resolvedTargetPath)',
     'assertTargetPathAllowed(root, resolvedTargetPath',
@@ -171,7 +186,7 @@ async function run() {
   assertFunctionContains(electronMain, 'renameInFolder', [
     'normalizeRelativePath(oldRelative)',
     'normalizeRelativePath(newRelative)',
-    'path.isAbsolute(normalizedOld) || path.isAbsolute(normalizedNew)',
+    'isAbsoluteLikePath(normalizedOld) || isAbsoluteLikePath(normalizedNew)',
     'isHiddenOrBlockedPath(normalizedOld) || isHiddenOrBlockedPath(normalizedNew)',
     'isPathInside(root, resolvedOld) || !isPathInside(root, resolvedNew)',
     'assertTargetPathAllowed(root, resolvedOld',
@@ -181,7 +196,7 @@ async function run() {
 
   assertFunctionContains(electronMain, 'deleteInFolder', [
     'normalizeRelativePath(relativePath)',
-    'path.isAbsolute(normalized)',
+    'isAbsoluteLikePath(normalized)',
     'isHiddenOrBlockedPath(normalized)',
     'isPathInside(root, resolved)',
     'assertTargetPathAllowed(root, resolved',
@@ -190,7 +205,7 @@ async function run() {
 
   assertFunctionContains(electronMain, 'statInFolder', [
     'normalizeRelativePath(relativePath)',
-    'path.isAbsolute(normalized)',
+    'isAbsoluteLikePath(normalized)',
     'isHiddenOrBlockedPath(normalized)',
     'isPathInside(root, resolved)',
     'assertTargetPathAllowed(root, resolved',
@@ -207,6 +222,49 @@ async function run() {
       "throw new Error('Symbolic links are blocked for local file actions.')",
     ],
     'electron/main.ts',
+  );
+
+  // ACP workspace bridge must be session-scoped end-to-end.
+  assertIncludesAll(
+    acpClient,
+    [
+      'private resolveWorkspaceSessionId(): string',
+      "throw new HermesRequestError('No active ACP session is available for workspace actions.', 'invalid_request');",
+      'relay.acpWorkspaceList({ sessionId, path: relativePath })',
+      'relay.acpWorkspaceRead({ sessionId, path: relativePath })',
+      'relay.acpWorkspaceStat({ sessionId, path: relativePath })',
+      'relay.acpWorkspaceRename({ sessionId, oldPath, newPath })',
+      'relay.acpWorkspaceDelete({ sessionId, path: targetPath })',
+      'relay.acpWorkspaceWrite({ sessionId, path: targetPath, content: _content })',
+    ],
+    'src/lib/hermes-acp-client.ts',
+  );
+
+  assertIncludesAll(
+    acpBridge,
+    [
+      'private resolveSessionId(requestedSessionId?: string): string',
+      'async workspaceList(input?: { sessionId?: string; path?: string })',
+      'async workspaceRead(input: { sessionId?: string; path: string })',
+      'async workspaceStat(input: { sessionId?: string; path: string })',
+      'async workspaceRename(input: { sessionId?: string; oldPath: string; newPath: string })',
+      'async workspaceDelete(input: { sessionId?: string; path: string })',
+      'async workspaceWrite(input: { sessionId?: string; path: string; content: string })',
+    ],
+    'electron/hermes-acp-bridge.ts',
+  );
+
+  assertIncludesAll(
+    acpPreload,
+    [
+      'acpWorkspaceList: (payload?: { sessionId?: string; path?: string }) =>',
+      'acpWorkspaceRead: (payload: { sessionId?: string; path: string }) =>',
+      'acpWorkspaceStat: (payload: { sessionId?: string; path: string }) =>',
+      'acpWorkspaceRename: (payload: { sessionId?: string; oldPath: string; newPath: string }) =>',
+      'acpWorkspaceDelete: (payload: { sessionId?: string; path: string }) =>',
+      'acpWorkspaceWrite: (payload: { sessionId?: string; path: string; content: string }) =>',
+    ],
+    'electron/preload.cts',
   );
 
   console.log('File handling and safety smoke checks passed.');

@@ -313,13 +313,19 @@ function isPathInside(rootPath: string, targetPath: string): boolean {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
+function isAbsoluteLikePath(value: string): boolean {
+  if (!value) return false;
+  if (value.startsWith('/') || value.startsWith('\\\\')) return true;
+  return /^[a-zA-Z]:[\\/]/.test(value);
+}
+
 function isHiddenOrBlockedPath(targetPath: string): boolean {
   const parts = targetPath.split(/[\\/]+/).filter((part) => part.length > 0);
   return parts.some((part) => part.startsWith('.') || BLOCKED_BASENAMES.has(part.toLowerCase()));
 }
 
 function normalizeRelativePath(relativePath: string): string {
-  const normalized = relativePath.replaceAll('\\', '/').trim();
+  const normalized = relativePath.split('\\').join('/').trim();
   if (!normalized || normalized === '.' || normalized === './') {
     return '';
   }
@@ -506,7 +512,7 @@ async function writeFileInFolder(
     throw new Error('A file path is required.');
   }
 
-  if (path.isAbsolute(normalizedRelative)) {
+  if (isAbsoluteLikePath(normalizedRelative)) {
     throw new Error('Use a path relative to the working folder.');
   }
 
@@ -552,7 +558,7 @@ async function readFileInFolder(rootPath: string, relativePath: string): Promise
     throw new Error('A file path is required.');
   }
 
-  if (path.isAbsolute(normalizedRelative)) {
+  if (isAbsoluteLikePath(normalizedRelative)) {
     throw new Error('Use a path relative to the working folder.');
   }
 
@@ -600,7 +606,7 @@ async function appendFileInFolder(rootPath: string, relativePath: string, conten
     throw new Error('A file path is required.');
   }
 
-  if (path.isAbsolute(normalizedRelative)) {
+  if (isAbsoluteLikePath(normalizedRelative)) {
     throw new Error('Use a path relative to the working folder.');
   }
 
@@ -637,7 +643,7 @@ async function replaceInFile(
   if (!normalizedRelative) {
     throw new Error('A file path is required.');
   }
-  if (path.isAbsolute(normalizedRelative)) {
+  if (isAbsoluteLikePath(normalizedRelative)) {
     throw new Error('Use a path relative to the working folder.');
   }
   if (isHiddenOrBlockedPath(normalizedRelative)) {
@@ -725,7 +731,7 @@ async function listDirInFolder(rootPath: string, relativePath?: string): Promise
   const root = await ensurePathAllowed(rootPath);
   const rootRealPath = await fs.realpath(root);
   const normalizedRelative = normalizeRelativePath(relativePath ?? '');
-  if (normalizedRelative && path.isAbsolute(normalizedRelative)) {
+  if (normalizedRelative && isAbsoluteLikePath(normalizedRelative)) {
     throw new Error('Use a path relative to the working folder.');
   }
 
@@ -797,7 +803,7 @@ async function existsInFolder(rootPath: string, relativePath: string): Promise<L
     throw new Error('A file path is required.');
   }
 
-  if (path.isAbsolute(normalizedRelative)) {
+  if (isAbsoluteLikePath(normalizedRelative)) {
     throw new Error('Use a path relative to the working folder.');
   }
 
@@ -835,7 +841,7 @@ async function renameInFolder(rootPath: string, oldRelative: string, newRelative
   const normalizedOld = normalizeRelativePath(oldRelative);
   const normalizedNew = normalizeRelativePath(newRelative);
   if (!normalizedOld || !normalizedNew) throw new Error('Both old and new paths are required.');
-  if (path.isAbsolute(normalizedOld) || path.isAbsolute(normalizedNew)) throw new Error('Use relative paths.');
+  if (isAbsoluteLikePath(normalizedOld) || isAbsoluteLikePath(normalizedNew)) throw new Error('Use relative paths.');
   if (isHiddenOrBlockedPath(normalizedOld) || isHiddenOrBlockedPath(normalizedNew)) throw new Error('Path blocked by safety rules.');
   const resolvedOld = path.resolve(root, normalizedOld);
   const resolvedNew = path.resolve(root, normalizedNew);
@@ -866,7 +872,7 @@ async function deleteInFolder(rootPath: string, relativePath: string): Promise<L
   const root = await ensurePathAllowed(rootPath);
   const normalized = normalizeRelativePath(relativePath);
   if (!normalized) throw new Error('A path is required.');
-  if (path.isAbsolute(normalized)) throw new Error('Use a relative path.');
+  if (isAbsoluteLikePath(normalized)) throw new Error('Use a relative path.');
   if (isHiddenOrBlockedPath(normalized)) throw new Error('Path blocked by safety rules.');
   const resolved = path.resolve(root, normalized);
   if (!isPathInside(root, resolved)) throw new Error('Path must remain inside working folder.');
@@ -885,7 +891,7 @@ async function statInFolder(rootPath: string, relativePath: string): Promise<Loc
   const root = await ensurePathAllowed(rootPath);
   const normalized = normalizeRelativePath(relativePath);
   if (!normalized) throw new Error('A path is required.');
-  if (path.isAbsolute(normalized)) throw new Error('Use a relative path.');
+  if (isAbsoluteLikePath(normalized)) throw new Error('Use a relative path.');
   if (isHiddenOrBlockedPath(normalized)) throw new Error('Path blocked by safety rules.');
   const resolved = path.resolve(root, normalized);
   if (!isPathInside(root, resolved)) throw new Error('Path must remain inside working folder.');
@@ -1133,34 +1139,40 @@ app.whenReady().then(async () => {
   ipcMain.handle('acp:cancel', async (_event, payload: { sessionId: string }) =>
     acpBridge.cancel({ sessionId: payload.sessionId }),
   );
-  ipcMain.handle('acp:workspace-list', async (_event, payload?: { path?: string }) =>
+  ipcMain.handle('acp:workspace-list', async (_event, payload?: { sessionId?: string; path?: string }) =>
     acpBridge.workspaceList({
+      sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : undefined,
       path: typeof payload?.path === 'string' ? payload.path : undefined,
     }),
   );
-  ipcMain.handle('acp:workspace-read', async (_event, payload: { path: string }) =>
+  ipcMain.handle('acp:workspace-read', async (_event, payload: { sessionId?: string; path: string }) =>
     acpBridge.workspaceRead({
+      sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : undefined,
       path: payload.path,
     }),
   );
-  ipcMain.handle('acp:workspace-stat', async (_event, payload: { path: string }) =>
+  ipcMain.handle('acp:workspace-stat', async (_event, payload: { sessionId?: string; path: string }) =>
     acpBridge.workspaceStat({
+      sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : undefined,
       path: payload.path,
     }),
   );
-  ipcMain.handle('acp:workspace-rename', async (_event, payload: { oldPath: string; newPath: string }) =>
+  ipcMain.handle('acp:workspace-rename', async (_event, payload: { sessionId?: string; oldPath: string; newPath: string }) =>
     acpBridge.workspaceRename({
+      sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : undefined,
       oldPath: payload.oldPath,
       newPath: payload.newPath,
     }),
   );
-  ipcMain.handle('acp:workspace-delete', async (_event, payload: { path: string }) =>
+  ipcMain.handle('acp:workspace-delete', async (_event, payload: { sessionId?: string; path: string }) =>
     acpBridge.workspaceDelete({
+      sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : undefined,
       path: payload.path,
     }),
   );
-  ipcMain.handle('acp:workspace-write', async (_event, payload: { path: string; content: string }) =>
+  ipcMain.handle('acp:workspace-write', async (_event, payload: { sessionId?: string; path: string; content: string }) =>
     acpBridge.workspaceWrite({
+      sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : undefined,
       path: payload.path,
       content: payload.content,
     }),

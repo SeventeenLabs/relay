@@ -34,6 +34,12 @@ async function run() {
     'if (parseRelayFileActions(trimmed).length > 0) {',
   ]);
 
+  await assertIncludes(appPath, [
+    'const hasRelayActionsMarker = /relay_actions/i.test(text);',
+    'const isUnexecutedRelayPayload = hasRelayActionsMarker && !visibleText;',
+    "'UNEXECUTED_RELAY_ACTIONS: The model output referenced relay_actions, but parser normalization rejected or could not parse the payload shape.'",
+  ]);
+
   await assertExcludes(appPath, [
     "Blocked: write actions require an active project context.",
   ]);

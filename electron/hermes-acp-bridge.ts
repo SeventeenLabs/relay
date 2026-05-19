@@ -79,11 +79,28 @@ export class HermesAcpBridge {
   private globalModelCatalog = new Map<string, { id: string; name: string }>();
   private active = false;
 
+  private resolveSessionId(requestedSessionId?: string): string {
+    const requested = (requestedSessionId ?? '').trim();
+    if (requested) {
+      if (!this.knownSessions.has(requested)) {
+        throw new Error(`ACP session is unknown: ${requested}`);
+      }
+      return requested;
+    }
+
+    const fallback = this.knownSessions.keys().next().value as string | undefined;
+    if (!fallback) {
+      throw new Error('ACP has no active session.');
+    }
+    return fallback;
+  }
+
   private resolveSessionRoot(sessionId: string): string {
-    const session = this.knownSessions.get(sessionId);
+    const resolvedSessionId = this.resolveSessionId(sessionId);
+    const session = this.knownSessions.get(resolvedSessionId);
     const root = session?.cwd?.trim() || '';
     if (!root) {
-      throw new Error(`ACP session is unknown or missing cwd: ${sessionId}`);
+      throw new Error(`ACP session is unknown or missing cwd: ${resolvedSessionId}`);
     }
     return root;
   }
@@ -654,27 +671,27 @@ export class HermesAcpBridge {
     return { ok: true };
   }
 
-  async workspaceList(input?: { path?: string }) {
+  async workspaceList(input?: { sessionId?: string; path?: string }) {
+    const requestedSessionId = typeof input?.sessionId === 'string' ? input.sessionId : '';
+    const sessionId = this.resolveSessionId(requestedSessionId);
     const relativePath = typeof input?.path === 'string' ? input.path : '';
-    logAcp('info', 'ACP workspace.list request', { path: relativePath || '(root)' });
-    const sessionId = this.knownSessions.keys().next().value as string | undefined;
-    if (!sessionId) throw new Error('ACP has no active session for workspace.list');
+    logAcp('info', 'ACP workspace.list request', { sessionId, path: relativePath || '(root)' });
     return this.workspaceListLocal(sessionId, relativePath);
   }
 
-  async workspaceRead(input: { path: string }) {
-    logAcp('info', 'ACP workspace.read request', { path: input.path });
-    const sessionId = this.knownSessions.keys().next().value as string | undefined;
-    if (!sessionId) throw new Error('ACP has no active session for workspace.read');
+  async workspaceRead(input: { sessionId?: string; path: string }) {
+    const requestedSessionId = typeof input?.sessionId === 'string' ? input.sessionId : '';
+    const sessionId = this.resolveSessionId(requestedSessionId);
+    logAcp('info', 'ACP workspace.read request', { sessionId, path: input.path });
     const resolvedPath = this.resolveAllowedPath(sessionId, input.path);
     const content = await fs.readFile(resolvedPath, 'utf8');
     return { content };
   }
 
-  async workspaceStat(input: { path: string }) {
-    logAcp('info', 'ACP workspace.stat request', { path: input.path });
-    const sessionId = this.knownSessions.keys().next().value as string | undefined;
-    if (!sessionId) throw new Error('ACP has no active session for workspace.stat');
+  async workspaceStat(input: { sessionId?: string; path: string }) {
+    const requestedSessionId = typeof input?.sessionId === 'string' ? input.sessionId : '';
+    const sessionId = this.resolveSessionId(requestedSessionId);
+    logAcp('info', 'ACP workspace.stat request', { sessionId, path: input.path });
     const resolvedPath = this.resolveAllowedPath(sessionId, input.path);
     const fileStat = await fs.stat(resolvedPath);
     return {
@@ -685,10 +702,10 @@ export class HermesAcpBridge {
     };
   }
 
-  async workspaceRename(input: { oldPath: string; newPath: string }) {
-    logAcp('info', 'ACP workspace.rename request', { oldPath: input.oldPath, newPath: input.newPath });
-    const sessionId = this.knownSessions.keys().next().value as string | undefined;
-    if (!sessionId) throw new Error('ACP has no active session for workspace.rename');
+  async workspaceRename(input: { sessionId?: string; oldPath: string; newPath: string }) {
+    const requestedSessionId = typeof input?.sessionId === 'string' ? input.sessionId : '';
+    const sessionId = this.resolveSessionId(requestedSessionId);
+    logAcp('info', 'ACP workspace.rename request', { sessionId, oldPath: input.oldPath, newPath: input.newPath });
     const oldAbs = this.resolveAllowedPath(sessionId, input.oldPath);
     const newAbs = this.resolveAllowedPath(sessionId, input.newPath);
     await fs.mkdir(path.dirname(newAbs), { recursive: true });
@@ -696,10 +713,10 @@ export class HermesAcpBridge {
     return { ok: true };
   }
 
-  async workspaceDelete(input: { path: string }) {
-    logAcp('info', 'ACP workspace.delete request', { path: input.path });
-    const sessionId = this.knownSessions.keys().next().value as string | undefined;
-    if (!sessionId) throw new Error('ACP has no active session for workspace.delete');
+  async workspaceDelete(input: { sessionId?: string; path: string }) {
+    const requestedSessionId = typeof input?.sessionId === 'string' ? input.sessionId : '';
+    const sessionId = this.resolveSessionId(requestedSessionId);
+    logAcp('info', 'ACP workspace.delete request', { sessionId, path: input.path });
     const resolvedPath = this.resolveAllowedPath(sessionId, input.path);
     const fileStat = await fs.stat(resolvedPath);
     if (fileStat.isDirectory()) {
@@ -710,10 +727,10 @@ export class HermesAcpBridge {
     return { ok: true };
   }
 
-  async workspaceWrite(input: { path: string; content: string }) {
-    logAcp('info', 'ACP workspace.write request', { path: input.path, chars: input.content.length });
-    const sessionId = this.knownSessions.keys().next().value as string | undefined;
-    if (!sessionId) throw new Error('ACP has no active session for workspace.write');
+  async workspaceWrite(input: { sessionId?: string; path: string; content: string }) {
+    const requestedSessionId = typeof input?.sessionId === 'string' ? input.sessionId : '';
+    const sessionId = this.resolveSessionId(requestedSessionId);
+    logAcp('info', 'ACP workspace.write request', { sessionId, path: input.path, chars: input.content.length });
     const resolvedPath = this.resolveAllowedPath(sessionId, input.path);
     await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
     await fs.writeFile(resolvedPath, input.content, 'utf8');

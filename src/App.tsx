@@ -3076,6 +3076,7 @@ export default function App() {
         const text = extractChatText(message);
         const sanitizedText = stripRelayActionPayloadFromText(text);
         const visibleText = sanitizedText;
+        const hasRelayActionsMarker = /relay_actions/i.test(text);
         const role = extractChatRole(message);
 
         if (isCoworkEvent) {
@@ -3980,20 +3981,64 @@ export default function App() {
                 }
               })();
             } else if (relayActions.length === 0) {
+              const isUnexecutedRelayPayload = hasRelayActionsMarker && !visibleText;
               setCoworkProgressStage('deliverables', {
                 completeThrough: true,
-                details: 'Delivered conversational result without local file actions.',
+                details: isUnexecutedRelayPayload
+                  ? 'Assistant emitted relay_actions payload, but no executable actions were parsed.'
+                  : 'Delivered conversational result without local file actions.',
               });
+              if (isUnexecutedRelayPayload) {
+                const summary = 'Assistant returned relay_actions payload but no executable actions were parsed. Nothing was applied.';
+                const error = 'UNEXECUTED_RELAY_ACTIONS: The model output referenced relay_actions, but parser normalization rejected or could not parse the payload shape.';
+                setCoworkRunStatus(summary);
+                setStatus(summary);
+                const receiptMessage: ChatMessage = {
+                  id: `cowork-actions-unexecuted-${runId}`,
+                  role: 'system',
+                  text: `${summary}\n! ${error}`,
+                  meta: {
+                    kind: 'activity',
+                    items: [
+                      {
+                        id: `activity-unexecuted-${runId}`,
+                        label: 'No local action executed',
+                        details: error,
+                        tone: 'danger',
+                      },
+                    ],
+                  },
+                };
+                setCoworkMessages((current) => {
+                  if (current.some((entry) => entry.id === receiptMessage.id)) {
+                    return current;
+                  }
+                  const next = [...current, receiptMessage];
+                  if (eventSessionKey) {
+                    coworkMessageCache.current.set(eventSessionKey, next);
+                  }
+                  return next;
+                });
+              }
               if (taskEntry) {
-                setCoworkTaskStatus(taskEntry.taskId, 'completed', {
+                setCoworkTaskStatus(taskEntry.taskId, isUnexecutedRelayPayload ? 'failed' : 'completed', {
                   runId,
-                  summary: 'No relay actions requested; assistant response completed.',
-                  outcome: visibleText,
+                  summary: isUnexecutedRelayPayload
+                    ? 'relay_actions payload was emitted but not executable.'
+                    : 'No relay actions requested; assistant response completed.',
+                  outcome: isUnexecutedRelayPayload
+                    ? 'UNEXECUTED_RELAY_ACTIONS'
+                    : visibleText,
                 });
                 finalizeCoworkTaskRun(eventSessionKey || coworkSessionKeyRef.current, taskEntry.taskId);
 
                 if (bridge?.notify) {
-                  bridge.notify('Relay — Task completed', runContext.projectTitle || 'Cowork run finished.').catch(() => {});
+                  bridge
+                    .notify(
+                      isUnexecutedRelayPayload ? 'Relay — Task failed' : 'Relay — Task completed',
+                      runContext.projectTitle || 'Cowork run finished.',
+                    )
+                    .catch(() => {});
                 }
               }
             }

@@ -47,17 +47,17 @@ const api = {
     ipcRenderer.invoke('acp:set-session-model', payload) as Promise<{ ok: boolean; message?: string }>,
   acpCancel: (payload: { sessionId: string }) =>
     ipcRenderer.invoke('acp:cancel', payload) as Promise<{ ok: boolean }>,
-  acpWorkspaceList: (payload?: { path?: string }) =>
+  acpWorkspaceList: (payload?: { sessionId?: string; path?: string }) =>
     ipcRenderer.invoke('acp:workspace-list', payload) as Promise<{ items?: Array<{ path?: string; kind?: string; size?: number; modifiedMs?: number }>; truncated?: boolean }>,
-  acpWorkspaceRead: (payload: { path: string }) =>
+  acpWorkspaceRead: (payload: { sessionId?: string; path: string }) =>
     ipcRenderer.invoke('acp:workspace-read', payload) as Promise<{ content?: string }>,
-  acpWorkspaceStat: (payload: { path: string }) =>
+  acpWorkspaceStat: (payload: { sessionId?: string; path: string }) =>
     ipcRenderer.invoke('acp:workspace-stat', payload) as Promise<{ kind?: string; size?: number; createdMs?: number; modifiedMs?: number }>,
-  acpWorkspaceRename: (payload: { oldPath: string; newPath: string }) =>
+  acpWorkspaceRename: (payload: { sessionId?: string; oldPath: string; newPath: string }) =>
     ipcRenderer.invoke('acp:workspace-rename', payload) as Promise<{ ok?: boolean }>,
-  acpWorkspaceDelete: (payload: { path: string }) =>
+  acpWorkspaceDelete: (payload: { sessionId?: string; path: string }) =>
     ipcRenderer.invoke('acp:workspace-delete', payload) as Promise<{ ok?: boolean }>,
-  acpWorkspaceWrite: (payload: { path: string; content: string }) =>
+  acpWorkspaceWrite: (payload: { sessionId?: string; path: string; content: string }) =>
     ipcRenderer.invoke('acp:workspace-write', payload) as Promise<{ ok?: boolean }>,
   acpKanbanExec: (payload: { sessionId?: string; args: string[]; timeoutMs?: number; requireJsonOutput?: boolean }) =>
     ipcRenderer.invoke('acp:kanban-exec', payload) as Promise<{ stdout: string; exitCode: number | null; signal?: string | null }>,
