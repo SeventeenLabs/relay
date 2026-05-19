@@ -34,8 +34,8 @@ import { HermesAcpBridge } from './hermes-acp-bridge.js';
 
 const defaultConfig: AppConfig = {
   backendType: 'hermes',
-  transport: 'relay_daemon',
-  gatewayUrl: 'http://127.0.0.1:8787',
+  transport: 'hermes_acp_stdio',
+  gatewayUrl: DEFAULT_HERMES_GATEWAY_URL,
   gatewayToken: '',
 };
 
@@ -156,17 +156,58 @@ const normalizeStoredTransport = (
   transport: unknown,
   gatewayUrl: string,
 ): AppConfig['transport'] => {
-  if (transport === 'hermes_http' || transport === 'hermes_acp_stdio' || transport === 'relay_daemon') {
-    return transport;
-  }
-
-  // Backward compatibility: older configs may not have an explicit transport.
+  if (transport === 'hermes_acp_stdio') return 'hermes_acp_stdio';
+  if (transport === 'hermes_http') return 'hermes_acp_stdio';
   const normalizedGateway = gatewayUrl.trim().toLowerCase();
   if (normalizedGateway.startsWith('ssh://') || normalizedGateway.startsWith('acp://')) {
     return 'hermes_acp_stdio';
   }
-  return 'relay_daemon';
+  return 'hermes_acp_stdio';
 };
+
+type HermesRuntime = 'windows' | 'wsl';
+
+async function detectHermesRuntime(): Promise<{ runtime: HermesRuntime; command: string }> {
+  try {
+    await execFileAsync('where', ['hermes']);
+    return { runtime: 'windows', command: 'hermes' };
+  } catch {
+    // continue
+  }
+  try {
+    const { stdout } = await execFileAsync('wsl', ['bash', '-lc', 'command -v hermes || true']);
+    const resolved = stdout.trim();
+    if (resolved) {
+      return { runtime: 'wsl', command: resolved };
+    }
+  } catch {
+    // continue
+  }
+  throw new Error('Hermes is not installed. Install Hermes on Windows or in WSL.');
+}
+
+async function ensureLocalHermesApiStarted(): Promise<{ runtime: HermesRuntime; launcher: HermesRuntime | null }> {
+  const detected = await detectHermesRuntime();
+  try {
+    const health = await fetch(`http://127.0.0.1:${HERMES_DEFAULT_GATEWAY_PORT}/v1/models`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    if (health.ok || health.status === 401 || health.status === 403) {
+      return { runtime: detected.runtime, launcher: null };
+    }
+  } catch {
+    // start below
+  }
+
+  if (detected.runtime === 'windows') {
+    const windowsCmd = `start "" /b hermes gateway && start "" /b hermes dashboard --no-open --host 127.0.0.1 --port ${HERMES_DEFAULT_DASHBOARD_PORT}`;
+    await spawnDetached('cmd.exe', ['/d', '/s', '/c', windowsCmd]);
+    return { runtime: 'windows', launcher: 'windows' };
+  }
+  const wslCmd = `nohup hermes gateway > /tmp/hermes-gateway.log 2>&1 & nohup hermes dashboard --no-open --host 127.0.0.1 --port ${HERMES_DEFAULT_DASHBOARD_PORT} > /tmp/hermes-dashboard.log 2>&1 &`;
+  await spawnDetached('wsl', ['bash', '-lc', wslCmd]);
+  return { runtime: 'wsl', launcher: 'wsl' };
+}
 
 type GatewayMode = 'local' | 'remote';
 
@@ -934,20 +975,18 @@ async function readConfig(): Promise<AppConfig> {
     const backendType: AppConfig['backendType'] = 'hermes';
     const normalizedStoredGatewayUrl = inferredGatewayUrl.trim();
     const transport = normalizeStoredTransport(parsed.transport, normalizedStoredGatewayUrl);
-
-    const fallbackGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
-    const gatewayUrl = normalizedStoredGatewayUrl || fallbackGatewayUrl;
+    const gatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
     console.info('[Relay][Main][Config] readConfig', {
       requestedTransport: typeof parsed.transport === 'string' ? parsed.transport : '(none)',
       resolvedTransport: transport,
       gatewayUrl,
       path: configPath(),
     });
-    return {
-      backendType,
-      transport,
-      gatewayUrl,
-      gatewayToken: parsed.gatewayToken ?? defaultConfig.gatewayToken,
+      return {
+        backendType,
+        transport,
+        gatewayUrl,
+        gatewayToken: parsed.gatewayToken ?? defaultConfig.gatewayToken,
     };
   } catch {
     console.info('[Relay][Main][Config] readConfig fallback default', {
@@ -961,10 +1000,9 @@ async function readConfig(): Promise<AppConfig> {
 
 async function writeConfig(config: AppConfig): Promise<AppConfig> {
   const normalizedBackendType: AppConfig['backendType'] = 'hermes';
-  const normalizedGatewayUrlInput = config.gatewayUrl.trim();
+  const normalizedGatewayUrlInput = DEFAULT_HERMES_GATEWAY_URL;
   const normalizedTransport = normalizeStoredTransport(config.transport, normalizedGatewayUrlInput);
-  const fallbackGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
-  const normalizedGatewayUrl = normalizedGatewayUrlInput || fallbackGatewayUrl;
+  const normalizedGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
 
   const normalized: AppConfig = {
     backendType: normalizedBackendType,
@@ -1081,6 +1119,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('config:get', async () => readConfig());
   ipcMain.handle('config:save', async (_event, config: AppConfig) => writeConfig(config));
+  ipcMain.handle('hermes:detect-local', async () => detectHermesRuntime());
   ipcMain.handle(
     'acp:connect',
     async (
@@ -1100,6 +1139,23 @@ app.whenReady().then(async () => {
   ipcMain.handle('acp:create-session', async (_event, payload?: { cwd?: string }) =>
     acpBridge.createSession({
       cwd: typeof payload?.cwd === 'string' ? payload.cwd : undefined,
+    }),
+  );
+  ipcMain.handle('acp:load-session', async (_event, payload: { sessionId: string; cwd?: string }) =>
+    acpBridge.loadSession({
+      sessionId: payload.sessionId,
+      cwd: typeof payload?.cwd === 'string' ? payload.cwd : undefined,
+    }),
+  );
+  ipcMain.handle('acp:resume-session', async (_event, payload: { sessionId: string; cwd?: string }) =>
+    acpBridge.resumeSession({
+      sessionId: payload.sessionId,
+      cwd: typeof payload?.cwd === 'string' ? payload.cwd : undefined,
+    }),
+  );
+  ipcMain.handle('acp:close-session', async (_event, payload: { sessionId: string }) =>
+    acpBridge.closeSession({
+      sessionId: payload.sessionId,
     }),
   );
   ipcMain.handle(
@@ -1134,6 +1190,36 @@ app.whenReady().then(async () => {
       acpBridge.setSessionModel({
         sessionId: payload.sessionId,
         model: payload.model,
+      }),
+  );
+  ipcMain.handle(
+    'acp:set-session-mode',
+    async (
+      _event,
+      payload: {
+        sessionId: string;
+        modeId: string;
+      },
+    ) =>
+      acpBridge.setSessionMode({
+        sessionId: payload.sessionId,
+        modeId: payload.modeId,
+      }),
+  );
+  ipcMain.handle(
+    'acp:set-session-config-option',
+    async (
+      _event,
+      payload: {
+        sessionId: string;
+        configId: string;
+        value: string;
+      },
+    ) =>
+      acpBridge.setSessionConfigOption({
+        sessionId: payload.sessionId,
+        configId: payload.configId,
+        value: payload.value,
       }),
   );
   ipcMain.handle('acp:cancel', async (_event, payload: { sessionId: string }) =>
@@ -1195,6 +1281,43 @@ app.whenReady().then(async () => {
         requireJsonOutput: Boolean(payload?.requireJsonOutput),
       }),
   );
+  ipcMain.handle(
+    'acp:ext-method',
+    async (
+      _event,
+      payload: {
+        method: string;
+        params?: Record<string, unknown>;
+      },
+    ) =>
+      acpBridge.extMethod({
+        method: payload.method,
+        params: payload.params,
+      }),
+  );
+  ipcMain.handle(
+    'acp:ext-notification',
+    async (
+      _event,
+      payload: {
+        method: string;
+        params?: Record<string, unknown>;
+      },
+    ) =>
+      acpBridge.extNotification({
+        method: payload.method,
+        params: payload.params,
+      }),
+  );
+  ipcMain.handle('acp:list-providers', async (_event, payload?: { args?: Record<string, unknown> }) =>
+    acpBridge.listProviders({ args: payload?.args }),
+  );
+  ipcMain.handle('acp:set-provider', async (_event, payload: { args: Record<string, unknown> }) =>
+    acpBridge.setProvider({ args: payload.args }),
+  );
+  ipcMain.handle('acp:disable-provider', async (_event, payload: { args: Record<string, unknown> }) =>
+    acpBridge.disableProvider({ args: payload.args }),
+  );
   ipcMain.handle('backend:health-check', async (_event, baseUrl: string) => runHealthCheck(baseUrl));
   ipcMain.handle(
     'backend:http-request',
@@ -1208,8 +1331,9 @@ app.whenReady().then(async () => {
         body?: string;
       },
     ) => {
+      await ensureLocalHermesApiStarted();
       const method = (payload?.method ?? 'GET').toUpperCase();
-      const baseUrl = typeof payload?.baseUrl === 'string' ? payload.baseUrl.trim() : '';
+      const baseUrl = DEFAULT_HERMES_GATEWAY_URL;
       const path = typeof payload?.path === 'string' ? payload.path : '';
       if (!baseUrl) {
         throw new Error('Base URL is required.');
@@ -1262,11 +1386,8 @@ app.whenReady().then(async () => {
       },
     ) => {
       logHermesMain('info', 'IPC hermes:model-options called', { hasGatewayUrl: Boolean(payload?.gatewayUrl) });
-      const rawGatewayUrl = typeof payload?.gatewayUrl === 'string' ? payload.gatewayUrl.trim() : '';
-      if (!rawGatewayUrl) {
-        throw new Error('hermes:model-options requires explicit gatewayUrl. Refusing implicit local/default fallback.');
-      }
-      const parsedGatewayUrl = rawGatewayUrl;
+      await ensureLocalHermesApiStarted();
+      const parsedGatewayUrl = DEFAULT_HERMES_GATEWAY_URL;
       const mode = resolveGatewayMode(parsedGatewayUrl);
       const normalized = /^https?:\/\//i.test(parsedGatewayUrl) ? parsedGatewayUrl : `http://${parsedGatewayUrl}`;
       const gateway = new URL(normalized);
@@ -1521,12 +1642,6 @@ app.whenReady().then(async () => {
     },
   );
   ipcMain.handle('hermes:service-status', async () => {
-    const currentConfig = await readConfig();
-    const mode = resolveGatewayMode(currentConfig.gatewayUrl);
-    if (mode !== 'local') {
-      return { gateway: false, apiServer: false, dashboard: false };
-    }
-
     const checkApi = async () => {
       try {
         const response = await fetch(`http://127.0.0.1:${HERMES_DEFAULT_GATEWAY_PORT}/v1/models`);
@@ -1552,14 +1667,8 @@ app.whenReady().then(async () => {
     };
   });
   ipcMain.handle('hermes:start-all-services', async () => {
-    const currentConfig = await readConfig();
-    const mode = resolveGatewayMode(currentConfig.gatewayUrl);
-    if (mode !== 'local') {
-      return { ok: false, gateway: false, apiServer: false, dashboard: false, message: 'Local Hermes services are disabled while using a remote gateway URL.' };
-    }
-
     logHermesMain('info', 'Starting Hermes services');
-    const launcher = await startHermesGatewayAndDashboardProcesses(HERMES_DEFAULT_DASHBOARD_PORT);
+    const { runtime, launcher } = await ensureLocalHermesApiStarted();
     logHermesMain('info', 'Hermes services launch attempt completed', { launcher: launcher ?? 'none' });
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await delay(500);
@@ -1569,7 +1678,7 @@ app.whenReady().then(async () => {
           fetch(`http://127.0.0.1:${HERMES_DEFAULT_DASHBOARD_PORT}/`),
         ]);
         if (apiResp.ok && dashResp.ok) {
-          logHermesMain('info', 'Hermes services are up', { attempt: attempt + 1 });
+          logHermesMain('info', 'Hermes services are up', { attempt: attempt + 1, runtime });
           return { ok: true, gateway: true, apiServer: true, dashboard: true };
         }
       } catch {
@@ -1600,7 +1709,9 @@ app.whenReady().then(async () => {
       gateway: apiServer,
       apiServer,
       dashboard,
-      message: 'Started available Hermes services. Check local logs in /tmp/hermes-gateway.log and /tmp/hermes-dashboard.log.',
+      message: runtime === 'wsl'
+        ? 'Started available Hermes services (WSL). Check /tmp/hermes-gateway.log and /tmp/hermes-dashboard.log.'
+        : 'Started available Hermes services (Windows).',
     };
   });
   ipcMain.handle('window:minimize', (event) => {

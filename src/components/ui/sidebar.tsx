@@ -3,14 +3,14 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 function SidebarProvider({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div data-slot="sidebar-provider" className={cn('size-full', className)} {...props} />;
+  return <div data-slot="sidebar-provider" className={cn('size-full min-h-0 min-w-0', className)} {...props} />;
 }
 
 function Sidebar({ className, ...props }: React.ComponentProps<'aside'>) {
   return (
     <aside
       data-slot="sidebar"
-      className={cn('flex h-full w-full min-w-0 flex-col bg-background text-foreground', className)}
+      className={cn('flex h-full min-h-0 w-full min-w-0 flex-col bg-background text-foreground', className)}
       {...props}
     />
   );

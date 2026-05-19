@@ -31,12 +31,20 @@ const api = {
     ipcRenderer.invoke('hermes:service-status') as Promise<{ gateway: boolean; apiServer: boolean; dashboard: boolean }>,
   hermesStartAllServices: () =>
     ipcRenderer.invoke('hermes:start-all-services') as Promise<{ ok: boolean; gateway: boolean; apiServer: boolean; dashboard: boolean; message?: string }>,
+  hermesDetectLocal: () =>
+    ipcRenderer.invoke('hermes:detect-local') as Promise<{ runtime: 'windows' | 'wsl'; command: string }>,
   acpConnect: (payload?: { gatewayUrl?: string; cwd?: string }) =>
     ipcRenderer.invoke('acp:connect', payload) as Promise<{ ok: boolean; sessionId: string }>,
   acpDisconnect: () =>
     ipcRenderer.invoke('acp:disconnect') as Promise<{ ok: boolean }>,
   acpCreateSession: (payload?: { cwd?: string }) =>
     ipcRenderer.invoke('acp:create-session', payload) as Promise<{ sessionId: string }>,
+  acpLoadSession: (payload: { sessionId: string; cwd?: string }) =>
+    ipcRenderer.invoke('acp:load-session', payload) as Promise<{ sessionId: string; payload: Record<string, unknown> }>,
+  acpResumeSession: (payload: { sessionId: string; cwd?: string }) =>
+    ipcRenderer.invoke('acp:resume-session', payload) as Promise<{ ok: boolean; payload: Record<string, unknown> }>,
+  acpCloseSession: (payload: { sessionId: string }) =>
+    ipcRenderer.invoke('acp:close-session', payload) as Promise<{ ok: boolean; payload: Record<string, unknown> }>,
   acpPrompt: (payload: { sessionId: string; text: string }) =>
     ipcRenderer.invoke('acp:prompt', payload) as Promise<{ stopReason: string }>,
   acpListSessions: () =>
@@ -45,6 +53,10 @@ const api = {
     ipcRenderer.invoke('acp:list-models', payload) as Promise<{ models: Array<{ id: string; name: string }>; currentModelId: string | null }>,
   acpSetSessionModel: (payload: { sessionId: string; model: string }) =>
     ipcRenderer.invoke('acp:set-session-model', payload) as Promise<{ ok: boolean; message?: string }>,
+  acpSetSessionMode: (payload: { sessionId: string; modeId: string }) =>
+    ipcRenderer.invoke('acp:set-session-mode', payload) as Promise<{ ok: boolean; payload: Record<string, unknown> }>,
+  acpSetSessionConfigOption: (payload: { sessionId: string; configId: string; value: string }) =>
+    ipcRenderer.invoke('acp:set-session-config-option', payload) as Promise<{ ok: boolean; payload: Record<string, unknown> }>,
   acpCancel: (payload: { sessionId: string }) =>
     ipcRenderer.invoke('acp:cancel', payload) as Promise<{ ok: boolean }>,
   acpWorkspaceList: (payload?: { sessionId?: string; path?: string }) =>
@@ -61,6 +73,16 @@ const api = {
     ipcRenderer.invoke('acp:workspace-write', payload) as Promise<{ ok?: boolean }>,
   acpKanbanExec: (payload: { sessionId?: string; args: string[]; timeoutMs?: number; requireJsonOutput?: boolean }) =>
     ipcRenderer.invoke('acp:kanban-exec', payload) as Promise<{ stdout: string; exitCode: number | null; signal?: string | null }>,
+  acpExtMethod: (payload: { method: string; params?: Record<string, unknown> }) =>
+    ipcRenderer.invoke('acp:ext-method', payload) as Promise<Record<string, unknown>>,
+  acpExtNotification: (payload: { method: string; params?: Record<string, unknown> }) =>
+    ipcRenderer.invoke('acp:ext-notification', payload) as Promise<{ ok: boolean }>,
+  acpListProviders: (payload?: { args?: Record<string, unknown> }) =>
+    ipcRenderer.invoke('acp:list-providers', payload) as Promise<Record<string, unknown>>,
+  acpSetProvider: (payload: { args: Record<string, unknown> }) =>
+    ipcRenderer.invoke('acp:set-provider', payload) as Promise<Record<string, unknown>>,
+  acpDisableProvider: (payload: { args: Record<string, unknown> }) =>
+    ipcRenderer.invoke('acp:disable-provider', payload) as Promise<Record<string, unknown>>,
   onAcpEvent: (handler: (event: { sessionId: string; update: unknown }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: { sessionId: string; update: unknown }) => {
       handler(payload);

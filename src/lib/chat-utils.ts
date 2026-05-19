@@ -103,7 +103,7 @@ export const MAIN_SESSION_KEY = 'main';
 const MAIN_THREAD_TITLE = 'Main chat';
 const RECENT_CHAT_CONTEXT_LIMIT = 8;
 const RECENT_CHAT_CHARS_PER_MESSAGE = 500;
-const SIDEBAR_RECENTS_LIMIT = 7;
+const SIDEBAR_RECENTS_LIMIT = 24;
 const SIDEBAR_RECENT_LABEL_LIMIT = 88;
 const MAX_THREAD_STORE_ITEMS = 100;
 const THREAD_TITLE_TARGET_CHARS = 60;
@@ -291,6 +291,14 @@ function toHeadlineCase(text: string): string {
     .join(' ');
 }
 
+function toSentenceCase(text: string): string {
+  const normalized = text.trim().replace(/\s{2,}/g, ' ');
+  if (!normalized) {
+    return '';
+  }
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 export function deriveThreadTitleFromMessages(messages: ChatMessage[]): string {
   const firstUserMessage = messages.find((message) => message.role === 'user' && message.text.trim())?.text ?? '';
   if (!firstUserMessage.trim()) {
@@ -308,21 +316,26 @@ export function deriveThreadTitleFromMessages(messages: ChatMessage[]): string {
     .map((segment) => segment.trim())
     .find((segment) => segment.length > 0 && !/^working folder context\b/i.test(segment)) ?? effectiveTitleSource;
 
-  const words = primarySegment
+  const cleanedSegment = primarySegment
+    .replace(/^[\-*#>\s]+/, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  const words = cleanedSegment
     .toLowerCase()
-    .match(/[a-z0-9][a-z0-9'_-]*/gi) ?? [];
+    .match(/[a-z0-9][a-z0-9'/_-]*/gi) ?? [];
 
   const keywords = words.filter((word) => !THREAD_TITLE_STOP_WORDS.has(word));
 
   const keywordPhrase = keywords.slice(0, 6).join(' ').trim();
-  const rawTitle = keywordPhrase.length >= 12 ? keywordPhrase : primarySegment;
+  const rawTitle = keywordPhrase.length >= 12 ? keywordPhrase : cleanedSegment;
   const compactTitle = rawTitle.replace(/\s{2,}/g, ' ').trim();
 
   if (!compactTitle) {
     return '';
   }
 
-  return toRecentSidebarLabel(toHeadlineCase(compactTitle));
+  return toRecentSidebarLabel(toSentenceCase(compactTitle));
 }
 
 export function toFallbackThreadTitle(sessionKey: string, kind: 'chat' | 'cowork' = 'chat'): string {
@@ -375,7 +388,16 @@ function normalizeStoredThread(thread: unknown): ChatThread | null {
     return null;
   }
 
-  const title = typeof record.title === 'string' ? toRecentSidebarLabel(record.title) : '';
+  const sanitizeStoredTitle = (value: string): string => {
+    const normalized = value
+      .replace(/\bworking folder context\b:[^\n]*/gi, ' ')
+      .replace(/\bproject instructions\b:[^\n]*/gi, ' ')
+      .replace(/[A-Za-z]:\\[^\s]+/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return toRecentSidebarLabel(normalized);
+  };
+  const title = typeof record.title === 'string' ? sanitizeStoredTitle(record.title) : '';
   const updatedAtRaw = typeof record.updatedAt === 'number' ? record.updatedAt : Number(record.updatedAt);
   const updatedAt = Number.isFinite(updatedAtRaw) ? updatedAtRaw : Date.now();
 

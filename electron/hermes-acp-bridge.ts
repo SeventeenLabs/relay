@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { Readable, Writable } from 'node:stream';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
@@ -68,6 +68,39 @@ function parseSshLaunch(gatewayUrl: string): { command: string; args: string[] }
       remoteCommand,
     ],
   };
+}
+
+function resolveLocalLaunch(): { command: string; args: string[]; mode: 'windows' | 'wsl' } {
+  const windowsProbe = spawnSync('where', ['hermes'], {
+    stdio: 'ignore',
+    windowsHide: true,
+    shell: false,
+  });
+  if (windowsProbe.status === 0) {
+    return {
+      command: 'hermes',
+      args: ['acp'],
+      mode: 'windows',
+    };
+  }
+
+  const wslProbe = spawnSync('wsl', ['bash', '-lc', 'command -v hermes >/dev/null 2>&1'], {
+    stdio: 'ignore',
+    windowsHide: true,
+    shell: false,
+  });
+  if (wslProbe.status === 0) {
+    return {
+      command: 'wsl',
+      args: ['bash', '-lc', 'exec hermes acp'],
+      mode: 'wsl',
+    };
+  }
+
+  throw new Error(
+    'Hermes ACP launch failed: no local Hermes installation found on Windows PATH or in WSL. ' +
+      'Install Hermes locally, then retry.',
+  );
 }
 
 export class HermesAcpBridge {
@@ -449,11 +482,24 @@ export class HermesAcpBridge {
     const gatewayUrl = (input.gatewayUrl ?? '').trim();
     const cwd = (input.cwd ?? process.cwd()).trim() || process.cwd();
 
-    if (!gatewayUrl.toLowerCase().startsWith('ssh://')) {
-      throw new Error('ACP requires a remote SSH endpoint (ssh://user@host[:port]). Local ACP fallback is disabled.');
+    const useSsh = gatewayUrl.toLowerCase().startsWith('ssh://');
+    let launch: { command: string; args: string[] };
+    let launchMode: 'ssh' | 'windows' | 'wsl';
+    if (useSsh) {
+      launch = parseSshLaunch(gatewayUrl);
+      launchMode = 'ssh';
+    } else {
+      const localLaunch = resolveLocalLaunch();
+      launch = localLaunch;
+      launchMode = localLaunch.mode;
     }
-    const launch = parseSshLaunch(gatewayUrl);
-    logAcp('info', 'ACP connect requested', { gatewayUrl, cwd, command: launch.command, args: launch.args });
+    logAcp('info', 'ACP connect requested', {
+      gatewayUrl: gatewayUrl || '(local)',
+      cwd,
+      mode: launchMode,
+      command: launch.command,
+      args: launch.args,
+    });
 
     this.child = spawn(launch.command, launch.args, {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -558,6 +604,42 @@ export class HermesAcpBridge {
     return this.connection;
   }
 
+  private requireExtendedConnection(): ClientSideConnection & {
+    loadSession: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    resumeSession: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    closeSession: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    setSessionMode: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    setSessionConfigOption: (params: {
+      sessionId: string;
+      configId: string;
+      value: string;
+    }) => Promise<{ configOptions?: unknown }>;
+    extMethod: (method: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    extNotification: (method: string, params: Record<string, unknown>) => Promise<void>;
+    unstable_setSessionModel?: (params: { sessionId: string; modelId: string }) => Promise<unknown>;
+    unstable_listProviders?: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    unstable_setProvider?: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    unstable_disableProvider?: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  } {
+    return this.requireConnection() as ClientSideConnection & {
+      loadSession: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+      resumeSession: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+      closeSession: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+      setSessionMode: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+      setSessionConfigOption: (params: {
+        sessionId: string;
+        configId: string;
+        value: string;
+      }) => Promise<{ configOptions?: unknown }>;
+      extMethod: (method: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+      extNotification: (method: string, params: Record<string, unknown>) => Promise<void>;
+      unstable_setSessionModel?: (params: { sessionId: string; modelId: string }) => Promise<unknown>;
+      unstable_listProviders?: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+      unstable_setProvider?: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+      unstable_disableProvider?: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    };
+  }
+
   async createSession(input: { cwd?: string }) {
     const connection = this.requireConnection();
     const cwd = (input.cwd ?? process.cwd()).trim() || process.cwd();
@@ -570,6 +652,64 @@ export class HermesAcpBridge {
     this.captureModelStateFromLegacyModels(result.sessionId, result as unknown);
     logAcp('info', 'ACP session created', { sessionId: result.sessionId, cwd });
     return { sessionId: result.sessionId };
+  }
+
+  async loadSession(input: { sessionId: string; cwd?: string }) {
+    const connection = this.requireExtendedConnection();
+    const result = await connection.loadSession({
+      sessionId: input.sessionId,
+      cwd: input.cwd,
+    });
+    const loadedId = typeof (result as { sessionId?: unknown }).sessionId === 'string'
+      ? String((result as { sessionId: string }).sessionId)
+      : input.sessionId;
+    this.knownSessions.set(loadedId, { id: loadedId, cwd: input.cwd });
+    this.captureModelStateFromConfigOptions(loadedId, (result as { configOptions?: unknown }).configOptions);
+    this.captureModelStateFromLegacyModels(loadedId, result);
+    logAcp('info', 'ACP session loaded', { sessionId: loadedId, cwd: input.cwd ?? '(none)' });
+    return { sessionId: loadedId, payload: result };
+  }
+
+  async resumeSession(input: { sessionId: string; cwd?: string }) {
+    const connection = this.requireExtendedConnection();
+    const result = await connection.resumeSession({
+      sessionId: input.sessionId,
+      cwd: input.cwd,
+    });
+    this.knownSessions.set(input.sessionId, { id: input.sessionId, cwd: input.cwd });
+    logAcp('info', 'ACP session resumed', { sessionId: input.sessionId, cwd: input.cwd ?? '(none)' });
+    return { ok: true, payload: result };
+  }
+
+  async closeSession(input: { sessionId: string }) {
+    const connection = this.requireExtendedConnection();
+    const result = await connection.closeSession({ sessionId: input.sessionId });
+    this.knownSessions.delete(input.sessionId);
+    this.modelStateBySession.delete(input.sessionId);
+    logAcp('info', 'ACP session closed', { sessionId: input.sessionId });
+    return { ok: true, payload: result };
+  }
+
+  async setSessionMode(input: { sessionId: string; modeId: string }) {
+    const connection = this.requireExtendedConnection();
+    const result = await connection.setSessionMode({
+      sessionId: input.sessionId,
+      modeId: input.modeId,
+    });
+    logAcp('info', 'ACP session mode set', { sessionId: input.sessionId, modeId: input.modeId });
+    return { ok: true, payload: result };
+  }
+
+  async setSessionConfigOption(input: { sessionId: string; configId: string; value: string }) {
+    const connection = this.requireExtendedConnection();
+    const result = await connection.setSessionConfigOption({
+      sessionId: input.sessionId,
+      configId: input.configId,
+      value: input.value,
+    });
+    this.captureModelStateFromConfigOptions(input.sessionId, result?.configOptions);
+    logAcp('info', 'ACP config option set', { sessionId: input.sessionId, configId: input.configId });
+    return { ok: true, payload: result };
   }
 
   async prompt(input: { sessionId: string; text: string }) {
@@ -602,14 +742,7 @@ export class HermesAcpBridge {
   }
 
   async setSessionModel(input: { sessionId: string; model: string }) {
-    const connection = this.requireConnection() as ClientSideConnection & {
-      unstable_setSessionModel?: (params: { sessionId: string; modelId: string }) => Promise<unknown>;
-      setSessionConfigOption?: (params: {
-        sessionId: string;
-        configId: string;
-        value: string;
-      }) => Promise<{ configOptions?: unknown }>;
-    };
+    const connection = this.requireExtendedConnection();
     const state = this.modelStateBySession.get(input.sessionId);
     const modelConfigId = state?.modelConfigId;
     if (modelConfigId && typeof connection.setSessionConfigOption === 'function') {
@@ -669,6 +802,57 @@ export class HermesAcpBridge {
     const connection = this.requireConnection();
     await connection.cancel({ sessionId: input.sessionId });
     return { ok: true };
+  }
+
+  async extMethod(input: { method: string; params?: Record<string, unknown> }) {
+    const connection = this.requireExtendedConnection();
+    const method = input.method.trim();
+    if (!method) {
+      throw new Error('ACP extension method name is required.');
+    }
+    const params = input.params ?? {};
+    const payload = await connection.extMethod(method, params);
+    logAcp('info', 'ACP ext method call', { method, hasParams: Object.keys(params).length > 0 });
+    return payload;
+  }
+
+  async extNotification(input: { method: string; params?: Record<string, unknown> }) {
+    const connection = this.requireExtendedConnection();
+    const method = input.method.trim();
+    if (!method) {
+      throw new Error('ACP extension notification name is required.');
+    }
+    const params = input.params ?? {};
+    await connection.extNotification(method, params);
+    logAcp('info', 'ACP ext notification sent', { method, hasParams: Object.keys(params).length > 0 });
+    return { ok: true };
+  }
+
+  async listProviders(input?: { args?: Record<string, unknown> }) {
+    const connection = this.requireExtendedConnection();
+    if (typeof connection.unstable_listProviders !== 'function') {
+      throw new Error('ACP server does not support unstable_listProviders.');
+    }
+    const payload = await connection.unstable_listProviders(input?.args ?? {});
+    return payload;
+  }
+
+  async setProvider(input: { args: Record<string, unknown> }) {
+    const connection = this.requireExtendedConnection();
+    if (typeof connection.unstable_setProvider !== 'function') {
+      throw new Error('ACP server does not support unstable_setProvider.');
+    }
+    const payload = await connection.unstable_setProvider(input.args);
+    return payload;
+  }
+
+  async disableProvider(input: { args: Record<string, unknown> }) {
+    const connection = this.requireExtendedConnection();
+    if (typeof connection.unstable_disableProvider !== 'function') {
+      throw new Error('ACP server does not support unstable_disableProvider.');
+    }
+    const payload = await connection.unstable_disableProvider(input.args);
+    return payload;
   }
 
   async workspaceList(input?: { sessionId?: string; path?: string }) {

@@ -12,7 +12,6 @@ import {
   type HermesUpdateCronJobInput,
 } from './hermes-http-client';
 import { HermesAcpClient } from './hermes-acp-client';
-import { RelayDaemonClient } from './relay-daemon-client';
 
 export type LegacyAgentBackendEvent = {
   type: 'res' | 'event';
@@ -117,13 +116,11 @@ export interface AgentBackendClient {
 export type { HermesToolEntry };
 
 export function createDefaultBackendClient(config?: Pick<AppConfig, 'transport'>): AgentBackendClient {
-  const transport = config?.transport ?? 'hermes_acp_stdio';
-  if (transport === 'relay_daemon') {
-    return new RelayDaemonClient();
+  const transport = config?.transport ?? 'hermes_http';
+  if (transport === 'hermes_acp_stdio') {
+    return new HermesAcpClient();
   }
-  if (transport === 'hermes_http') {
-    return new HermesHttpClient();
-  }
-  return new HermesAcpClient();
+  return new HermesHttpClient();
 }
+
 

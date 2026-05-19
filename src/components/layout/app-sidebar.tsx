@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { CoworkProject, MessageUsage } from '@/app-types';
 import { formatCostUsd, formatTokenCount } from '@/lib/token-usage';
 import {
+  Archive,
   CalendarClock,
   Check,
   ChevronDown,
@@ -11,6 +12,7 @@ import {
   Code2,
   Download,
   FolderKanban,
+  FolderPlus,
   FolderOpen,
   Globe,
   HelpCircle,
@@ -45,7 +47,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -70,6 +71,8 @@ type RecentSidebarItem = {
   sessionKey: string;
   kind: 'chat' | 'cowork';
   updatedAt?: number;
+  pinned?: boolean;
+  archived?: boolean;
 };
 
 type ScheduledSidebarItem = {
@@ -81,7 +84,6 @@ type ScheduledSidebarItem = {
 
 type AppSidebarProps = {
   sidebarOpen: boolean;
-  activeMenuItem: string;
   activePage: AppPage;
   activeSessionKey: string;
   activeCoworkSessionKey: string;
@@ -90,7 +92,10 @@ type AppSidebarProps = {
   language: AppLanguage;
   settingsSection: SettingsSection;
   chatRecentItems: RecentSidebarItem[];
+  archivedChatRecentItems: RecentSidebarItem[];
   projectRecentItemsByProjectId: Record<string, RecentSidebarItem[]>;
+  unassignedCoworkRecentItems: RecentSidebarItem[];
+  archivedCoworkRecentItems: RecentSidebarItem[];
   coworkProjects: CoworkProject[];
   activeCoworkProjectId: string;
   workingFolder: string;
@@ -101,6 +106,10 @@ type AppSidebarProps = {
   onSelectRecentItem: (item: RecentSidebarItem) => void;
   onRenameRecentItem: (item: RecentSidebarItem) => void;
   onDeleteRecentItem: (item: RecentSidebarItem) => void;
+  onTogglePinRecentItem: (item: RecentSidebarItem) => void;
+  onArchiveRecentItem: (item: RecentSidebarItem) => void;
+  onUnarchiveRecentItem: (item: RecentSidebarItem) => void;
+  onAssignUnassignedCoworkRecentItem: (item: RecentSidebarItem) => void;
   onSelectCoworkProject: (projectId: string) => void;
   onCreateCoworkProject: (name: string, workspaceFolder: string, description?: string, instructions?: string) => void;
   onRenameCoworkProject: (projectId: string, name: string, description?: string, instructions?: string) => void;
@@ -108,13 +117,13 @@ type AppSidebarProps = {
   onPickWorkingFolder: () => Promise<string | undefined>;
   onStartNewChat: () => void;
   onStartNewTask: () => void;
-  onSelectMenuItem: (item: string) => void;
   onSelectPage: (page: AppPage) => void;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   onSettingsSectionChange: (section: SettingsSection) => void;
   onLanguageChange: (language: AppLanguage) => void;
   onLogout: () => void;
+  recentsLoading?: boolean;
 };
 
 const settingsNavItems: { label: SettingsSection; icon: typeof User }[] = [
@@ -148,7 +157,6 @@ const sectionLabels: Record<SettingsSection, { en: string; de: string }> = {
 
 export function AppSidebar({
   sidebarOpen,
-  activeMenuItem,
   activePage,
   activeSessionKey,
   activeCoworkSessionKey,
@@ -157,7 +165,10 @@ export function AppSidebar({
   language,
   settingsSection,
   chatRecentItems,
+  archivedChatRecentItems,
   projectRecentItemsByProjectId,
+  unassignedCoworkRecentItems,
+  archivedCoworkRecentItems,
   coworkProjects,
   activeCoworkProjectId,
   workingFolder,
@@ -168,6 +179,10 @@ export function AppSidebar({
   onSelectRecentItem,
   onRenameRecentItem,
   onDeleteRecentItem,
+  onTogglePinRecentItem,
+  onArchiveRecentItem,
+  onUnarchiveRecentItem,
+  onAssignUnassignedCoworkRecentItem,
   onSelectCoworkProject,
   onCreateCoworkProject,
   onRenameCoworkProject,
@@ -175,20 +190,21 @@ export function AppSidebar({
   onPickWorkingFolder,
   onStartNewChat,
   onStartNewTask,
-  onSelectMenuItem,
   onSelectPage,
   onOpenSearch,
   onOpenSettings,
   onSettingsSectionChange,
   onLanguageChange,
   onLogout,
+  recentsLoading = false,
 }: AppSidebarProps) {
   const t = (en: string, de: string) => (language === 'de' ? de : en);
-  const isChatView = false;
   const isSettingsView = activePage === 'settings';
-  const isWorkspacePage = ['cowork', 'project'].includes(activePage);
   const compact = !sidebarOpen;
   const safeChatRecentItems = chatRecentItems ?? [];
+  const safeArchivedChatRecentItems = archivedChatRecentItems ?? [];
+  const safeUnassignedCoworkRecentItems = unassignedCoworkRecentItems ?? [];
+  const safeArchivedCoworkRecentItems = archivedCoworkRecentItems ?? [];
   const safeScheduledItems = scheduledItems ?? [];
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
@@ -211,6 +227,7 @@ export function AppSidebar({
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [deleteProjectId, setDeleteProjectId] = useState('');
   const [projectRowMenuId, setProjectRowMenuId] = useState<string | null>(null);
+  const [recentRowMenuId, setRecentRowMenuId] = useState<string | null>(null);
   const [expandedProjectId, setExpandedProjectId] = useState(activeCoworkProjectId);
   const languageMenuCloseTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
@@ -225,9 +242,6 @@ export function AppSidebar({
       .map((part) => part[0]?.toUpperCase() || '')
       .join('');
   }, [userEmail]);
-  const profileMenuItemClass =
-    'group flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] font-medium text-foreground/80 transition-[background-color,color,box-shadow] hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40';
-  const profileMenuIconClass = 'size-4 text-muted-foreground transition-colors group-hover:text-foreground/80';
   const languageOptions: { value: AppLanguage; label: string }[] = [
     { value: 'en', label: 'English (United States)' },
     { value: 'de', label: 'Deutsch (Deutschland)' },
@@ -242,10 +256,41 @@ export function AppSidebar({
     const weeks = Math.max(1, Math.floor(days / 7));
     return language === 'de' ? `${weeks} W` : `${weeks}w`;
   };
+  const ui = {
+    newChat: t('New chat', 'Neuer Chat'),
+    projects: t('Projects', 'Projekte'),
+    chats: t('Chats', 'Chats'),
+    noProjects: t('No projects yet', 'Noch keine Projekte'),
+    unassigned: t('Unassigned', 'Nicht zugewiesen'),
+    archivedTasks: t('Archived tasks', 'Archivierte Aufgaben'),
+    archivedChats: t('Archived chats', 'Archivierte Chats'),
+    noTasks: t('No tasks yet', 'Noch keine Aufgaben'),
+    loadingTasks: t('Loading tasks...', 'Aufgaben werden geladen...'),
+    connectTasks: t('Connect Hermes to load tasks', 'Hermes verbinden, um Aufgaben zu laden'),
+    noChats: t('No chats yet', 'Noch keine Chats'),
+    loadingChats: t('Loading chats...', 'Chats werden geladen...'),
+    connectChats: t('Connect Hermes to load chats', 'Hermes verbinden, um Chats zu laden'),
+    startFromScratch: t('Start from scratch', 'Von vorne anfangen'),
+    useExistingFolder: t('Use existing folder', 'Vorhandenen Ordner verwenden'),
+  };
 
   const safeCoworkProjects = coworkProjects ?? [];
+  const sortedCoworkProjects = useMemo(() => {
+    const latestByProject = new Map<string, number>();
+    for (const project of safeCoworkProjects) {
+      const latest = (projectRecentItemsByProjectId[project.id] ?? [])
+        .reduce((max, item) => Math.max(max, item.updatedAt ?? 0), 0);
+      latestByProject.set(project.id, latest);
+    }
+    return [...safeCoworkProjects].sort((a, b) => {
+      const delta = (latestByProject.get(b.id) ?? 0) - (latestByProject.get(a.id) ?? 0);
+      if (delta !== 0) return delta;
+      return a.name.localeCompare(b.name);
+    });
+  }, [projectRecentItemsByProjectId, safeCoworkProjects]);
   const renameProjectTarget = safeCoworkProjects.find((project) => project.id === renameProjectId) ?? null;
   const deleteProjectTarget = safeCoworkProjects.find((project) => project.id === deleteProjectId) ?? null;
+  const [chatKeyboardIndex, setChatKeyboardIndex] = useState(0);
 
   useEffect(() => {
     setExpandedProjectId((current) => {
@@ -300,6 +345,21 @@ export function AppSidebar({
     window.addEventListener('mousedown', handleClick);
     return () => window.removeEventListener('mousedown', handleClick);
   }, [projectRowMenuId]);
+
+  useEffect(() => {
+    if (!recentRowMenuId) {
+      return;
+    }
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('[data-recent-row-menu="true"]')) {
+        return;
+      }
+      setRecentRowMenuId(null);
+    };
+    window.addEventListener('mousedown', handleClick);
+    return () => window.removeEventListener('mousedown', handleClick);
+  }, [recentRowMenuId]);
 
   useEffect(() => {
     return () => {
@@ -490,6 +550,39 @@ export function AppSidebar({
     }
   }, [projectOptionsMenuOpen, projectCreateMenuOpen, projectRowMenuId]);
 
+  useEffect(() => {
+    const maxIndex = Math.max(0, safeChatRecentItems.length - 1);
+    setChatKeyboardIndex((current) => Math.min(current, maxIndex));
+  }, [safeChatRecentItems.length]);
+
+  useEffect(() => {
+    if (compact || isSettingsView) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) {
+        return;
+      }
+      if (event.key === 'j' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        setChatKeyboardIndex((current) => Math.min(current + 1, Math.max(0, safeChatRecentItems.length - 1)));
+        return;
+      }
+      if (event.key === 'k' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        setChatKeyboardIndex((current) => Math.max(current - 1, 0));
+        return;
+      }
+      if (event.key === 'Enter' && safeChatRecentItems[chatKeyboardIndex]) {
+        event.preventDefault();
+        onSelectRecentItem(safeChatRecentItems[chatKeyboardIndex]);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [chatKeyboardIndex, compact, isSettingsView, onSelectRecentItem, safeChatRecentItems]);
+
   const handleOpenRenameProject = (project: CoworkProject) => {
     setRenameProjectId(project.id);
     setRenameProjectTitleDraft(project.name);
@@ -533,12 +626,12 @@ export function AppSidebar({
 
   return (
     <Sidebar
-      className="relative z-[900] isolate w-full overflow-visible border-y-0 border-l-0 transition-all duration-200 [&_button]:border-0 [&_button]:shadow-none"
+      className="relative z-[900] isolate h-full min-h-0 w-full overflow-hidden border-y-0 border-l-0 transition-all duration-200 [&_button]:border-0 [&_button]:shadow-none"
     >
-      <SidebarContent className="relative overflow-visible">
+      <SidebarContent className="relative flex min-h-0 flex-col overflow-hidden p-0">
         {isSettingsView ? (
           /* â”€â”€ Settings navigation â”€â”€ */
-          <>
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
             <SidebarGroup>
               {!compact && <SidebarGroupLabel>{t('Settings', 'Einstellungen')}</SidebarGroupLabel>}
               <SidebarGroupContent>
@@ -561,9 +654,9 @@ export function AppSidebar({
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
-          </>
+          </div>
         ) : (
-          /* â”€â”€ Regular chat/cowork navigation â”€â”€ */
+          /* Regular chat/cowork navigation */
           <>
             <SidebarGroup>
               <SidebarGroupContent>
@@ -577,7 +670,7 @@ export function AppSidebar({
                       onClick={activePage === 'cowork' ? onStartNewTask : onStartNewChat}
                     >
                       <Plus data-icon="inline-start" />
-                      {!compact && <span className="min-w-0 flex-1 truncate">Neuer Chat</span>}
+                      {!compact && <span className="min-w-0 flex-1 truncate">{ui.newChat}</span>}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   {primaryWorkspaceNavItems.map((item) => {
@@ -602,10 +695,11 @@ export function AppSidebar({
               </SidebarGroupContent>
             </SidebarGroup>
 
-            {!isChatView && !compact && (
-              <SidebarGroup className="mt-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-visible">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+              {!compact && (
+                <SidebarGroup className="mt-1 overflow-visible">
                 <div className="group relative z-20 flex items-center justify-between px-2 pb-1">
-                  <SidebarGroupLabel className="px-0">Projects</SidebarGroupLabel>
+                  <SidebarGroupLabel className="px-0">{ui.projects} ({sortedCoworkProjects.length})</SidebarGroupLabel>
                   <div ref={projectCreateMenuRef} className="relative z-30 flex items-center gap-0.5 overflow-visible opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                     <Button
                       ref={projectOptionsTriggerRef}
@@ -689,7 +783,7 @@ export function AppSidebar({
                             onClick={() => void handleCreateProjectFromScratch()}
                           >
                             <FolderOpen className="size-4 text-muted-foreground" />
-                            <span>Von vorne anfangen</span>
+                            <span>{ui.startFromScratch}</span>
                           </button>
                           <button
                             type="button"
@@ -698,7 +792,7 @@ export function AppSidebar({
                             onClick={() => void handleCreateProjectFromExistingFolder()}
                           >
                             <FolderOpen className="size-4 text-muted-foreground" />
-                            <span>Vorhandenen Ordner verwenden</span>
+                            <span>{ui.useExistingFolder}</span>
                           </button>
                         </div>,
                         document.body,
@@ -706,17 +800,16 @@ export function AppSidebar({
                       : null}
                   </div>
                 </div>
-                <SidebarGroupContent className="min-h-0 min-w-0">
-                  <ScrollArea className="h-full min-h-0 min-w-0">
-                    <SidebarMenu className="min-w-0 pr-0.5">
-                      {safeCoworkProjects.length === 0 ? (
+                <SidebarGroupContent className="min-w-0">
+                    <SidebarMenu className="min-w-0">
+                      {sortedCoworkProjects.length === 0 ? (
                         <SidebarMenuItem>
                           <SidebarMenuButton type="button" className="w-full justify-start truncate font-sans text-[12px] text-muted-foreground" disabled>
-                            No projects yet
+                            {ui.noProjects}
                           </SidebarMenuButton>
                         </SidebarMenuItem>
                       ) : (
-                        safeCoworkProjects.map((project) => {
+                        sortedCoworkProjects.map((project) => {
                           const projectChats = (projectRecentItemsByProjectId[project.id] ?? []).slice(0, 6);
                           const hasProjectChats = projectChats.length > 0;
                           const isExpanded = expandedProjectId === project.id;
@@ -824,39 +917,63 @@ export function AppSidebar({
                                           && item.sessionKey.trim().length > 0
                                           && item.sessionKey === activeCoworkSessionKey;
                                         return (
-                                        <div key={item.id} className="group/item relative">
+                                        <div key={item.id} className={`relative flex items-center gap-1 rounded-xl px-1 py-1 ${isActiveCoworkItem ? 'bg-muted ring-1 ring-border' : 'hover:bg-muted'}`}>
                                           <button
                                             type="button"
-                                            className={`flex w-full min-w-0 items-center justify-between overflow-hidden rounded-xl py-1.5 pl-8 pr-2 text-left font-sans text-[12px] transition-colors ${
-                                              isActiveCoworkItem ? 'bg-muted text-foreground' : 'text-foreground/90 hover:bg-muted'
-                                            }`}
+                                            aria-label={item.pinned ? 'Unpin task' : 'Pin task'}
+                                            title={item.pinned ? 'Unpin task' : 'Pin task'}
+                                            className="shrink-0 rounded p-1 text-muted-foreground/70 hover:text-foreground"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              onTogglePinRecentItem(item);
+                                            }}
+                                          >
+                                            <Pin className={`size-3 ${item.pinned ? 'fill-current' : ''}`} />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="min-w-0 flex flex-1 items-center justify-between overflow-hidden rounded-lg px-1 py-1 text-left font-sans text-[12px] text-foreground/90"
                                             onClick={() => onSelectRecentItem(item)}
                                           >
-                                            <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{item.label}</span>
-                                            <span className="ml-2 flex shrink-0 items-center gap-2">
-                                              {typeof item.updatedAt === 'number' ? (
-                                                <span className="text-[11px] text-muted-foreground">{formatRelativeAge(item.updatedAt)}</span>
-                                              ) : null}
-                                              {isActiveCoworkItem ? <span className="h-2 w-2 rounded-full border border-border bg-muted-foreground/40" /> : null}
+                                            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{item.label}</span>
+                                            <span className="ml-2 shrink-0 text-[11px] text-muted-foreground">
+                                              {typeof item.updatedAt === 'number' ? formatRelativeAge(item.updatedAt) : ''}
                                             </span>
                                           </button>
                                           <button
                                             type="button"
-                                            aria-label="Pin chat"
-                                            title="Pin chat"
-                                            className="absolute left-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground/70 opacity-0 transition-opacity hover:text-foreground group-hover/item:opacity-100 focus-visible:opacity-100"
+                                            aria-label="Task menu"
+                                            title="Task menu"
+                                            className="shrink-0 rounded p-1 text-muted-foreground/70 hover:text-foreground"
                                             onClick={(event) => {
                                               event.stopPropagation();
+                                              setRecentRowMenuId((current) => (current === `cowork:${item.id}` ? null : `cowork:${item.id}`));
                                             }}
                                           >
-                                            <Pin className="size-3" />
+                                            <MoreHorizontal className="size-3" />
                                           </button>
+                                          {recentRowMenuId === `cowork:${item.id}` ? (
+                                            <div data-recent-row-menu="true" className="absolute right-1 top-8 z-20 w-32 rounded-lg border border-border bg-popover p-1 shadow-lg">
+                                              <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onRenameRecentItem(item); }}>
+                                                <Pencil className="size-3" />
+                                                Rename
+                                              </button>
+                                              <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onDeleteRecentItem(item); }}>
+                                                <Trash2 className="size-3" />
+                                                Delete
+                                              </button>
+                                              <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onArchiveRecentItem(item); }}>
+                                                <Archive className="size-3" />
+                                                Archive
+                                              </button>
+                                            </div>
+                                          ) : null}
                                         </div>
                                       )})}
                                     </div>
                                   ) : (
                                     <div className="rounded-xl py-1.5 pl-8 pr-2 text-left font-sans text-[12px] text-muted-foreground">
-                                      No chats
+                                      {recentsLoading ? ui.loadingTasks : hermesConnected ? ui.noTasks : ui.connectTasks}
                                     </div>
                                   )}
                                 </div>
@@ -865,16 +982,117 @@ export function AppSidebar({
                           </SidebarMenuItem>
                         )})
                       )}
+                      {safeUnassignedCoworkRecentItems.length > 0 ? (
+                        <SidebarMenuItem>
+                          <div className="mt-1 rounded-xl px-1 py-1">
+                            <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{ui.unassigned}</div>
+                            <div className="grid gap-0.5">
+                              {safeUnassignedCoworkRecentItems.slice(0, 8).map((item) => {
+                                const isActiveCoworkItem =
+                                  activePage === 'cowork'
+                                  && item.sessionKey.trim().length > 0
+                                  && item.sessionKey === activeCoworkSessionKey;
+                                return (
+                                  <div key={item.id} className={`relative flex items-center gap-1 rounded-xl px-1 py-1 ${isActiveCoworkItem ? 'bg-muted ring-1 ring-border' : 'hover:bg-muted'}`}>
+                                    <button
+                                      type="button"
+                                      className="shrink-0 rounded p-1 text-muted-foreground/70 hover:text-foreground"
+                                      title={item.pinned ? 'Unpin task' : 'Pin task'}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        onTogglePinRecentItem(item);
+                                      }}
+                                    >
+                                      <Pin className={`size-3 ${item.pinned ? 'fill-current' : ''}`} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="min-w-0 flex flex-1 items-center justify-between overflow-hidden rounded-lg px-1 py-1 text-left font-sans text-[12px]"
+                                      onClick={() => onSelectRecentItem(item)}
+                                    >
+                                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{item.label}</span>
+                                      <span className="ml-2 shrink-0 text-[11px] text-muted-foreground">
+                                        {typeof item.updatedAt === 'number' ? formatRelativeAge(item.updatedAt) : ''}
+                                      </span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="shrink-0 rounded p-1 text-muted-foreground/70 hover:text-foreground"
+                                      title="Task menu"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        setRecentRowMenuId((current) => (current === `unassigned:${item.id}` ? null : `unassigned:${item.id}`));
+                                      }}
+                                    >
+                                      <MoreHorizontal className="size-3" />
+                                    </button>
+                                    {recentRowMenuId === `unassigned:${item.id}` ? (
+                                      <div data-recent-row-menu="true" className="absolute right-1 top-8 z-20 w-40 rounded-lg border border-border bg-popover p-1 shadow-lg">
+                                        <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onAssignUnassignedCoworkRecentItem(item); }}>
+                                          <FolderPlus className="size-3" />
+                                          Assign
+                                        </button>
+                                        <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onRenameRecentItem(item); }}>
+                                          <Pencil className="size-3" />
+                                          Rename
+                                        </button>
+                                        <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onDeleteRecentItem(item); }}>
+                                          <Trash2 className="size-3" />
+                                          Delete
+                                        </button>
+                                        <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onArchiveRecentItem(item); }}>
+                                          <Archive className="size-3" />
+                                          Archive
+                                        </button>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </SidebarMenuItem>
+                      ) : null}
+                      {safeArchivedCoworkRecentItems.length > 0 ? (
+                        <SidebarMenuItem>
+                          <div className="mt-1 rounded-xl px-1 py-1">
+                            <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{ui.archivedTasks} ({safeArchivedCoworkRecentItems.length})</div>
+                            <div className="grid gap-0.5">
+                              {safeArchivedCoworkRecentItems.slice(0, 6).map((item) => (
+                                <div key={item.id} className="relative flex items-center gap-1 rounded-xl px-1 py-1 text-muted-foreground hover:bg-muted">
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded p-1 text-muted-foreground/70 hover:text-foreground"
+                                    title="Restore task"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      onUnarchiveRecentItem(item);
+                                    }}
+                                  >
+                                    <Archive className="size-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="min-w-0 flex flex-1 items-center justify-between overflow-hidden rounded-lg px-1 py-1 text-left font-sans text-[12px]"
+                                    onClick={() => onSelectRecentItem(item)}
+                                  >
+                                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{item.label}</span>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </SidebarMenuItem>
+                      ) : null}
                     </SidebarMenu>
-                  </ScrollArea>
                 </SidebarGroupContent>
-              </SidebarGroup>
-            )}
+                </SidebarGroup>
+              )}
 
-            {!compact && (
-              <SidebarGroup className="mt-3 grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+              {!compact && (
+                <SidebarGroup className="mt-3">
                 <div className="group flex items-center justify-between px-2 pb-1">
-                  <SidebarGroupLabel className="px-0">Chats</SidebarGroupLabel>
+                  <SidebarGroupLabel className="px-0">{ui.chats} ({safeChatRecentItems.length})</SidebarGroupLabel>
                   <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                     <Button
                       type="button"
@@ -897,43 +1115,110 @@ export function AppSidebar({
                     </Button>
                   </div>
                 </div>
-                <SidebarGroupContent className="min-h-0 min-w-0">
-                  <ScrollArea className="h-full min-h-0 min-w-0">
-                    <SidebarMenu className="min-w-0 pr-0.5">
+                <SidebarGroupContent className="min-w-0">
+                    <SidebarMenu className="min-w-0">
                       {safeChatRecentItems.length === 0 ? (
                         <SidebarMenuItem>
                           <SidebarMenuButton type="button" className="w-full justify-start truncate font-sans text-[12px] text-muted-foreground" disabled>
-                            No chats yet
+                            {recentsLoading ? ui.loadingChats : hermesConnected ? ui.noChats : ui.connectChats}
                           </SidebarMenuButton>
                         </SidebarMenuItem>
                       ) : (
-                        safeChatRecentItems.map((item) => {
+                        safeChatRecentItems.map((item, index) => {
                           const isActiveChatItem =
                             activePage === 'chat'
                             && item.sessionKey.trim().length > 0
                             && item.sessionKey === activeSessionKey;
+                          const isKeyboardTarget = index === chatKeyboardIndex;
                           return (
                           <SidebarMenuItem key={item.id}>
-                            <button
-                              type="button"
-                              className={`flex w-full min-w-0 items-center justify-between overflow-hidden rounded-xl px-2 py-1.5 text-left font-sans text-[12px] transition-colors ${
-                                isActiveChatItem ? 'bg-muted text-foreground' : 'text-foreground/90 hover:bg-muted'
-                              }`}
-                              onClick={() => onSelectRecentItem(item)}
-                            >
-                              <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{item.label}</span>
-                              {typeof item.updatedAt === 'number' ? (
-                                <span className="shrink-0 pl-2 text-[11px] text-muted-foreground">{formatRelativeAge(item.updatedAt)}</span>
+                            <div className={`relative flex items-center gap-1 rounded-xl px-1 py-1 ${isActiveChatItem ? 'bg-muted text-foreground ring-1 ring-border' : 'text-foreground/90 hover:bg-muted'} ${isKeyboardTarget && !isActiveChatItem ? 'ring-1 ring-border/60' : ''}`}>
+                              <button
+                                type="button"
+                                className="shrink-0 rounded p-1 text-muted-foreground/70 hover:text-foreground"
+                                title={item.pinned ? 'Unpin chat' : 'Pin chat'}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onTogglePinRecentItem(item);
+                                }}
+                              >
+                                <Pin className={`size-3 ${item.pinned ? 'fill-current' : ''}`} />
+                              </button>
+                              <button
+                                type="button"
+                                className="min-w-0 flex flex-1 items-center justify-between overflow-hidden rounded-lg px-1 py-1 text-left font-sans text-[12px]"
+                                onClick={() => onSelectRecentItem(item)}
+                              >
+                                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{item.label}</span>
+                                <span className="shrink-0 pl-2 text-[11px] text-muted-foreground">{typeof item.updatedAt === 'number' ? formatRelativeAge(item.updatedAt) : ''}</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="shrink-0 rounded p-1 text-muted-foreground/70 hover:text-foreground"
+                                title="Chat menu"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setRecentRowMenuId((current) => (current === `chat:${item.id}` ? null : `chat:${item.id}`));
+                                }}
+                              >
+                                <MoreHorizontal className="size-3" />
+                              </button>
+                              {recentRowMenuId === `chat:${item.id}` ? (
+                                <div data-recent-row-menu="true" className="absolute right-1 top-8 z-20 w-32 rounded-lg border border-border bg-popover p-1 shadow-lg">
+                                  <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onRenameRecentItem(item); }}>
+                                    <Pencil className="size-3" />
+                                    Rename
+                                  </button>
+                                  <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onDeleteRecentItem(item); }}>
+                                    <Trash2 className="size-3" />
+                                    Delete
+                                  </button>
+                                  <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onArchiveRecentItem(item); }}>
+                                    <Archive className="size-3" />
+                                    Archive
+                                  </button>
+                                </div>
                               ) : null}
-                            </button>
+                            </div>
                           </SidebarMenuItem>
                         )})
                       )}
+                      {safeArchivedChatRecentItems.length > 0 ? (
+                        <SidebarMenuItem>
+                          <div className="mt-2 rounded-xl px-2 py-1">
+                            <div className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{ui.archivedChats} ({safeArchivedChatRecentItems.length})</div>
+                            <div className="grid gap-0.5">
+                              {safeArchivedChatRecentItems.slice(0, 6).map((item) => (
+                                <div key={item.id} className="relative flex items-center gap-1 rounded-xl px-1 py-1 text-muted-foreground hover:bg-muted">
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded p-1 text-muted-foreground/70 hover:text-foreground"
+                                    title="Restore chat"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      onUnarchiveRecentItem(item);
+                                    }}
+                                  >
+                                    <Archive className="size-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="min-w-0 flex flex-1 items-center justify-between overflow-hidden rounded-lg px-1 py-1 text-left font-sans text-[12px]"
+                                    onClick={() => onSelectRecentItem(item)}
+                                  >
+                                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{item.label}</span>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </SidebarMenuItem>
+                      ) : null}
                     </SidebarMenu>
-                  </ScrollArea>
                 </SidebarGroupContent>
-              </SidebarGroup>
-            )}
+                </SidebarGroup>
+              )}
+            </div>
           </>
         )}
 

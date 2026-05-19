@@ -227,6 +227,7 @@ export function SettingsPage({
 }: SettingsPageProps) {
   const [prefersDarkSystem, setPrefersDarkSystem] = useState(false);
   const [showConnectionToken, setShowConnectionToken] = useState(false);
+  const [detectedRuntime, setDetectedRuntime] = useState<'windows' | 'wsl' | null>(null);
   const t = useCallback((en: string, de: string) => (preferences.language === 'de' ? de : en), [preferences.language]);
   const settingsCardClass = 'max-w-[980px] rounded-2xl border border-border/60 bg-card p-4';
 
@@ -241,6 +242,25 @@ export function SettingsPage({
 
     media.addEventListener('change', applyPreference);
     return () => media.removeEventListener('change', applyPreference);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!window.relay?.hermesDetectLocal) return () => { cancelled = true; };
+    window.relay.hermesDetectLocal()
+      .then((result) => {
+        if (!cancelled) {
+          setDetectedRuntime(result.runtime);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDetectedRuntime(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const useDarkPreview =
@@ -478,34 +498,24 @@ export function SettingsPage({
       {activeSection === 'Connection' && (
         <section className="max-w-[980px] rounded-2xl border border-border bg-card p-8 shadow-sm">
           <div className="mb-6">
-            <h2 className="font-sans text-lg font-bold tracking-tight text-foreground">{t('Connect to your backend', 'Mit deinem Backend verbinden')}</h2>
-            <p className="mt-1 font-sans text-[13px] leading-relaxed text-muted-foreground">{t('Enter your Hermes endpoint and optional token.', 'Gib deinen Hermes-Endpunkt und optional ein Token ein.')}</p>
+            <h2 className="font-sans text-lg font-bold tracking-tight text-foreground">{t('Local Hermes connection', 'Lokale Hermes-Verbindung')}</h2>
+            <p className="mt-1 font-sans text-[13px] leading-relaxed text-muted-foreground">{t('Relay auto-detects your local Hermes install on Windows or WSL and connects to it.', 'Relay erkennt deine lokale Hermes-Installation unter Windows oder WSL automatisch und verbindet sich damit.')}</p>
           </div>
           <div className="grid gap-4">
             <div>
-              <label className="mb-1.5 flex items-center gap-1.5 font-sans text-[12px] font-medium text-foreground">{t('Transport', 'Transport')}</label>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 font-sans text-[13px]"
-                value={transport}
-                onChange={(event) => onTransportChange(event.target.value as HermesTransport)}
-              >
-                <option value="relay_daemon">Relay daemon (recommended)</option>
-                <option value="hermes_http">Hermes API server (OpenAI HTTP)</option>
-                <option value="hermes_acp_stdio">ACP over SSH (stdio)</option>
-              </select>
+              <label className="mb-1.5 flex items-center gap-1.5 font-sans text-[12px] font-medium text-foreground">{t('Detected runtime', 'Erkannte Laufzeit')}</label>
+              <Input
+                value={detectedRuntime ? (detectedRuntime === 'windows' ? 'Windows Hermes' : 'WSL Hermes') : t('Not detected yet', 'Noch nicht erkannt')}
+                readOnly
+                className="h-10 font-sans text-[13px]"
+              />
             </div>
             <div>
               <label className="mb-1.5 flex items-center gap-1.5 font-sans text-[12px] font-medium text-foreground">{t('Hermes endpoint', 'Hermes-Endpunkt')}</label>
               <Input
                 value={draftHermesEndpoint}
-                onChange={(event) => ondraftHermesEndpointChange(event.target.value)}
-                placeholder={
-                  transport === 'hermes_acp_stdio'
-                    ? 'ssh://user@host:22'
-                    : transport === 'relay_daemon'
-                      ? 'http://127.0.0.1:8787'
-                      : 'http://127.0.0.1:8642/v1'
-                }
+                readOnly
+                placeholder={'http://127.0.0.1:8642/v1'}
                 className="h-10 font-mono text-[13px]"
               />
             </div>
@@ -724,6 +734,7 @@ function ConnectorsSection({ language }: { language: 'en' | 'de' }) {
     </div>
   );
 }
+
 
 
 

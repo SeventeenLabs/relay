@@ -44,6 +44,7 @@ export class HermesAcpClient {
   private sessions = new Map<string, StoredSession>();
   private activeSessionId: string | null = null;
   private releaseAcpEvents: (() => void) | null = null;
+  private connectInFlight: Promise<void> | null = null;
   private requestCounter = 0;
   private currentModelBySession = new Map<string, string | null>();
   private runStateBySession = new Map<string, SessionRunState>();
@@ -380,31 +381,49 @@ export class HermesAcpClient {
       throw new Error('Hermes ACP endpoint is required.');
     }
 
+    if (this.connectInFlight) {
+      await this.connectInFlight;
+      if (this.connected && this.gatewayUrl === gatewayUrl) {
+        return;
+      }
+    }
+
+    if (this.connected && this.gatewayUrl === gatewayUrl) {
+      this.log('info', 'Connect skipped (already connected)', { gatewayUrl });
+      return;
+    }
+
     this.gatewayUrl = gatewayUrl;
     this.currentCwd = typeof options.cwd === 'string' && options.cwd.trim() ? options.cwd.trim() : this.currentCwd;
     this.log('info', 'Connect requested', { gatewayUrl });
     const requestId = ++this.requestCounter;
     const startedAt = Date.now();
-    try {
-      this.releaseAcpEvents?.();
-      this.releaseAcpEvents = relay.onAcpEvent(this.onAcpUpdate);
-      const result = await relay.acpConnect({
-        gatewayUrl,
-        cwd: this.currentCwd ?? undefined,
-      });
-      this.activeSessionId = result.sessionId;
-      this.ensureSession(result.sessionId, 'main');
-      this.currentModelBySession.set(result.sessionId, null);
-      this.connected = true;
-      this.log('info', 'Connected via ACP', { requestId, gatewayUrl, sessionId: result.sessionId, durationMs: Date.now() - startedAt });
-      this.onConnectionHandler?.(true, `Connected via ACP (${gatewayUrl})`);
-    } catch (error) {
-      this.connected = false;
-      const message = error instanceof Error ? error.message : 'ACP connection failed.';
-      this.log('error', 'Connect failed', { requestId, gatewayUrl, durationMs: Date.now() - startedAt, error: message });
-      this.onConnectionHandler?.(false, message);
-      throw error;
-    }
+    const connectPromise = (async () => {
+      try {
+        this.releaseAcpEvents?.();
+        this.releaseAcpEvents = relay.onAcpEvent(this.onAcpUpdate);
+        const result = await relay.acpConnect({
+          gatewayUrl,
+          cwd: this.currentCwd ?? undefined,
+        });
+        this.activeSessionId = result.sessionId;
+        this.ensureSession(result.sessionId, 'main');
+        this.currentModelBySession.set(result.sessionId, null);
+        this.connected = true;
+        this.log('info', 'Connected via ACP', { requestId, gatewayUrl, sessionId: result.sessionId, durationMs: Date.now() - startedAt });
+        this.onConnectionHandler?.(true, `Connected via ACP (${gatewayUrl})`);
+      } catch (error) {
+        this.connected = false;
+        const message = error instanceof Error ? error.message : 'ACP connection failed.';
+        this.log('error', 'Connect failed', { requestId, gatewayUrl, durationMs: Date.now() - startedAt, error: message });
+        this.onConnectionHandler?.(false, message);
+        throw error;
+      } finally {
+        this.connectInFlight = null;
+      }
+    })();
+    this.connectInFlight = connectPromise;
+    await connectPromise;
   }
 
   disconnect() {

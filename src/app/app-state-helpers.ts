@@ -204,12 +204,12 @@ export function loadGatewayConnectionProfiles(): GatewayConnectionProfile[] {
         const backendType: AppConfig['backendType'] = 'hermes';
         const normalizedGatewayUrl = rawGatewayUrl.toLowerCase();
         const transport: HermesTransport =
-          record.transport === 'hermes_http' || record.transport === 'hermes_acp_stdio' || record.transport === 'relay_daemon'
+          record.transport === 'hermes_http' || record.transport === 'hermes_acp_stdio' || record.transport === 'hermes_http'
             ? record.transport
             : normalizedGatewayUrl.startsWith('ssh://') || normalizedGatewayUrl.startsWith('acp://')
               ? 'hermes_acp_stdio'
               : normalizedGatewayUrl.startsWith('http://') || normalizedGatewayUrl.startsWith('https://')
-                ? 'relay_daemon'
+                ? 'hermes_http'
                 : DEFAULT_TRANSPORT;
         const gatewayUrl = rawGatewayUrl || DEFAULT_HERMES_GATEWAY_URL;
         const gatewayToken = typeof record.gatewayToken === 'string' ? record.gatewayToken : '';
@@ -516,4 +516,5 @@ export function loadOperatorRuns(): OperatorRun[] {
     return [];
   }
 }
+
 
