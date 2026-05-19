@@ -11,7 +11,6 @@ import {
   ChevronUp,
   Code2,
   Download,
-  FolderKanban,
   FolderPlus,
   FolderOpen,
   Globe,
@@ -24,7 +23,6 @@ import {
   Palette,
   Pencil,
   Pin,
-  Play,
   Plus,
   SlidersHorizontal,
   SquarePen,
@@ -136,13 +134,6 @@ const settingsNavItems: { label: SettingsSection; icon: typeof User }[] = [
   { label: 'Privacy', icon: Shield },
   { label: 'Developer', icon: Code2 },
 ];
-
-const primaryWorkspaceNavItems: Array<{ id: string; label: string; page: AppPage; icon: typeof FolderOpen }> = [
-  { id: 'cowork', label: 'Cowork', page: 'cowork', icon: Play },
-  { id: 'project', label: 'Project Home', page: 'project', icon: FolderOpen },
-  { id: 'kanban', label: 'Kanban', page: 'kanban', icon: FolderKanban },
-];
-
 
 const sectionLabels: Record<SettingsSection, { en: string; de: string }> = {
   Profile: { en: 'Profile', de: 'Profil' },
@@ -667,30 +658,12 @@ export function AppSidebar({
                       className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
                       title="New Chat"
                       aria-label="Start a new chat"
-                      onClick={activePage === 'cowork' ? onStartNewTask : onStartNewChat}
+                      onClick={onStartNewChat}
                     >
                       <Plus data-icon="inline-start" />
                       {!compact && <span className="min-w-0 flex-1 truncate">{ui.newChat}</span>}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                  {primaryWorkspaceNavItems.map((item) => {
-                    const isActive = activePage === item.page;
-                    return (
-                      <SidebarMenuItem key={item.id}>
-                        <SidebarMenuButton
-                          type="button"
-                          active={isActive}
-                          aria-current={isActive ? 'page' : undefined}
-                          className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
-                          title={item.label}
-                          onClick={() => onSelectPage(item.page)}
-                        >
-                          <item.icon data-icon="inline-start" />
-                          {!compact && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

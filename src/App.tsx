@@ -108,9 +108,7 @@ import {
 } from './lib/chat-utils';
 import { buildCoworkResponseInstruction } from './lib/cowork-action-instructions';
 
-const CoworkPage = lazy(() => import('./features/cowork/cowork-page').then((module) => ({ default: module.CoworkPage })));
-const ProjectPage = lazy(() => import('./features/cowork/project-page').then((module) => ({ default: module.ProjectPage })));
-const KanbanPage = lazy(() => import('./features/cowork/kanban-page').then((module) => ({ default: module.KanbanPage })));
+const ChatPage = lazy(() => import('./features/chat-page').then((module) => ({ default: module.ChatPage })));
 const SettingsPage = lazy(() => import('./features/settings/settings-page').then((module) => ({ default: module.SettingsPage })));
 
 const DEFAULT_HERMES_HTTP_GATEWAY_URL = 'http://127.0.0.1:8642/v1';
@@ -1084,6 +1082,7 @@ export default function App() {
 
   const recentCoworkItemsRaw = useMemo(() => toRecentSidebarItems(coworkThreads, 'cowork'), [coworkThreads]);
   const recentChatItemsRaw = useMemo(() => toRecentSidebarItems(chatThreads, 'chat'), [chatThreads]);
+  const coworkSessionKeys = useMemo(() => new Set(recentCoworkItemsRaw.map((item) => item.sessionKey)), [recentCoworkItemsRaw]);
   const threadMetaKey = useCallback((item: RecentWorkspaceEntry) => `${item.kind}::${item.sessionKey}`, []);
   const recentCoworkItems = useMemo(() => {
     return recentCoworkItemsRaw
@@ -1127,13 +1126,15 @@ export default function App() {
         };
       })
       .filter((item) => !item.archived)
+      .filter((item) => !coworkSessionKeys.has(item.sessionKey))
       .sort((a, b) => {
         if (Boolean(a.pinned) !== Boolean(b.pinned)) {
           return a.pinned ? -1 : 1;
         }
         return (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
-      });
-  }, [recentChatItemsRaw, sidebarThreadMetaByKey, threadMetaKey]);
+      })
+      .slice(0, 15);
+  }, [recentChatItemsRaw, sidebarThreadMetaByKey, threadMetaKey, coworkSessionKeys]);
   const archivedChatRecentItems = useMemo(() => {
     return recentChatItemsRaw
       .map((item) => {
@@ -1145,8 +1146,9 @@ export default function App() {
         };
       })
       .filter((item) => item.archived)
+      .filter((item) => !coworkSessionKeys.has(item.sessionKey))
       .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-  }, [recentChatItemsRaw, sidebarThreadMetaByKey, threadMetaKey]);
+  }, [recentChatItemsRaw, sidebarThreadMetaByKey, threadMetaKey, coworkSessionKeys]);
   const projectRecentItemsByProjectId = useMemo(() => {
     const bySession = new Map(recentCoworkItems.map((item) => [item.sessionKey, item]));
     const grouped: Record<string, typeof recentCoworkItems> = {};
@@ -7044,9 +7046,6 @@ export default function App() {
             onStartNewTask={handleStartNewTask}
             onSelectPage={(page) => {
               setActivePage(page);
-              if (page === 'kanban') {
-                void refreshKanbanTasks();
-              }
             }}
             onOpenSearch={() => handleSearchOpenChange(true)}
             onOpenSettings={() => setActivePage('settings')}
@@ -7169,60 +7168,58 @@ export default function App() {
             </CommandDialog>
             <div className="h-full w-full overflow-hidden bg-background">
               <Suspense fallback={pageLoadingFallback}>
-                {(activePage === 'chat' || activePage === 'cowork') ? (
-                <CoworkPage
-                  key={`${activePage}-${coworkResetKey}`}
-                  projectTitle={activePage === 'cowork' ? (activeCoworkProject?.name || 'No project selected') : 'Chats'}
-                  projectSelected={activePage === 'cowork' ? Boolean(activeCoworkProject) : false}
-                  projectInstructions={activePage === 'cowork' ? (activeCoworkProject?.instructions || '') : ''}
-                  scheduledCount={activePage === 'cowork' ? scheduledJobs.length : 0}
-                  canRerunLastTask={activePage === 'cowork' ? Boolean(latestVisibleCoworkTaskPrompt) : false}
-                  taskPrompt={activePage === 'cowork' ? coworkDraftPrompt : chatDraftPrompt}
-                  messages={activePage === 'cowork' ? coworkMessages : chatMessages}
-                  liveActivityItems={activePage === 'cowork' ? coworkLiveActivityItems : chatLiveActivityItems}
-                  rightPanelOpen={activePage === 'cowork' ? coworkRightPanelOpen : false}
-                  awaitingStream={activePage === 'cowork' ? coworkAwaitingStream : awaitingChatStream}
-                  artifacts={activePage === 'cowork' ? coworkArtifacts : []}
-                  onOpenArtifact={activePage === 'cowork' ? handleOpenCoworkArtifact : () => {}}
-                  onScheduleRun={activePage === 'cowork' ? handleScheduleCoworkRun : () => {}}
-                  onRerunLastTask={activePage === 'cowork' ? handleRerunLastCoworkTask : handleStartNewChat}
-                  selectedModel={activePage === 'cowork' ? coworkModel : selectedModel}
-                  models={activePage === 'cowork' ? coworkModels : chatModels}
+                {activePage === 'chat' ? (
+                <ChatPage
+                  key={`chat-${coworkResetKey}`}
+                  projectTitle="Chats"
+                  projectSelected={false}
+                  projectInstructions=""
+                  scheduledCount={0}
+                  canRerunLastTask={false}
+                  taskPrompt={chatDraftPrompt}
+                  messages={chatMessages}
+                  liveActivityItems={chatLiveActivityItems}
+                  rightPanelOpen={false}
+                  awaitingStream={awaitingChatStream}
+                  artifacts={[]}
+                  onOpenArtifact={() => {}}
+                  onScheduleRun={() => {}}
+                  onRerunLastTask={handleStartNewChat}
+                  selectedModel={selectedModel}
+                  models={chatModels}
                   modelsLoading={modelsLoading}
-                  changingModel={activePage === 'cowork' ? changingCoworkModel : changingModel}
+                  changingModel={changingModel}
                   pendingApprovals={[]}
-                  projectTasks={activePage === 'cowork' ? visibleCoworkTasks : []}
-                  sending={activePage === 'cowork' ? coworkSending : sendingChat}
+                  projectTasks={[]}
+                  sending={sendingChat}
                   hermesConnected={hermesConnected}
-                  webSearchEnabled={activePage === 'cowork' ? coworkWebSearchEnabled : false}
+                  webSearchEnabled={false}
                   runPhase={
-                    activePage === 'cowork'
-                      ? coworkRunPhase
-                      : sendingChat
-                        ? 'sending'
-                        : awaitingChatStream
-                          ? 'streaming'
-                          : 'idle'
+                    sendingChat
+                      ? 'sending'
+                      : awaitingChatStream
+                        ? 'streaming'
+                        : 'idle'
                   }
-                  progressSteps={activePage === 'cowork' ? coworkProgressSteps : []}
-                  approvalMode={activePage === 'cowork' ? 'project' : 'none'}
+                  progressSteps={[]}
+                  approvalMode="none"
                   reasoningEffort={coworkReasoningEffort}
-                  projectPathReferences={activePage === 'cowork' ? coworkProjectPathReferences : []}
-                  contextWindowUsedTokens={activePage === 'cowork' ? coworkContextWindowUsedTokens : chatContextWindowUsedTokens}
-                  contextWindowTotalTokens={activePage === 'cowork' ? coworkContextWindowTotalTokens : chatContextWindowTotalTokens}
+                  projectPathReferences={[]}
+                  contextWindowUsedTokens={chatContextWindowUsedTokens}
+                  contextWindowTotalTokens={chatContextWindowTotalTokens}
                   onOpenConnectionSettings={() => {
                     setActivePage('settings');
                     setSettingsSection('Connection');
                   }}
-                  onTaskPromptChange={activePage === 'cowork' ? handleCoworkPromptChange : handleChatPromptChange}
-                  onModelChange={activePage === 'cowork' ? handleCoworkModelChange : handleModelChange}
-                  onWebSearchEnabledChange={setCoworkWebSearchEnabled}
+                  onTaskPromptChange={handleChatPromptChange}
+                  onModelChange={handleModelChange}
+                  onWebSearchEnabledChange={() => {}}
                   onReasoningEffortChange={(value) => {
                     console.info('[Relay][Cowork] reasoning selector changed', { value });
                     setCoworkReasoningEffort(value);
                   }}
                   onApprovalModeChange={() => {}}
-                  onSubmit={activePage === 'cowork' ? handlePlanTask : handleSendChat}
+                  onSubmit={handleSendChat}
                   onApprovePendingAction={handleApprovePendingAction}
                   onApprovePendingActionAlways={handleApprovePendingActionAlways}
                   onRejectPendingAction={handleRejectPendingAction}
@@ -7230,47 +7227,6 @@ export default function App() {
                   undoingFileChanges={undoingFileChanges}
                   onUndoFileChanges={handleUndoFileChanges}
                   onReviewFileChanges={handleReviewFileChanges}
-                />
-              ) : activePage === 'project' ? (
-                <ProjectPage
-                  project={activeCoworkProject}
-                  tasks={visibleCoworkTasks}
-                  scheduledCount={scheduledJobs.length}
-                  pipelineCount={visibleProjectPipelines.length}
-                  pipelines={visibleProjectPipelines}
-                  operators={visibleProjectOperators}
-                  operatorRuns={visibleProjectOperatorRuns}
-                  pendingApprovalsCount={visiblePendingApprovals.length}
-                  artifacts={visibleProjectArtifacts}
-                  projectKnowledge={visibleProjectKnowledge}
-                  webSearchEnabled={coworkWebSearchEnabled}
-                  onPickFolder={handlePickWorkingFolderForProject}
-                  onUpdateProject={handleUpdateCoworkProject}
-                  onCreatePipeline={handleCreateOutcomePipeline}
-                  onUpdatePipeline={handleUpdateOutcomePipeline}
-                  onTogglePipeline={handleToggleOutcomePipeline}
-                  onDeletePipeline={handleDeleteOutcomePipeline}
-                  onToggleOperator={handleToggleOperatorDefinition}
-                  onRunResearchOperator={handleRunResearchOperator}
-                  onOpenArtifact={handleOpenCoworkArtifact}
-                  onAddKnowledge={handleAddProjectKnowledge}
-                  onDeleteKnowledge={handleDeleteProjectKnowledge}
-                  onWebSearchEnabledChange={setCoworkWebSearchEnabled}
-                  onSelectPage={(page) => setActivePage(page)}
-                />
-              ) : activePage === 'kanban' ? (
-                <KanbanPage
-                  project={activeCoworkProject}
-                  tasks={kanbanTasks}
-                  taskDetail={kanbanTaskDetail}
-                  loading={kanbanLoading}
-                  creating={kanbanCreating}
-                  commenting={kanbanCommenting}
-                  onSelectPage={(page) => setActivePage(page)}
-                  onRefresh={() => void refreshKanbanTasks()}
-                  onCreateTask={handleKanbanCreateTask}
-                  onSelectTask={handleKanbanSelectTask}
-                  onCommentTask={handleKanbanCommentTask}
                 />
               ) : activePage === 'settings' ? (
                 <SettingsPage
@@ -7297,8 +7253,8 @@ export default function App() {
                     <p className="mt-2 font-sans text-sm text-muted-foreground">
                       This surface has been removed during Relay cleanup.
                     </p>
-                    <Button type="button" className="mt-4" onClick={() => setActivePage('cowork')}>
-                      Back to Cowork
+                    <Button type="button" className="mt-4" onClick={() => setActivePage('chat')}>
+                      Back to Chat
                     </Button>
                   </div>
                 </section>

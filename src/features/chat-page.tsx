@@ -28,12 +28,12 @@ import type {
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
-import { ChatMessageList } from './components/chat-message-list';
-import { CoworkComposer } from './components/cowork-composer';
-import { PendingApprovalsPanel } from './components/pending-approvals-panel';
-import { isSystemLikeMessage } from './cowork-utils';
+import { ChatMessageList } from './cowork/components/chat-message-list';
+import { CoworkComposer } from './cowork/components/cowork-composer';
+import { PendingApprovalsPanel } from './cowork/components/pending-approvals-panel';
+import { isSystemLikeMessage } from './cowork/cowork-utils';
 
-type CoworkPageProps = {
+type ChatPageProps = {
   projectTitle: string;
   projectSelected: boolean;
   projectInstructions: string;
@@ -98,7 +98,7 @@ const COWORK_IDEA_CARDS = [
   },
 ] as const;
 
-export function CoworkPage(props: CoworkPageProps) {
+export function ChatPage(props: ChatPageProps) {
   const {
     projectTitle,
     projectSelected,
