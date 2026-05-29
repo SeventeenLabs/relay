@@ -1,15 +1,14 @@
 import type { CSSProperties, MouseEvent } from 'react';
-import { ArrowLeft, Copy, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Square, X } from 'lucide-react';
+import { ArrowLeft, Copy, Minus, PanelLeftClose, PanelLeftOpen, Square, X } from 'lucide-react';
 
 import type { CoworkProgressStep, CoworkRunPhase } from '@/app-types';
 import { Button } from '@/components/ui/button';
 
-type AppPage = 'chat' | 'cowork' | 'project' | 'kanban' | 'settings';
+type AppPage = 'chat' | 'settings';
 
 type AppTitlebarProps = {
   sidebarOpen: boolean;
   activePage: AppPage;
-  coworkRightPanelOpen?: boolean;
   isMaximized: boolean;
   usageModeLabel: string;
   hermesConnected?: boolean;
@@ -23,8 +22,7 @@ type AppTitlebarProps = {
   onScheduleRun?: () => void;
   minimal?: boolean;
   onToggleSidebar: () => void;
-  onToggleCoworkRightPanel?: () => void;
-  onSelectPage: (page: 'cowork') => void;
+  onSelectPage: (page: 'chat') => void;
   onMinimize: () => void | Promise<void>;
   onToggleMaximize: () => void | Promise<void>;
   onClose: () => void | Promise<void>;
@@ -35,13 +33,11 @@ type AppTitlebarProps = {
 export function AppTitlebar({
   sidebarOpen,
   activePage,
-  coworkRightPanelOpen = true,
   isMaximized,
   hermesConnected = false,
   showConnectionError = false,
   minimal,
   onToggleSidebar,
-  onToggleCoworkRightPanel,
   onSelectPage,
   onMinimize,
   onToggleMaximize,
@@ -109,7 +105,7 @@ export function AppTitlebar({
               size="sm"
               className="h-6 gap-1 px-1.5 text-muted-foreground text-xs"
               style={noDragStyle}
-              onClick={() => onSelectPage('cowork')}
+              onClick={() => onSelectPage('chat')}
               aria-label="Back"
             >
               <ArrowLeft className="size-3.5" />
@@ -132,21 +128,6 @@ export function AppTitlebar({
         onMouseDown={preventTitlebarDragCapture}
         onDoubleClick={preventTitlebarDragCapture}
       >
-        {!minimal && activePage === 'cowork' && onToggleCoworkRightPanel ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            className="mr-1 size-6 border-0 text-muted-foreground shadow-none"
-            style={noDragStyle}
-            onClick={onToggleCoworkRightPanel}
-            aria-label={coworkRightPanelOpen ? 'Hide cowork panel' : 'Show cowork panel'}
-            title={coworkRightPanelOpen ? 'Hide cowork panel' : 'Show cowork panel'}
-          >
-            {coworkRightPanelOpen ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
-          </Button>
-        ) : null}
-
         <button
           type="button"
           className={`window-control-btn ${windowControlBaseClass} ${neutralWindowControlClass}`}

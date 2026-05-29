@@ -12,6 +12,9 @@ export type ChatThread = {
   sessionKey: string;
   title: string;
   updatedAt: number;
+  projectId?: string;
+  pinned?: boolean;
+  archived?: boolean;
 };
 
 export type PersistedRecents = {
@@ -25,6 +28,9 @@ export type RecentWorkspaceEntry = {
   sessionKey: string;
   kind: 'chat' | 'cowork';
   updatedAt?: number;
+  projectId?: string;
+  pinned?: boolean;
+  archived?: boolean;
 };
 
 export type RelayFileAction =
@@ -106,8 +112,6 @@ const RECENT_CHAT_CHARS_PER_MESSAGE = 500;
 const SIDEBAR_RECENTS_LIMIT = 24;
 const SIDEBAR_RECENT_LABEL_LIMIT = 88;
 const MAX_THREAD_STORE_ITEMS = 100;
-const THREAD_TITLE_TARGET_CHARS = 60;
-
 /* ── Message extraction ──────────────────────────────────────────────────── */
 
 export function extractChatText(message: unknown): string {
@@ -247,13 +251,6 @@ export function findMatchingSessionKey(sessionKeys: string[], requestedKey: stri
 
 /* ── Thread utilities ────────────────────────────────────────────────────── */
 
-const THREAD_TITLE_STOP_WORDS = new Set([
-  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'can', 'could', 'did', 'do', 'does', 'for', 'from', 'get',
-  'got', 'had', 'has', 'have', 'help', 'how', 'i', 'if', 'in', 'into', 'is', 'it', 'its', 'just', 'let', 'like',
-  'make', 'me', 'my', 'new', 'of', 'on', 'or', 'our', 'please', 'should', 'so', 'that', 'the', 'their', 'them', 'then',
-  'there', 'they', 'this', 'to', 'use', 'want', 'we', 'what', 'when', 'where', 'which', 'why', 'with', 'you', 'your',
-]);
-
 function normalizeTitleSourceText(raw: string): string {
   return raw
     .replace(/```[\s\S]*?```/g, ' ')
@@ -272,23 +269,6 @@ function trimLeadInPhrases(text: string): string {
     .replace(/^\s*(can\s+you|could\s+you|would\s+you|please|i\s+need\s+you\s+to|i\s+need\s+help\s+with|help\s+me\s+)(:|-)?\s*/i, '')
     .replace(/^\s*(let'?s|lets)\s+/i, '')
     .trim();
-}
-
-function toHeadlineCase(text: string): string {
-  const smallWords = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'vs', 'via']);
-  const words = text.split(/\s+/).filter(Boolean);
-  return words
-    .map((word, index) => {
-      const lower = word.toLowerCase();
-      if (word.toUpperCase() === word && word.length <= 5) {
-        return word;
-      }
-      if (index > 0 && index < words.length - 1 && smallWords.has(lower)) {
-        return lower;
-      }
-      return lower.charAt(0).toUpperCase() + lower.slice(1);
-    })
-    .join(' ');
 }
 
 function toSentenceCase(text: string): string {
@@ -317,19 +297,11 @@ export function deriveThreadTitleFromMessages(messages: ChatMessage[]): string {
     .find((segment) => segment.length > 0 && !/^working folder context\b/i.test(segment)) ?? effectiveTitleSource;
 
   const cleanedSegment = primarySegment
-    .replace(/^[\-*#>\s]+/, '')
+    .replace(/^[-*#>\s]+/, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 
-  const words = cleanedSegment
-    .toLowerCase()
-    .match(/[a-z0-9][a-z0-9'/_-]*/gi) ?? [];
-
-  const keywords = words.filter((word) => !THREAD_TITLE_STOP_WORDS.has(word));
-
-  const keywordPhrase = keywords.slice(0, 6).join(' ').trim();
-  const rawTitle = keywordPhrase.length >= 12 ? keywordPhrase : cleanedSegment;
-  const compactTitle = rawTitle.replace(/\s{2,}/g, ' ').trim();
+  const compactTitle = cleanedSegment.replace(/\s{2,}/g, ' ').trim();
 
   if (!compactTitle) {
     return '';
@@ -367,8 +339,27 @@ export function mergeChatThreads(existing: ChatThread[], incoming: ChatThread[])
     }
 
     const previous = bySession.get(normalizedSessionKey);
-    if (!previous || thread.updatedAt >= previous.updatedAt) {
+    if (!previous) {
       bySession.set(normalizedSessionKey, thread);
+      continue;
+    }
+
+    if (thread.updatedAt >= previous.updatedAt) {
+      bySession.set(normalizedSessionKey, {
+        ...previous,
+        ...thread,
+        projectId: thread.projectId ?? previous.projectId,
+        pinned: thread.pinned ?? previous.pinned,
+        archived: thread.archived ?? previous.archived,
+      });
+    } else {
+      bySession.set(normalizedSessionKey, {
+        ...thread,
+        ...previous,
+        projectId: previous.projectId ?? thread.projectId,
+        pinned: previous.pinned ?? thread.pinned,
+        archived: previous.archived ?? thread.archived,
+      });
     }
   }
 
@@ -400,12 +391,16 @@ function normalizeStoredThread(thread: unknown): ChatThread | null {
   const title = typeof record.title === 'string' ? sanitizeStoredTitle(record.title) : '';
   const updatedAtRaw = typeof record.updatedAt === 'number' ? record.updatedAt : Number(record.updatedAt);
   const updatedAt = Number.isFinite(updatedAtRaw) ? updatedAtRaw : Date.now();
+  const projectId = typeof record.projectId === 'string' ? record.projectId.trim() : '';
 
   return {
     id: getThreadIdForSession(sessionKey),
     sessionKey,
     title: title || toFallbackThreadTitle(sessionKey, sessionKey.toLowerCase().includes('cowork') ? 'cowork' : 'chat'),
     updatedAt,
+    ...(projectId ? { projectId } : {}),
+    ...(record.pinned === true ? { pinned: true } : {}),
+    ...(record.archived === true ? { archived: true } : {}),
   };
 }
 
@@ -447,6 +442,9 @@ export function toRecentSidebarItems(threads: ChatThread[], kind: 'chat' | 'cowo
       sessionKey: thread.sessionKey,
       kind,
       updatedAt: thread.updatedAt,
+      projectId: thread.projectId,
+      pinned: thread.pinned,
+      archived: thread.archived,
     }));
 }
 

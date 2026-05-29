@@ -1,17 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { CoworkProject, MessageUsage } from '@/app-types';
-import { formatCostUsd, formatTokenCount } from '@/lib/token-usage';
+import type { CoworkProject } from '@/app-types';
 import {
   Archive,
-  CalendarClock,
   Check,
-  ChevronDown,
   ChevronRight,
-  ChevronUp,
   Code2,
-  Download,
-  FolderPlus,
   FolderOpen,
   Globe,
   HelpCircle,
@@ -26,7 +20,6 @@ import {
   Plus,
   SlidersHorizontal,
   SquarePen,
-  Search,
   Settings,
   Shield,
   Trash2,
@@ -59,7 +52,7 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 
-type AppPage = 'chat' | 'cowork' | 'project' | 'kanban' | 'settings';
+type AppPage = 'chat' | 'settings';
 type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Connection' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 type AppLanguage = 'en' | 'de';
 
@@ -73,18 +66,10 @@ type RecentSidebarItem = {
   archived?: boolean;
 };
 
-type ScheduledSidebarItem = {
-  id: string;
-  name: string;
-  schedule: string;
-  enabled: boolean;
-};
-
 type AppSidebarProps = {
   sidebarOpen: boolean;
   activePage: AppPage;
   activeSessionKey: string;
-  activeCoworkSessionKey: string;
   userEmail: string;
   guestMode: boolean;
   language: AppLanguage;
@@ -92,14 +77,8 @@ type AppSidebarProps = {
   chatRecentItems: RecentSidebarItem[];
   archivedChatRecentItems: RecentSidebarItem[];
   projectRecentItemsByProjectId: Record<string, RecentSidebarItem[]>;
-  unassignedCoworkRecentItems: RecentSidebarItem[];
-  archivedCoworkRecentItems: RecentSidebarItem[];
   coworkProjects: CoworkProject[];
   activeCoworkProjectId: string;
-  workingFolder: string;
-  scheduledItems: ScheduledSidebarItem[];
-  scheduledLoading: boolean;
-  sessionUsage?: MessageUsage;
   hermesConnected: boolean;
   onSelectRecentItem: (item: RecentSidebarItem) => void;
   onRenameRecentItem: (item: RecentSidebarItem) => void;
@@ -107,16 +86,13 @@ type AppSidebarProps = {
   onTogglePinRecentItem: (item: RecentSidebarItem) => void;
   onArchiveRecentItem: (item: RecentSidebarItem) => void;
   onUnarchiveRecentItem: (item: RecentSidebarItem) => void;
-  onAssignUnassignedCoworkRecentItem: (item: RecentSidebarItem) => void;
   onSelectCoworkProject: (projectId: string) => void;
   onCreateCoworkProject: (name: string, workspaceFolder: string, description?: string, instructions?: string) => void;
   onRenameCoworkProject: (projectId: string, name: string, description?: string, instructions?: string) => void;
   onDeleteCoworkProject: (projectId: string) => void;
   onPickWorkingFolder: () => Promise<string | undefined>;
-  onStartNewChat: () => void;
-  onStartNewTask: () => void;
+  onStartNewChat: (projectId?: string) => void;
   onSelectPage: (page: AppPage) => void;
-  onOpenSearch: () => void;
   onOpenSettings: () => void;
   onSettingsSectionChange: (section: SettingsSection) => void;
   onLanguageChange: (language: AppLanguage) => void;
@@ -150,7 +126,6 @@ export function AppSidebar({
   sidebarOpen,
   activePage,
   activeSessionKey,
-  activeCoworkSessionKey,
   userEmail,
   guestMode,
   language,
@@ -158,14 +133,8 @@ export function AppSidebar({
   chatRecentItems,
   archivedChatRecentItems,
   projectRecentItemsByProjectId,
-  unassignedCoworkRecentItems,
-  archivedCoworkRecentItems,
   coworkProjects,
   activeCoworkProjectId,
-  workingFolder,
-  scheduledItems,
-  scheduledLoading,
-  sessionUsage,
   hermesConnected,
   onSelectRecentItem,
   onRenameRecentItem,
@@ -173,16 +142,13 @@ export function AppSidebar({
   onTogglePinRecentItem,
   onArchiveRecentItem,
   onUnarchiveRecentItem,
-  onAssignUnassignedCoworkRecentItem,
   onSelectCoworkProject,
   onCreateCoworkProject,
   onRenameCoworkProject,
   onDeleteCoworkProject,
   onPickWorkingFolder,
   onStartNewChat,
-  onStartNewTask,
   onSelectPage,
-  onOpenSearch,
   onOpenSettings,
   onSettingsSectionChange,
   onLanguageChange,
@@ -192,11 +158,8 @@ export function AppSidebar({
   const t = (en: string, de: string) => (language === 'de' ? de : en);
   const isSettingsView = activePage === 'settings';
   const compact = !sidebarOpen;
-  const safeChatRecentItems = chatRecentItems ?? [];
-  const safeArchivedChatRecentItems = archivedChatRecentItems ?? [];
-  const safeUnassignedCoworkRecentItems = unassignedCoworkRecentItems ?? [];
-  const safeArchivedCoworkRecentItems = archivedCoworkRecentItems ?? [];
-  const safeScheduledItems = scheduledItems ?? [];
+  const safeChatRecentItems = useMemo(() => chatRecentItems ?? [], [chatRecentItems]);
+  const safeArchivedChatRecentItems = useMemo(() => archivedChatRecentItems ?? [], [archivedChatRecentItems]);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [projectCreateMenuOpen, setProjectCreateMenuOpen] = useState(false);
@@ -222,17 +185,6 @@ export function AppSidebar({
   const [expandedProjectId, setExpandedProjectId] = useState(activeCoworkProjectId);
   const languageMenuCloseTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
-  const userInitials = useMemo(() => {
-    const trimmed = userEmail.split('(')[0]?.trim() || userEmail.trim();
-    const parts = trimmed.split(/[^a-zA-Z0-9]+/).filter(Boolean);
-    if (parts.length === 0) {
-      return 'U';
-    }
-    return parts
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() || '')
-      .join('');
-  }, [userEmail]);
   const languageOptions: { value: AppLanguage; label: string }[] = [
     { value: 'en', label: 'English (United States)' },
     { value: 'de', label: 'Deutsch (Deutschland)' },
@@ -252,12 +204,10 @@ export function AppSidebar({
     projects: t('Projects', 'Projekte'),
     chats: t('Chats', 'Chats'),
     noProjects: t('No projects yet', 'Noch keine Projekte'),
-    unassigned: t('Unassigned', 'Nicht zugewiesen'),
-    archivedTasks: t('Archived tasks', 'Archivierte Aufgaben'),
     archivedChats: t('Archived chats', 'Archivierte Chats'),
-    noTasks: t('No tasks yet', 'Noch keine Aufgaben'),
-    loadingTasks: t('Loading tasks...', 'Aufgaben werden geladen...'),
-    connectTasks: t('Connect Hermes to load tasks', 'Hermes verbinden, um Aufgaben zu laden'),
+    noProjectChats: t('No chats yet', 'Noch keine Chats'),
+    loadingProjectChats: t('Loading chats...', 'Chats werden geladen...'),
+    connectProjectChats: t('Connect Hermes to load chats', 'Hermes verbinden, um Chats zu laden'),
     noChats: t('No chats yet', 'Noch keine Chats'),
     loadingChats: t('Loading chats...', 'Chats werden geladen...'),
     connectChats: t('Connect Hermes to load chats', 'Hermes verbinden, um Chats zu laden'),
@@ -265,7 +215,7 @@ export function AppSidebar({
     useExistingFolder: t('Use existing folder', 'Vorhandenen Ordner verwenden'),
   };
 
-  const safeCoworkProjects = coworkProjects ?? [];
+  const safeCoworkProjects = useMemo(() => coworkProjects ?? [], [coworkProjects]);
   const sortedCoworkProjects = useMemo(() => {
     const latestByProject = new Map<string, number>();
     for (const project of safeCoworkProjects) {
@@ -404,39 +354,39 @@ export function AppSidebar({
     onCreateCoworkProject('New Project', folder);
   };
 
-  const getFixedDropdownPosition = (trigger: HTMLElement, menuWidth: number, gap = 4) => {
+  const getFixedDropdownPosition = useCallback((trigger: HTMLElement, menuWidth: number, gap = 4) => {
     const rect = trigger.getBoundingClientRect();
     const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
     const top = Math.max(8, Math.min(rect.bottom + gap, window.innerHeight - 8));
     return { top, left };
-  };
+  }, []);
 
-  const updateProjectOptionsMenuPosition = () => {
+  const updateProjectOptionsMenuPosition = useCallback(() => {
     if (!projectOptionsTriggerRef.current) {
       setProjectOptionsMenuPosition(null);
       return;
     }
     setProjectOptionsMenuPosition(getFixedDropdownPosition(projectOptionsTriggerRef.current, 176));
-  };
+  }, [getFixedDropdownPosition]);
 
-  const updateProjectCreateMenuPosition = () => {
+  const updateProjectCreateMenuPosition = useCallback(() => {
     if (!projectCreateTriggerRef.current) {
       setProjectCreateMenuPosition(null);
       return;
     }
     setProjectCreateMenuPosition(getFixedDropdownPosition(projectCreateTriggerRef.current, 224));
-  };
+  }, [getFixedDropdownPosition]);
 
-  const updateProjectRowMenuPosition = (projectId: string) => {
+  const updateProjectRowMenuPosition = useCallback((projectId: string) => {
     const trigger = projectRowTriggerRefs.current[projectId];
     if (!trigger) {
       setProjectRowMenuPosition(null);
       return;
     }
     setProjectRowMenuPosition(getFixedDropdownPosition(trigger, 160));
-  };
+  }, [getFixedDropdownPosition]);
 
-  const updateProfileMenuPosition = () => {
+  const updateProfileMenuPosition = useCallback(() => {
     if (!profileTriggerRef.current) {
       setProfileMenuPosition(null);
       return;
@@ -450,7 +400,7 @@ export function AppSidebar({
       ? Math.max(8, Math.min(rect.bottom - 288, window.innerHeight - 320))
       : Math.max(8, Math.min(rect.top - 320 - 8, window.innerHeight - 320));
     setProfileMenuPosition({ top, left });
-  };
+  }, [compact]);
 
   useEffect(() => {
     if (!projectCreateMenuOpen && !projectOptionsMenuOpen) {
@@ -485,7 +435,7 @@ export function AppSidebar({
       window.removeEventListener('resize', syncPosition);
       window.removeEventListener('scroll', syncPosition, true);
     };
-  }, [projectOptionsMenuOpen]);
+  }, [projectOptionsMenuOpen, updateProjectOptionsMenuPosition]);
 
   useEffect(() => {
     if (!projectCreateMenuOpen) {
@@ -499,7 +449,7 @@ export function AppSidebar({
       window.removeEventListener('resize', syncPosition);
       window.removeEventListener('scroll', syncPosition, true);
     };
-  }, [projectCreateMenuOpen]);
+  }, [projectCreateMenuOpen, updateProjectCreateMenuPosition]);
 
   useEffect(() => {
     if (!projectRowMenuId) {
@@ -513,7 +463,7 @@ export function AppSidebar({
       window.removeEventListener('resize', syncPosition);
       window.removeEventListener('scroll', syncPosition, true);
     };
-  }, [projectRowMenuId]);
+  }, [projectRowMenuId, updateProjectRowMenuPosition]);
 
   useEffect(() => {
     if (!profileMenuOpen) {
@@ -527,7 +477,7 @@ export function AppSidebar({
       window.removeEventListener('resize', syncPosition);
       window.removeEventListener('scroll', syncPosition, true);
     };
-  }, [profileMenuOpen, compact]);
+  }, [profileMenuOpen, updateProfileMenuPosition]);
 
   useEffect(() => {
     if (!projectOptionsMenuOpen) {
@@ -621,7 +571,7 @@ export function AppSidebar({
     >
       <SidebarContent className="relative flex min-h-0 flex-col overflow-hidden p-0">
         {isSettingsView ? (
-          /* â”€â”€ Settings navigation â”€â”€ */
+          /* Settings navigation */
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
             <SidebarGroup>
               {!compact && <SidebarGroupLabel>{t('Settings', 'Einstellungen')}</SidebarGroupLabel>}
@@ -647,7 +597,7 @@ export function AppSidebar({
             </SidebarGroup>
           </div>
         ) : (
-          /* Regular chat/cowork navigation */
+          /* Regular project/chat navigation */
           <>
             <SidebarGroup>
               <SidebarGroupContent>
@@ -658,7 +608,7 @@ export function AppSidebar({
                       className={`gap-2 font-sans text-[13px] ${compact ? 'justify-center px-0' : ''}`}
                       title="New Chat"
                       aria-label="Start a new chat"
-                      onClick={onStartNewChat}
+                      onClick={() => onStartNewChat()}
                     >
                       <Plus data-icon="inline-start" />
                       {!compact && <span className="min-w-0 flex-1 truncate">{ui.newChat}</span>}
@@ -783,7 +733,7 @@ export function AppSidebar({
                         </SidebarMenuItem>
                       ) : (
                         sortedCoworkProjects.map((project) => {
-                          const projectChats = (projectRecentItemsByProjectId[project.id] ?? []).slice(0, 6);
+                          const projectChats = (projectRecentItemsByProjectId[project.id] ?? []).slice(0, 15);
                           const hasProjectChats = projectChats.length > 0;
                           const isExpanded = expandedProjectId === project.id;
                           return (
@@ -792,13 +742,13 @@ export function AppSidebar({
                               <div className="flex items-center gap-1 rounded-lg px-1 py-0.5 transition-colors hover:bg-muted">
                                 <SidebarMenuButton
                                   type="button"
-                                  active={false}
+                                  active={project.id === activeCoworkProjectId}
                                   aria-current={project.id === activeCoworkProjectId ? 'page' : undefined}
                                   data-testid={`project-select-${project.id}`}
                                   className="min-w-0 w-full gap-2 rounded-lg px-2 py-1.5 font-sans text-[12px] text-foreground/95 transition-colors hover:bg-transparent data-[active=true]:bg-transparent"
                                   onClick={() => {
                                     onSelectCoworkProject(project.id);
-                                    onSelectPage('cowork');
+                                    onSelectPage('chat');
                                     setExpandedProjectId((current) => (current === project.id ? '' : project.id));
                                   }}
                                 >
@@ -834,8 +784,8 @@ export function AppSidebar({
                                     className="size-6 hover:bg-transparent"
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      onSelectCoworkProject(project.id);
-                                      onStartNewTask();
+                                      setExpandedProjectId(project.id);
+                                      onStartNewChat(project.id);
                                     }}
                                   >
                                     <SquarePen className="size-3.5" />
@@ -885,16 +835,16 @@ export function AppSidebar({
                                   {hasProjectChats ? (
                                     <div className="grid gap-0.5">
                                       {projectChats.map((item) => {
-                                        const isActiveCoworkItem =
-                                          activePage === 'cowork'
+                                        const isActiveProjectChat =
+                                          activePage === 'chat'
                                           && item.sessionKey.trim().length > 0
-                                          && item.sessionKey === activeCoworkSessionKey;
+                                          && item.sessionKey === activeSessionKey;
                                         return (
-                                        <div key={item.id} className={`relative flex items-center gap-1 rounded-xl px-1 py-1 ${isActiveCoworkItem ? 'bg-muted ring-1 ring-border' : 'hover:bg-muted'}`}>
+                                        <div key={item.id} className={`relative flex items-center gap-1 rounded-xl px-1 py-1 ${isActiveProjectChat ? 'bg-muted ring-1 ring-border' : 'hover:bg-muted'}`}>
                                           <button
                                             type="button"
-                                            aria-label={item.pinned ? 'Unpin task' : 'Pin task'}
-                                            title={item.pinned ? 'Unpin task' : 'Pin task'}
+                                            aria-label={item.pinned ? 'Unpin chat' : 'Pin chat'}
+                                            title={item.pinned ? 'Unpin chat' : 'Pin chat'}
                                             className="shrink-0 rounded p-1 text-muted-foreground/70 hover:text-foreground"
                                             onClick={(event) => {
                                               event.stopPropagation();
@@ -915,17 +865,17 @@ export function AppSidebar({
                                           </button>
                                           <button
                                             type="button"
-                                            aria-label="Task menu"
-                                            title="Task menu"
+                                            aria-label="Chat menu"
+                                            title="Chat menu"
                                             className="shrink-0 rounded p-1 text-muted-foreground/70 hover:text-foreground"
                                             onClick={(event) => {
                                               event.stopPropagation();
-                                              setRecentRowMenuId((current) => (current === `cowork:${item.id}` ? null : `cowork:${item.id}`));
+                                              setRecentRowMenuId((current) => (current === `project-chat:${item.id}` ? null : `project-chat:${item.id}`));
                                             }}
                                           >
                                             <MoreHorizontal className="size-3" />
                                           </button>
-                                          {recentRowMenuId === `cowork:${item.id}` ? (
+                                          {recentRowMenuId === `project-chat:${item.id}` ? (
                                             <div data-recent-row-menu="true" className="absolute right-1 top-8 z-20 w-32 rounded-lg border border-border bg-popover p-1 shadow-lg">
                                               <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onRenameRecentItem(item); }}>
                                                 <Pencil className="size-3" />
@@ -946,7 +896,7 @@ export function AppSidebar({
                                     </div>
                                   ) : (
                                     <div className="rounded-xl py-1.5 pl-8 pr-2 text-left font-sans text-[12px] text-muted-foreground">
-                                      {recentsLoading ? ui.loadingTasks : hermesConnected ? ui.noTasks : ui.connectTasks}
+                                      {recentsLoading ? ui.loadingProjectChats : hermesConnected ? ui.noProjectChats : ui.connectProjectChats}
                                     </div>
                                   )}
                                 </div>
@@ -955,108 +905,6 @@ export function AppSidebar({
                           </SidebarMenuItem>
                         )})
                       )}
-                      {safeUnassignedCoworkRecentItems.length > 0 ? (
-                        <SidebarMenuItem>
-                          <div className="mt-1 rounded-xl px-1 py-1">
-                            <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{ui.unassigned}</div>
-                            <div className="grid gap-0.5">
-                              {safeUnassignedCoworkRecentItems.slice(0, 8).map((item) => {
-                                const isActiveCoworkItem =
-                                  activePage === 'cowork'
-                                  && item.sessionKey.trim().length > 0
-                                  && item.sessionKey === activeCoworkSessionKey;
-                                return (
-                                  <div key={item.id} className={`relative flex items-center gap-1 rounded-xl px-1 py-1 ${isActiveCoworkItem ? 'bg-muted ring-1 ring-border' : 'hover:bg-muted'}`}>
-                                    <button
-                                      type="button"
-                                      className="shrink-0 rounded p-1 text-muted-foreground/70 hover:text-foreground"
-                                      title={item.pinned ? 'Unpin task' : 'Pin task'}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        onTogglePinRecentItem(item);
-                                      }}
-                                    >
-                                      <Pin className={`size-3 ${item.pinned ? 'fill-current' : ''}`} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="min-w-0 flex flex-1 items-center justify-between overflow-hidden rounded-lg px-1 py-1 text-left font-sans text-[12px]"
-                                      onClick={() => onSelectRecentItem(item)}
-                                    >
-                                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{item.label}</span>
-                                      <span className="ml-2 shrink-0 text-[11px] text-muted-foreground">
-                                        {typeof item.updatedAt === 'number' ? formatRelativeAge(item.updatedAt) : ''}
-                                      </span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="shrink-0 rounded p-1 text-muted-foreground/70 hover:text-foreground"
-                                      title="Task menu"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        setRecentRowMenuId((current) => (current === `unassigned:${item.id}` ? null : `unassigned:${item.id}`));
-                                      }}
-                                    >
-                                      <MoreHorizontal className="size-3" />
-                                    </button>
-                                    {recentRowMenuId === `unassigned:${item.id}` ? (
-                                      <div data-recent-row-menu="true" className="absolute right-1 top-8 z-20 w-40 rounded-lg border border-border bg-popover p-1 shadow-lg">
-                                        <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onAssignUnassignedCoworkRecentItem(item); }}>
-                                          <FolderPlus className="size-3" />
-                                          Assign
-                                        </button>
-                                        <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onRenameRecentItem(item); }}>
-                                          <Pencil className="size-3" />
-                                          Rename
-                                        </button>
-                                        <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onDeleteRecentItem(item); }}>
-                                          <Trash2 className="size-3" />
-                                          Delete
-                                        </button>
-                                        <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted" onClick={(event) => { event.stopPropagation(); setRecentRowMenuId(null); onArchiveRecentItem(item); }}>
-                                          <Archive className="size-3" />
-                                          Archive
-                                        </button>
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </SidebarMenuItem>
-                      ) : null}
-                      {safeArchivedCoworkRecentItems.length > 0 ? (
-                        <SidebarMenuItem>
-                          <div className="mt-1 rounded-xl px-1 py-1">
-                            <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{ui.archivedTasks} ({safeArchivedCoworkRecentItems.length})</div>
-                            <div className="grid gap-0.5">
-                              {safeArchivedCoworkRecentItems.slice(0, 6).map((item) => (
-                                <div key={item.id} className="relative flex items-center gap-1 rounded-xl px-1 py-1 text-muted-foreground hover:bg-muted">
-                                  <button
-                                    type="button"
-                                    className="shrink-0 rounded p-1 text-muted-foreground/70 hover:text-foreground"
-                                    title="Restore task"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      onUnarchiveRecentItem(item);
-                                    }}
-                                  >
-                                    <Archive className="size-3" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="min-w-0 flex flex-1 items-center justify-between overflow-hidden rounded-lg px-1 py-1 text-left font-sans text-[12px]"
-                                    onClick={() => onSelectRecentItem(item)}
-                                  >
-                                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{item.label}</span>
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </SidebarMenuItem>
-                      ) : null}
                     </SidebarMenu>
                 </SidebarGroupContent>
                 </SidebarGroup>
@@ -1072,17 +920,8 @@ export function AppSidebar({
                       size="icon"
                       variant="ghost"
                       className="size-7 border-0 bg-transparent shadow-none hover:bg-muted"
-                      title="Filter chats"
-                    >
-                      <SlidersHorizontal className="size-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="size-7 border-0 bg-transparent shadow-none hover:bg-muted"
                       title="New chat"
-                      onClick={onStartNewChat}
+                      onClick={() => onStartNewChat()}
                     >
                       <SquarePen className="size-3.5" />
                     </Button>
@@ -1229,7 +1068,7 @@ export function AppSidebar({
               <Textarea
                 value={renameProjectInstructionsDraft}
                 onChange={(event) => setRenameProjectInstructionsDraft(event.target.value)}
-                placeholder="Instructions for cowork runs (optional)"
+                placeholder="Project instructions (optional)"
                 rows={4}
                 className="font-sans text-sm"
               />

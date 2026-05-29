@@ -203,7 +203,7 @@ function resolveSelectedModelValue(choices: ChatModelOption[], currentModel: str
   return bySuffix?.value ?? normalizedCurrent;
 }
 
-type AppPage = 'chat' | 'cowork' | 'project' | 'kanban' | 'settings';
+type AppPage = 'chat' | 'settings';
 type SettingsSection = 'Profile' | 'Appearance' | 'System Prompt' | 'Connection' | 'Connectors' | 'Account' | 'Privacy' | 'Developer';
 
 const COWORK_SEND_SPINNER_MS = 300;
@@ -277,6 +277,7 @@ type CoworkTaskQueueEntry = {
 type SidebarThreadMeta = {
   pinned?: boolean;
   archived?: boolean;
+  projectId?: string;
 };
 
 function extractProjectFileMentions(inputText: string): string[] {
@@ -1017,7 +1018,6 @@ export default function App() {
   const [recentDeleteTarget, setRecentDeleteTarget] = useState<RecentWorkspaceEntry | null>(null);
   const [recentActionBusy, setRecentActionBusy] = useState(false);
   const [coworkResetKey, setCoworkResetKey] = useState(0);
-  const [coworkRightPanelOpen, setCoworkRightPanelOpen] = useState(true);
   const [coworkSending, setCoworkSending] = useState(false);
   const [coworkAwaitingStream, setCoworkAwaitingStream] = useState(false);
   const [coworkStreamingText, setCoworkStreamingText] = useState('');
@@ -1080,49 +1080,45 @@ export default function App() {
     }
   }, [sidebarThreadMetaByKey]);
 
+  useEffect(() => {
+    setChatThreads((current) => {
+      let changed = false;
+      const next = current.map((thread) => {
+        const meta = sidebarThreadMetaByKey[`chat::${thread.sessionKey}`];
+        if (!meta) {
+          return thread;
+        }
+        const projectId = meta.projectId?.trim() || thread.projectId;
+        const pinned = meta.pinned ?? thread.pinned;
+        const archived = meta.archived ?? thread.archived;
+        if (projectId === thread.projectId && pinned === thread.pinned && archived === thread.archived) {
+          return thread;
+        }
+        changed = true;
+        return {
+          ...thread,
+          ...(projectId ? { projectId } : {}),
+          pinned,
+          archived,
+        };
+      });
+      return changed ? next : current;
+    });
+  }, [sidebarThreadMetaByKey]);
+
   const recentCoworkItemsRaw = useMemo(() => toRecentSidebarItems(coworkThreads, 'cowork'), [coworkThreads]);
   const recentChatItemsRaw = useMemo(() => toRecentSidebarItems(chatThreads, 'chat'), [chatThreads]);
   const coworkSessionKeys = useMemo(() => new Set(recentCoworkItemsRaw.map((item) => item.sessionKey)), [recentCoworkItemsRaw]);
   const threadMetaKey = useCallback((item: RecentWorkspaceEntry) => `${item.kind}::${item.sessionKey}`, []);
-  const recentCoworkItems = useMemo(() => {
-    return recentCoworkItemsRaw
-      .map((item) => {
-        const meta = sidebarThreadMetaByKey[threadMetaKey(item)];
-        return {
-          ...item,
-          pinned: meta?.pinned === true,
-          archived: meta?.archived === true,
-        };
-      })
-      .filter((item) => !item.archived)
-      .sort((a, b) => {
-        if (Boolean(a.pinned) !== Boolean(b.pinned)) {
-          return a.pinned ? -1 : 1;
-        }
-        return (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
-      });
-  }, [recentCoworkItemsRaw, sidebarThreadMetaByKey, threadMetaKey]);
-  const archivedCoworkRecentItems = useMemo(() => {
-    return recentCoworkItemsRaw
-      .map((item) => {
-        const meta = sidebarThreadMetaByKey[threadMetaKey(item)];
-        return {
-          ...item,
-          pinned: meta?.pinned === true,
-          archived: meta?.archived === true,
-        };
-      })
-      .filter((item) => item.archived)
-      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-  }, [recentCoworkItemsRaw, sidebarThreadMetaByKey, threadMetaKey]);
-  const recentChatItems = useMemo(() => {
+  const allVisibleChatItems = useMemo(() => {
     return recentChatItemsRaw
       .map((item) => {
         const meta = sidebarThreadMetaByKey[threadMetaKey(item)];
         return {
           ...item,
-          pinned: meta?.pinned === true,
-          archived: meta?.archived === true,
+          pinned: item.pinned === true || meta?.pinned === true,
+          archived: item.archived === true || meta?.archived === true,
+          projectId: item.projectId?.trim() || meta?.projectId?.trim() || undefined,
         };
       })
       .filter((item) => !item.archived)
@@ -1132,17 +1128,21 @@ export default function App() {
           return a.pinned ? -1 : 1;
         }
         return (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
-      })
-      .slice(0, 15);
+      });
   }, [recentChatItemsRaw, sidebarThreadMetaByKey, threadMetaKey, coworkSessionKeys]);
+  const recentChatItems = useMemo(() => {
+    return allVisibleChatItems
+      .slice(0, 15);
+  }, [allVisibleChatItems]);
   const archivedChatRecentItems = useMemo(() => {
     return recentChatItemsRaw
       .map((item) => {
         const meta = sidebarThreadMetaByKey[threadMetaKey(item)];
         return {
           ...item,
-          pinned: meta?.pinned === true,
-          archived: meta?.archived === true,
+          pinned: item.pinned === true || meta?.pinned === true,
+          archived: item.archived === true || meta?.archived === true,
+          projectId: item.projectId?.trim() || meta?.projectId?.trim() || undefined,
         };
       })
       .filter((item) => item.archived)
@@ -1150,18 +1150,17 @@ export default function App() {
       .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   }, [recentChatItemsRaw, sidebarThreadMetaByKey, threadMetaKey, coworkSessionKeys]);
   const projectRecentItemsByProjectId = useMemo(() => {
-    const bySession = new Map(recentCoworkItems.map((item) => [item.sessionKey, item]));
-    const grouped: Record<string, typeof recentCoworkItems> = {};
-    for (const task of coworkTasks) {
-      const recent = bySession.get(task.sessionKey);
-      if (!recent) {
+    const grouped: Record<string, typeof recentChatItems> = {};
+    for (const recent of allVisibleChatItems) {
+      const projectId = recent.projectId?.trim() ?? '';
+      if (!projectId) {
         continue;
       }
-      if (!grouped[task.projectId]) {
-        grouped[task.projectId] = [];
+      if (!grouped[projectId]) {
+        grouped[projectId] = [];
       }
-      if (!grouped[task.projectId].some((entry) => entry.sessionKey === recent.sessionKey)) {
-        grouped[task.projectId].push(recent);
+      if (!grouped[projectId].some((entry) => entry.sessionKey === recent.sessionKey)) {
+        grouped[projectId].push(recent);
       }
     }
     for (const projectId of Object.keys(grouped)) {
@@ -1170,16 +1169,7 @@ export default function App() {
         .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
     }
     return grouped;
-  }, [coworkTasks, recentCoworkItems]);
-  const unassignedCoworkRecentItems = useMemo(() => {
-    const mappedSessionKeys = new Set<string>();
-    for (const items of Object.values(projectRecentItemsByProjectId)) {
-      for (const item of items) {
-        mappedSessionKeys.add(item.sessionKey);
-      }
-    }
-    return recentCoworkItems.filter((item) => !mappedSessionKeys.has(item.sessionKey));
-  }, [projectRecentItemsByProjectId, recentCoworkItems]);
+  }, [allVisibleChatItems]);
   const activeCoworkProject = useMemo(
     () => coworkProjects.find((project) => project.id === activeCoworkProjectId) ?? null,
     [coworkProjects, activeCoworkProjectId],
@@ -1543,6 +1533,7 @@ export default function App() {
       const updatedAt = touchedAt ?? existing?.updatedAt ?? Date.now();
 
       const nextThread: ChatThread = {
+        ...(existing ?? {}),
         id: getThreadIdForSession(normalizedSessionKey),
         sessionKey: normalizedSessionKey,
         title,
@@ -1624,6 +1615,11 @@ export default function App() {
     }
 
     setChatThreads((current) => current.filter((thread) => thread.sessionKey !== normalizedSessionKey));
+    setSidebarThreadMetaByKey((current) => {
+      const next = { ...current };
+      delete next[`chat::${normalizedSessionKey}`];
+      return next;
+    });
     threadMessageCache.current.delete(normalizedSessionKey);
     if (activeSessionKeyRef.current === normalizedSessionKey) {
       commitActiveSessionKey('');
@@ -1991,13 +1987,23 @@ export default function App() {
         );
         if (existing && isCustomChatThreadTitle(existing.title, existing.sessionKey)) {
           return {
+            ...existing,
             ...thread,
             title: existing.title,
             updatedAt: Math.max(thread.updatedAt, existing.updatedAt),
           } satisfies ChatThread;
         }
 
-        return thread;
+        return existing
+          ? {
+              ...existing,
+              ...thread,
+              projectId: existing.projectId,
+              pinned: existing.pinned,
+              archived: existing.archived,
+              updatedAt: Math.max(thread.updatedAt, existing.updatedAt),
+            } satisfies ChatThread
+          : thread;
       });
 
       return mergeChatThreads(validCurrent, incomingPreservingCustomTitles);
@@ -2523,6 +2529,8 @@ export default function App() {
       }
 
       const merged: ChatThread = {
+        ...(source ?? {}),
+        ...(target ?? {}),
         id: getThreadIdForSession(to),
         sessionKey: to,
         title:
@@ -2859,22 +2867,10 @@ export default function App() {
       const mod = event.ctrlKey || event.metaKey;
       if (!mod) return;
 
-      // Ctrl+N — new chat / new task
+      // Ctrl+N - new chat
       if (event.key === 'n') {
         event.preventDefault();
-        if (activePage === 'cowork') {
-          setCoworkMessages([]);
-          setCoworkAwaitingStream(false);
-          setCoworkStreamingText('');
-          setCoworkRunPhase('idle');
-          setCoworkRunStatus('Ready for a new task.');
-          setLocalPlanActions([]);
-          handleCoworkPromptChange('');
-          setStatus('Ready for a new task.');
-          setCoworkResetKey((c) => c + 1);
-        } else {
-          void handleStartNewChat();
-        }
+        void handleStartNewChat();
         return;
       }
 
@@ -2906,7 +2902,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activePage, searchOpen]);
+  }, [searchOpen]);
 
 
   useEffect(() => {
@@ -4176,11 +4172,37 @@ export default function App() {
             typeof payload.errorMessage === 'string' && payload.errorMessage.trim()
               ? payload.errorMessage
               : 'Chat stream failed.';
+          console.error('[Relay][Chat] stream error', {
+            sessionKey: eventSessionKey || activeSessionKeyRef.current,
+            runId,
+            errorMessage,
+          });
+          const visibleErrorMessage: ChatMessage = {
+            id: `error-${runId}`,
+            role: 'assistant',
+            text: errorMessage,
+          };
+          setChatMessages((current) => {
+            if (current.some((entry) => entry.id === visibleErrorMessage.id)) {
+              return current;
+            }
+            const next = [...current, visibleErrorMessage];
+            const cacheKey = eventSessionKey || activeSessionKeyRef.current;
+            if (cacheKey) {
+              threadMessageCache.current.set(cacheKey, next);
+            }
+            return next;
+          });
           setStatus(errorMessage);
           return;
         }
 
         if (state === 'delta' && text) {
+          console.info('[Relay][Chat] stream delta', {
+            sessionKey: eventSessionKey || activeSessionKeyRef.current,
+            runId,
+            chars: text.length,
+          });
           setAwaitingChatStream(false);
           const streamId = `stream-${runId}`;
           setChatMessages((current) => {
@@ -4220,6 +4242,12 @@ export default function App() {
             accumulateTodayUsage(usage);
             setSessionUsage((prev) => addUsage(prev, usage));
           }
+          console.info('[Relay][Chat] stream final', {
+            sessionKey: eventSessionKey || activeSessionKeyRef.current,
+            runId,
+            state,
+            chars: visibleText.length,
+          });
           setChatMessages((current) => {
             const withoutStream = current.filter((entry) => entry.id !== streamId);
             if (withoutStream.some((entry) => entry.id === finalId)) {
@@ -5387,52 +5415,8 @@ export default function App() {
       workingFolderRef.current = normalizedWorkspaceFolder;
     }
 
-    setActivePage('cowork');
-
-    const latestProjectRecent = projectRecentItemsByProjectId[normalizedProjectId]?.[0];
-    const latestSessionKey = normalizeSessionKey(latestProjectRecent?.sessionKey ?? '');
-    if (latestSessionKey) {
-      const currentKey = coworkSessionKeyRef.current;
-      if (currentKey) {
-        setCoworkMessages((current) => {
-          if (current.length > 0) {
-            coworkMessageCache.current.set(currentKey, current);
-          }
-          return current;
-        });
-      }
-
-      commitCoworkSessionKey(latestSessionKey);
-      handleCoworkPromptChange('');
-      setCoworkAwaitingStream(false);
-      setCoworkRunPhase('idle');
-      setCoworkRunStatus(`Project selected: ${selected.name}`);
-
-      const cached = coworkMessageCache.current.get(latestSessionKey);
-      if (cached && cached.length > 0) {
-        setCoworkMessages(cached);
-        const titleFromCache = deriveThreadTitleFromMessages(cached);
-        setStatus(titleFromCache ? `Project selected: ${selected.name} · Opened task: ${titleFromCache}` : `Project selected: ${selected.name} · Opened task.`);
-        const client = backendClientRef.current;
-        if (client) {
-          void loadCoworkModels(client, latestSessionKey);
-        }
-        return;
-      }
-
-      setCoworkMessages([]);
-      setStatus(`Project selected: ${selected.name} · Loading recent task...`);
-      void loadCoworkSession(latestSessionKey, 'Opened task');
-      return;
-    }
-
-    commitCoworkSessionKey('');
-    setCoworkMessages([]);
-    setCoworkAwaitingStream(false);
-    setCoworkStreamingText('');
-    setCoworkRunPhase('idle');
-    setCoworkRunStatus('Ready for a new task.');
-    setStatus(`Project selected: ${selected.name}. No previous tasks yet.`);
+    setActivePage('chat');
+    setStatus(`Project selected: ${selected.name}.`);
   };
 
   const handleCreateCoworkProject = (name: string, workspaceFolder: string, description?: string, instructions?: string) => {
@@ -6046,6 +6030,24 @@ export default function App() {
     setOutcomePipelineRuns((current) => current.filter((item) => item.projectId !== normalizedProjectId));
     setOperatorDefinitions((current) => current.filter((item) => item.projectId !== normalizedProjectId));
     setOperatorRuns((current) => current.filter((item) => item.projectId !== normalizedProjectId));
+    setChatThreads((current) =>
+      current.map((thread) =>
+        thread.projectId === normalizedProjectId
+          ? { ...thread, projectId: undefined }
+          : thread,
+      ),
+    );
+    setSidebarThreadMetaByKey((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const [key, meta] of Object.entries(next)) {
+        if (meta.projectId === normalizedProjectId) {
+          next[key] = { ...meta, projectId: undefined };
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
 
     if (activeCoworkProjectId === normalizedProjectId) {
       setActiveCoworkProjectId('');
@@ -6287,10 +6289,10 @@ export default function App() {
         }
         try {
           const escaped = arg.replace(/"/g, '\\"');
-          const rgCommand = `rg -n --hidden --glob \"!node_modules/**\" --glob \"!.git/**\" -S \"${escaped}\" .`;
+          const rgCommand = `rg -n --hidden --glob "!node_modules/**" --glob "!.git/**" -S "${escaped}" .`;
           const result = await runLocalShell(rgCommand, 60_000);
           const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
-          appendLocalAssistantNote(`Symbol search for \"${arg}\"\n\n\`\`\`\n${(output || 'No matches found.').slice(0, 8000)}\n\`\`\``);
+          appendLocalAssistantNote(`Symbol search for "${arg}"\n\n\`\`\`\n${(output || 'No matches found.').slice(0, 8000)}\n\`\`\``);
           setStatus(`Symbol search completed for "${arg}".`);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -6326,9 +6328,9 @@ export default function App() {
     handleChatPromptChange('');
 
     try {
-      const shouldCreateFreshSession = chatMessages.length === 0;
+      let sessionKey = normalizeSessionKey(activeSessionKeyRef.current);
+      const shouldCreateFreshSession = !sessionKey;
 
-      let sessionKey = '';
       if (shouldCreateFreshSession) {
         await ensureConnectedClient(client);
         sessionKey = normalizeSessionKey(await client.createChatSession());
@@ -6339,6 +6341,20 @@ export default function App() {
         // which can race and overwrite the optimistic first user message.
         skipNextChatEffectLoadRef.current = true;
         commitActiveSessionKey(sessionKey);
+        const normalizedProjectId = activeCoworkProjectId.trim();
+        if (normalizedProjectId) {
+          setChatThreads((current) =>
+            mergeChatThreads(current, [
+              {
+                id: getThreadIdForSession(sessionKey),
+                sessionKey,
+                title: DEFAULT_CHAT_THREAD_TITLE,
+                updatedAt: Date.now(),
+                projectId: normalizedProjectId,
+              },
+            ]),
+          );
+        }
       } else {
         sessionKey = await ensureActiveChatSession(client, { createIfMissing: true });
       }
@@ -6367,15 +6383,22 @@ export default function App() {
         ? `${chatMemoryContext}\n\n${rawOutbound}`
         : rawOutbound;
       setAwaitingChatStream(true);
+      console.info('[Relay][Chat] send start', {
+        sessionKey,
+        chars: outboundMessage.length,
+        transport: config.transport ?? 'hermes_acp_stdio',
+      });
       for (let attempt = 1; attempt <= 3; attempt += 1) {
         try {
           const sent = await client.sendChat(sessionKey, outboundMessage);
           sessionKey = sent.sessionKey;
+          console.info('[Relay][Chat] send accepted', { sessionKey, attempt });
           break;
         } catch (error) {
           const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
           const isMissing = message.includes('no session found') || message.includes('no sendable session found');
           if (!isMissing || attempt === 3) {
+            console.error('[Relay][Chat] send failed', { sessionKey, attempt, message });
             throw error;
           }
           setStatus(`Send retry ${attempt}/3: session=${sessionKey} failed (${message}). Resolving session...`);
@@ -6487,11 +6510,22 @@ export default function App() {
     }
   };
 
-  const handleStartNewChat = async () => {
+  const handleStartNewChat = async (projectIdOverride?: string) => {
     const client = backendClientRef.current;
     if (!client) {
       setStatus('Gateway client not initialized.');
       return;
+    }
+    const normalizedProjectId = projectIdOverride?.trim() ?? '';
+    const projectForNewChat = normalizedProjectId
+      ? coworkProjects.find((project) => project.id === normalizedProjectId) ?? null
+      : null;
+    if (projectForNewChat) {
+      setActiveCoworkProjectId(projectForNewChat.id);
+      setWorkingFolder(projectForNewChat.workspaceFolder);
+      workingFolderRef.current = projectForNewChat.workspaceFolder.trim();
+    } else {
+      setActiveCoworkProjectId('');
     }
 
     // Save current chat messages before switching
@@ -6514,8 +6548,28 @@ export default function App() {
         throw new Error('No session key returned from Gateway.');
       }
       commitActiveSessionKey(sessionKey);
+      setChatThreads((current) =>
+        mergeChatThreads(current, [
+          {
+            id: getThreadIdForSession(sessionKey),
+            sessionKey,
+            title: DEFAULT_CHAT_THREAD_TITLE,
+            updatedAt: Date.now(),
+            ...(normalizedProjectId ? { projectId: normalizedProjectId } : {}),
+          },
+        ]),
+      );
+      if (normalizedProjectId) {
+        setSidebarThreadMetaByKey((current) => ({
+          ...current,
+          [`chat::${sessionKey}`]: {
+            ...(current[`chat::${sessionKey}`] ?? {}),
+            projectId: normalizedProjectId,
+          },
+        }));
+      }
       setActivePage('chat');
-      setStatus(`Started a new chat: ${sessionKey}.`);
+      setStatus(projectForNewChat ? `Started a new chat in ${projectForNewChat.name}.` : `Started a new chat: ${sessionKey}.`);
       void loadModelsForSession(client, sessionKey);
 
     } catch (error) {
@@ -6564,43 +6618,6 @@ export default function App() {
     void loadChatSession(normalized, 'Opened chat');
   };
 
-  const handleOpenRecentCowork = (sessionKey: string) => {
-    const normalized = sessionKey.trim();
-    if (!normalized) {
-      return;
-    }
-
-    // Save current cowork messages before switching.
-    const currentKey = coworkSessionKeyRef.current;
-    if (currentKey) {
-      setCoworkMessages((current) => {
-        if (current.length > 0) {
-          coworkMessageCache.current.set(currentKey, current);
-        }
-        return current;
-      });
-    }
-
-    setActivePage('cowork');
-    commitCoworkSessionKey(normalized);
-    handleCoworkPromptChange('');
-    setCoworkAwaitingStream(false);
-    setCoworkRunPhase('idle');
-    setCoworkRunStatus('Opened previous cowork session.');
-
-    const cached = coworkMessageCache.current.get(normalized);
-    if (cached && cached.length > 0) {
-      setCoworkMessages(cached);
-      const titleFromCache = deriveThreadTitleFromMessages(cached);
-      setStatus(titleFromCache ? `Opened task: ${titleFromCache}` : 'Opened task.');
-      return;
-    }
-
-    setCoworkMessages([]);
-    setStatus('Loading recent cowork task...');
-    void loadCoworkSession(normalized, 'Opened task');
-  };
-
   const handleRenameRecentItem = (item: RecentWorkspaceEntry) => {
     setRecentRenameTarget(item);
     setRecentRenameValue(item.label);
@@ -6637,7 +6654,7 @@ export default function App() {
       }
 
       renameThread(recentRenameTarget.sessionKey, nextTitle, recentRenameTarget.kind);
-      setStatus(`${recentRenameTarget.kind === 'cowork' ? 'Task' : 'Chat'} renamed.`);
+      setStatus('Chat renamed.');
       setRecentRenameTarget(null);
       setRecentRenameValue('');
     } finally {
@@ -6651,8 +6668,17 @@ export default function App() {
 
   const handleTogglePinRecentItem = (item: RecentWorkspaceEntry) => {
     const key = threadMetaKey(item);
+    const nextPinned = !(item.pinned === true || sidebarThreadMetaByKey[key]?.pinned === true);
+    if (item.kind === 'chat') {
+      setChatThreads((current) =>
+        current.map((thread) =>
+          normalizeSessionKey(thread.sessionKey) === normalizeSessionKey(item.sessionKey)
+            ? { ...thread, pinned: nextPinned }
+            : thread,
+        ),
+      );
+    }
     setSidebarThreadMetaByKey((current) => {
-      const nextPinned = !(current[key]?.pinned === true);
       return {
         ...current,
         [key]: {
@@ -6661,11 +6687,20 @@ export default function App() {
         },
       };
     });
-    setStatus(item.kind === 'cowork' ? 'Task pin updated.' : 'Chat pin updated.');
+    setStatus('Chat pin updated.');
   };
 
   const handleArchiveRecentItem = (item: RecentWorkspaceEntry) => {
     const key = threadMetaKey(item);
+    if (item.kind === 'chat') {
+      setChatThreads((current) =>
+        current.map((thread) =>
+          normalizeSessionKey(thread.sessionKey) === normalizeSessionKey(item.sessionKey)
+            ? { ...thread, archived: true }
+            : thread,
+        ),
+      );
+    }
     setSidebarThreadMetaByKey((current) => ({
       ...current,
       [key]: {
@@ -6673,11 +6708,20 @@ export default function App() {
         archived: true,
       },
     }));
-    setStatus(item.kind === 'cowork' ? 'Task archived.' : 'Chat archived.');
+    setStatus('Chat archived.');
   };
 
   const handleUnarchiveRecentItem = (item: RecentWorkspaceEntry) => {
     const key = threadMetaKey(item);
+    if (item.kind === 'chat') {
+      setChatThreads((current) =>
+        current.map((thread) =>
+          normalizeSessionKey(thread.sessionKey) === normalizeSessionKey(item.sessionKey)
+            ? { ...thread, archived: false }
+            : thread,
+        ),
+      );
+    }
     setSidebarThreadMetaByKey((current) => ({
       ...current,
       [key]: {
@@ -6685,7 +6729,7 @@ export default function App() {
         archived: false,
       },
     }));
-    setStatus(item.kind === 'cowork' ? 'Task restored.' : 'Chat restored.');
+    setStatus('Chat restored.');
   };
 
   const handleAssignUnassignedCoworkRecentItem = (item: RecentWorkspaceEntry) => {
@@ -6746,7 +6790,7 @@ export default function App() {
       await ensureConnectedClient(client);
       await client.deleteSession(recentDeleteTarget.sessionKey);
       removeThread(recentDeleteTarget.sessionKey, recentDeleteTarget.kind);
-      setStatus(`${recentDeleteTarget.kind === 'cowork' ? 'Task' : 'Chat'} deleted.`);
+      setStatus('Chat deleted.');
       setRecentDeleteTarget(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to delete session.';
@@ -6783,19 +6827,6 @@ export default function App() {
       setScheduledLoading(false);
     }
   }, [config.transport]);
-
-  useEffect(() => {
-    if (activePage !== 'cowork') {
-      return;
-    }
-
-    void loadScheduledJobs();
-    const client = backendClientRef.current;
-    if (client) {
-      const sessionKey = normalizeSessionKey(coworkSessionKeyRef.current);
-      void loadCoworkModels(client, sessionKey || undefined);
-    }
-  }, [activePage, loadScheduledJobs]);
 
   useEffect(() => {
     setActiveMenuItem('');
@@ -6873,44 +6904,14 @@ export default function App() {
     setSettingsSection('Connection');
   }, []);
 
-  const handleStartNewTask = () => {
-    setActivePage('cowork');
-    handleCoworkPromptChange('');
-    setTaskState('idle');
-    commitCoworkSessionKey('');
-    setCoworkMessages([]);
-    setCoworkAwaitingStream(false);
-    setCoworkStreamingText('');
-    setCoworkRunPhase('idle');
-    setCoworkRunStatus('Ready for a new task.');
-    setLocalPlanActions([]);
-    setLocalPlanRootPath('');
-    setPendingApprovals([]);
-    setStatus('Ready for a new task.');
-    setCoworkResetKey((current) => current + 1);
-  };
-
-  const handleRerunLastCoworkTask = () => {
-    if (!latestVisibleCoworkTaskPrompt) {
-      setStatus('No previous task prompt available to rerun.');
-      return;
-    }
-    setActivePage('cowork');
-    handleCoworkPromptChange(latestVisibleCoworkTaskPrompt);
-    setStatus('Loaded last task prompt. Review and send to rerun.');
-  };
-
   const pageLoadingFallback = (
     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
       Loading page...
     </div>
   );
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
-  const allThreadsForSearch = [
-    ...chatThreads.map((t) => ({ ...t, label: t.title, kind: 'chat' as const })),
-    ...coworkThreads.map((t) => ({ ...t, label: t.title, kind: 'cowork' as const })),
-  ];
-  const recentItemsForSearch = [...recentChatItems, ...recentCoworkItems].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  const allThreadsForSearch = chatThreads.map((t) => ({ ...t, label: t.title, kind: 'chat' as const }));
+  const recentItemsForSearch = [...recentChatItems, ...Object.values(projectRecentItemsByProjectId).flat()].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const searchCandidates = (normalizedSearchQuery ? allThreadsForSearch : recentItemsForSearch).map((item) => ({
     id: item.id,
     sessionKey: item.sessionKey,
@@ -6953,7 +6954,6 @@ export default function App() {
       <AppTitlebar
         sidebarOpen={sidebarOpen}
         activePage={activePage}
-        coworkRightPanelOpen={coworkRightPanelOpen}
         isMaximized={isMaximized}
         usageModeLabel={usageModeLabel}
         hermesConnected={hermesConnected}
@@ -6967,7 +6967,6 @@ export default function App() {
         onScheduleRun={handleScheduleCoworkRun}
         minimal={needsOnboarding || !canUseAppShell}
         onToggleSidebar={() => setSidebarOpen((current) => !current)}
-        onToggleCoworkRightPanel={() => setCoworkRightPanelOpen((current) => !current)}
         onSelectPage={setActivePage}
         onMinimize={handleMinimize}
         onToggleMaximize={handleToggleMaximize}
@@ -7006,7 +7005,6 @@ export default function App() {
             sidebarOpen={sidebarOpen}
             activePage={activePage}
             activeSessionKey={activeSessionKey}
-            activeCoworkSessionKey={coworkSessionKey}
             userEmail={userIdentityLabel}
             guestMode={guestMode}
             language={preferences.language}
@@ -7014,20 +7012,10 @@ export default function App() {
             chatRecentItems={recentChatItems}
             archivedChatRecentItems={archivedChatRecentItems}
             projectRecentItemsByProjectId={projectRecentItemsByProjectId}
-            unassignedCoworkRecentItems={unassignedCoworkRecentItems}
-            archivedCoworkRecentItems={archivedCoworkRecentItems}
             coworkProjects={coworkProjects}
             activeCoworkProjectId={activeCoworkProjectId}
-            workingFolder={workingFolder}
-            scheduledItems={scheduledJobs}
-            scheduledLoading={scheduledLoading}
-            sessionUsage={sessionUsage}
             hermesConnected={hermesConnected}
             onSelectRecentItem={(item) => {
-              if (item.kind === 'cowork') {
-                handleOpenRecentCowork(item.sessionKey);
-                return;
-              }
               handleOpenRecentChat(item.sessionKey);
             }}
             onRenameRecentItem={handleRenameRecentItem}
@@ -7035,7 +7023,6 @@ export default function App() {
             onTogglePinRecentItem={handleTogglePinRecentItem}
             onArchiveRecentItem={handleArchiveRecentItem}
             onUnarchiveRecentItem={handleUnarchiveRecentItem}
-            onAssignUnassignedCoworkRecentItem={handleAssignUnassignedCoworkRecentItem}
             recentsLoading={!configReady}
             onSelectCoworkProject={handleSelectCoworkProject}
             onCreateCoworkProject={handleCreateCoworkProject}
@@ -7043,11 +7030,9 @@ export default function App() {
             onDeleteCoworkProject={handleDeleteCoworkProject}
             onPickWorkingFolder={handlePickWorkingFolderForProject}
             onStartNewChat={handleStartNewChat}
-            onStartNewTask={handleStartNewTask}
             onSelectPage={(page) => {
               setActivePage(page);
             }}
-            onOpenSearch={() => handleSearchOpenChange(true)}
             onOpenSettings={() => setActivePage('settings')}
             onSettingsSectionChange={setSettingsSection}
             onLanguageChange={(language) => updatePreferences({ language })}
@@ -7066,7 +7051,7 @@ export default function App() {
             >
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Rename {recentRenameTarget?.kind === 'cowork' ? 'task' : 'chat'}</DialogTitle>
+                  <DialogTitle>Rename chat</DialogTitle>
                   <DialogDescription>
                     Set a custom title for this recent item.
                   </DialogDescription>
@@ -7106,7 +7091,7 @@ export default function App() {
                 <DialogHeader>
                   <DialogTitle className="text-red-600 dark:text-red-400">Delete recent session</DialogTitle>
                   <DialogDescription>
-                    Delete {recentDeleteTarget?.kind === 'cowork' ? 'task' : 'chat'} "{recentDeleteTarget?.label}" and all of its messages?
+                    Delete chat "{recentDeleteTarget?.label}" and all of its messages?
                     This action cannot be undone.
                   </DialogDescription>
                 </DialogHeader>
@@ -7145,11 +7130,7 @@ export default function App() {
                         key={thread.id}
                         value={thread.label}
                         onSelect={() => {
-                          if (thread.kind === 'cowork') {
-                            handleOpenRecentCowork(thread.sessionKey);
-                          } else {
-                            handleOpenRecentChat(thread.sessionKey);
-                          }
+                          handleOpenRecentChat(thread.sessionKey);
                           handleSearchOpenChange(false);
                         }}
                         className="flex items-center justify-between gap-3"

@@ -27,6 +27,19 @@ type AcpUpdateCallback = (update: { sessionId: string; update: unknown }) => voi
 const HERMES_ACP_MAIN_LOG_PREFIX = '[Relay:HermesACPMain]';
 const ACP_MAX_LIST_ITEMS = 500;
 const ACP_MAX_SEARCH_RESULTS = 200;
+const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+
+function compactHermesStderr(text: string): string {
+  return text
+    .replace(ANSI_ESCAPE_PATTERN, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-18)
+    .join('\n')
+    .slice(-3_000);
+}
+
 function logAcp(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) {
   if (level === 'error') {
     console.error(HERMES_ACP_MAIN_LOG_PREFIX, message, meta ?? '');
@@ -110,6 +123,8 @@ export class HermesAcpBridge {
   private knownSessions = new Map<string, SessionInfo>();
   private modelStateBySession = new Map<string, AcpModelState>();
   private globalModelCatalog = new Map<string, { id: string; name: string }>();
+  private stderrBuffer = '';
+  private activePromptStats = new Map<string, { agentChunks: number; updates: number }>();
   private active = false;
 
   private resolveSessionId(requestedSessionId?: string): string {
@@ -525,6 +540,10 @@ export class HermesAcpBridge {
       if (stderrBuffer.length > 8_000) {
         stderrBuffer = stderrBuffer.slice(-8_000);
       }
+      this.stderrBuffer += text;
+      if (this.stderrBuffer.length > 20_000) {
+        this.stderrBuffer = this.stderrBuffer.slice(-20_000);
+      }
     });
 
     this.child.once('exit', (code, signal) => {
@@ -539,6 +558,28 @@ export class HermesAcpBridge {
 
     const clientHandler = this.makeClientHandler();
     clientHandler.sessionUpdate = async (params) => {
+      const update = params.update && typeof params.update === 'object'
+        ? params.update as Record<string, unknown>
+        : null;
+      const kind = typeof update?.sessionUpdate === 'string'
+        ? update.sessionUpdate
+        : typeof update?.type === 'string'
+          ? update.type
+          : typeof update?.kind === 'string'
+            ? update.kind
+            : '(unknown)';
+      logAcp('info', 'ACP session update received', {
+        sessionId: params.sessionId,
+        kind,
+        keys: update ? Object.keys(update).slice(0, 12) : [],
+      });
+      const stats = this.activePromptStats.get(params.sessionId);
+      if (stats) {
+        stats.updates += 1;
+        if (kind === 'agent_message_chunk') {
+          stats.agentChunks += 1;
+        }
+      }
       this.captureModelStateFromUpdate(params.sessionId, params.update);
       this.onUpdate?.({
         sessionId: params.sessionId,
@@ -656,17 +697,19 @@ export class HermesAcpBridge {
 
   async loadSession(input: { sessionId: string; cwd?: string }) {
     const connection = this.requireExtendedConnection();
+    const cwd = (input.cwd ?? process.cwd()).trim() || process.cwd();
     const result = await connection.loadSession({
       sessionId: input.sessionId,
-      cwd: input.cwd,
+      cwd,
+      mcpServers: [],
     });
     const loadedId = typeof (result as { sessionId?: unknown }).sessionId === 'string'
       ? String((result as { sessionId: string }).sessionId)
       : input.sessionId;
-    this.knownSessions.set(loadedId, { id: loadedId, cwd: input.cwd });
+    this.knownSessions.set(loadedId, { id: loadedId, cwd });
     this.captureModelStateFromConfigOptions(loadedId, (result as { configOptions?: unknown }).configOptions);
     this.captureModelStateFromLegacyModels(loadedId, result);
-    logAcp('info', 'ACP session loaded', { sessionId: loadedId, cwd: input.cwd ?? '(none)' });
+    logAcp('info', 'ACP session loaded', { sessionId: loadedId, cwd });
     return { sessionId: loadedId, payload: result };
   }
 
@@ -714,13 +757,35 @@ export class HermesAcpBridge {
 
   async prompt(input: { sessionId: string; text: string }) {
     const connection = this.requireConnection();
+    const stderrStart = this.stderrBuffer.length;
+    this.activePromptStats.set(input.sessionId, { agentChunks: 0, updates: 0 });
     logAcp('info', 'ACP prompt start', { sessionId: input.sessionId, chars: input.text.length });
-    const result = await connection.prompt({
-      sessionId: input.sessionId,
-      prompt: [{ type: 'text', text: input.text }],
-    });
-    logAcp('info', 'ACP prompt done', { sessionId: input.sessionId, stopReason: result.stopReason });
-    return { stopReason: result.stopReason };
+    try {
+      const result = await connection.prompt({
+        sessionId: input.sessionId,
+        prompt: [{ type: 'text', text: input.text }],
+      });
+      const stats = this.activePromptStats.get(input.sessionId);
+      const stderrDelta = this.stderrBuffer.slice(stderrStart);
+      logAcp('info', 'ACP prompt done', {
+        sessionId: input.sessionId,
+        stopReason: result.stopReason,
+        resultKeys: Object.keys(result as Record<string, unknown>),
+        agentChunks: stats?.agentChunks ?? 0,
+        updates: stats?.updates ?? 0,
+      });
+      if ((stats?.agentChunks ?? 0) === 0 && /(?:API call failed|AuthenticationError|HTTP\s+\d{3}|Error code:\s*\d{3}|Non-retryable|provider|OpenRouter)/i.test(stderrDelta)) {
+        const detail = compactHermesStderr(stderrDelta);
+        logAcp('error', 'ACP prompt finished without text because provider call failed', {
+          sessionId: input.sessionId,
+          detail,
+        });
+        throw new Error(`Hermes provider call failed before assistant text was streamed.\n${detail}`);
+      }
+      return { stopReason: result.stopReason };
+    } finally {
+      this.activePromptStats.delete(input.sessionId);
+    }
   }
 
   async listSessions() {

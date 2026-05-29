@@ -36,6 +36,27 @@ type SessionRunState = {
 
 const HERMES_CLIENT_LOG_PREFIX = '[Relay:HermesACPClient]';
 
+function extractAcpTextContent(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(extractAcpTextContent).filter(Boolean).join('');
+  if (!value || typeof value !== 'object') return '';
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.text === 'string') return record.text;
+  if (typeof record.delta === 'string') return record.delta;
+  if (typeof record.chunk === 'string') return record.chunk;
+  if (typeof record.content === 'string') return record.content;
+
+  for (const key of ['content', 'resource', 'contents']) {
+    if (record[key] !== undefined) {
+      const nested = extractAcpTextContent(record[key]);
+      if (nested) return nested;
+    }
+  }
+
+  return '';
+}
+
 export class HermesAcpClient {
   private connected = false;
   private gatewayUrl: string | null = null;
@@ -178,24 +199,15 @@ export class HermesAcpClient {
     }
 
     if (kind === 'agent_message_chunk') {
-      const content = update.content && typeof update.content === 'object'
-        ? (update.content as Record<string, unknown>)
-        : null;
-      let chunkText = '';
-      if (content?.type === 'text' && typeof content.text === 'string') {
-        chunkText = content.text;
-      } else if (content?.type === 'resource') {
-        const resource = content.resource && typeof content.resource === 'object'
-          ? (content.resource as Record<string, unknown>)
-          : null;
-        if (typeof resource?.text === 'string') {
-          chunkText = resource.text;
-        }
-      }
+      const content = update.content;
+      const chunkText = extractAcpTextContent(content ?? update);
       if (!chunkText) {
         this.log('warn', 'ACP text chunk ignored (non-text content)', {
           sessionId: sessionKey,
-          contentType: typeof content?.type === 'string' ? content.type : '(unknown)',
+          contentType: content && typeof content === 'object' && typeof (content as Record<string, unknown>).type === 'string'
+            ? (content as Record<string, unknown>).type
+            : '(unknown)',
+          updateKeys: Object.keys(update).slice(0, 12),
         });
         return;
       }
@@ -496,22 +508,43 @@ export class HermesAcpClient {
       contextWindowSize: null,
     });
     this.emitTypedEvent('run.started', { sessionKey: key, runId, label: 'ACP run started' });
-    await relay.acpPrompt({ sessionId: key, text });
+    try {
+      await relay.acpPrompt({ sessionId: key, text });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.log('error', 'ACP prompt failed', { sessionId: key, runId, error: message });
+      this.emitLegacyEvent({
+        type: 'event',
+        event: 'chat',
+        payload: {
+          sessionKey: key,
+          runId,
+          state: 'error',
+          errorMessage: message,
+        },
+      });
+      this.runStateBySession.delete(key);
+      return { sessionKey: key };
+    }
+
+    const waitForRunText = async (maxIterations: number, delayMs: number) => {
+      let run = this.runStateBySession.get(key);
+      let lastSize = run?.buffer.length ?? 0;
+      for (let i = 0; i < maxIterations; i += 1) {
+        if (!run) break;
+        if (run.closed && run.buffer.length > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        run = this.runStateBySession.get(key);
+        const nextSize = run?.buffer.length ?? 0;
+        if (run?.closed && nextSize > 0) break;
+        if (nextSize === lastSize && i > 1) break;
+        lastSize = nextSize;
+      }
+      return this.runStateBySession.get(key);
+    };
 
     // Give ACP stream callbacks a short drain window after prompt completion.
-    let run = this.runStateBySession.get(key);
-    let lastSize = run?.buffer.length ?? 0;
-    for (let i = 0; i < 10; i += 1) {
-      if (!run) break;
-      if (run.closed) break;
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      run = this.runStateBySession.get(key);
-      const nextSize = run?.buffer.length ?? 0;
-      if (nextSize === lastSize) {
-        break;
-      }
-      lastSize = nextSize;
-    }
+    const run = await waitForRunText(18, 100);
 
     if (run && run.buffer.length > 0) {
       session.history.push({
